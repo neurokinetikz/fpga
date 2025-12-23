@@ -95,6 +95,8 @@ phi_n_neural_processor #(.WIDTH(WIDTH), .FRAC(FRAC)) dut (
     .rst(rst),
     .sensory_input(sensory_input),  // v6.2: ONLY external data input
     .state_select(state_select),
+    .sr_field_input(18'sd0),
+    .sr_field_packed(90'd0),
     .dac_output(dac_output),
     .debug_motor_l23(debug_motor_l23),
     .debug_theta(debug_theta),
@@ -189,33 +191,33 @@ initial begin clk = 0; forever #5 clk = ~clk; end
 integer i, j, k, s;
 integer state_idx;
 
-// Per-state metrics storage
-integer theta_cycles      [0:4];
-integer learn_events      [0:4];
-integer recall_events     [0:4];
-integer weight_change_sum [0:4];
-integer recall_accuracy_a [0:4];
-integer recall_accuracy_b [0:4];
-integer recall_accuracy_c [0:4];
-integer unique_patterns   [0:4];
-integer pattern_transitions[0:4];
-integer amp_variance      [0:4];
+// Per-state metrics storage (using reg for iverilog compatibility)
+reg signed [31:0] theta_cycles      [0:4];
+reg signed [31:0] learn_events      [0:4];
+reg signed [31:0] recall_events     [0:4];
+reg signed [31:0] weight_change_sum [0:4];
+reg signed [31:0] recall_accuracy_a [0:4];
+reg signed [31:0] recall_accuracy_b [0:4];
+reg signed [31:0] recall_accuracy_c [0:4];
+reg signed [31:0] unique_patterns   [0:4];
+reg signed [31:0] pattern_transitions[0:4];
+reg signed [31:0] amp_variance      [0:4];
 
 // Oscillator amplitude metrics per state
-integer theta_amp_avg     [0:4];
-integer gamma_amp_avg     [0:4];
-integer alpha_amp_avg     [0:4];
+reg signed [31:0] theta_amp_avg     [0:4];
+reg signed [31:0] gamma_amp_avg     [0:4];
+reg signed [31:0] alpha_amp_avg     [0:4];
 
 // Oscillator-derived pattern metrics (from cortical_pattern)
-integer osc_pattern_transitions [0:4];
-integer osc_unique_patterns     [0:4];
-integer effective_learn_rate    [0:4];
+reg signed [31:0] osc_pattern_transitions [0:4];
+reg signed [31:0] osc_unique_patterns     [0:4];
+reg signed [31:0] effective_learn_rate    [0:4];
 
 // Histogram for oscillator-derived pattern entropy
-integer osc_pattern_hist [0:63];
+reg signed [31:0] osc_pattern_hist [0:63];
 
 // Histogram for phase pattern entropy (64 bins for 6-bit pattern)
-integer phase_pattern_hist [0:63];
+reg signed [31:0] phase_pattern_hist [0:63];
 
 // Working variables
 integer update_count;

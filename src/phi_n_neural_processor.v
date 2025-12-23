@@ -1,5 +1,29 @@
 //=============================================================================
-// Top-Level Module - v6.3 with FAST_SIM Parameter
+// Top-Level Module - v7.3 with Multi-Harmonic Schumann Resonance Bank
+//
+// v7.3 CHANGES (Multi-Harmonic SR Bank):
+// - 5 SR harmonics (7.83, 14.3, 20.8, 27.3, 33.8 Hz) externally driven
+// - Each harmonic couples to corresponding EEG band
+// - Per-harmonic coherence and SIE detection
+// - Aggregate SIE when ANY harmonic achieves high coherence + beta quiet
+// - New input: sr_field_packed (5 × 18-bit packed SR harmonics)
+// - New outputs: sie_per_harmonic, coherence_mask, sr_coherence_packed
+//
+// v7.2 CHANGES (Stochastic Resonance Model - preserved):
+// - f₀ is now EXTERNALLY DRIVEN via sr_field_input (represents Schumann field)
+// - Beta amplitude from L5 layers gates the entrainment coupling
+// - When beta quiets (meditation), stochastic resonance enables f₀ detection
+// - f₀ entrains theta only when beta is at optimal quiet level
+// - SIE = high coherence AND beta quiet (natural emergence, not explicit state)
+// - New input: sr_field_input (external Schumann field signal)
+// - New output: beta_quiet (indicates SR-ready state)
+//
+// v7.1 CHANGES (SIE Research Integration):
+// - Thalamus includes f₀ oscillator (7.49 Hz, φ⁰ = Schumann fundamental)
+// - Phase coherence detection between theta (5.89 Hz) and f₀ (7.49 Hz)
+// - Dynamic gain amplification when theta-f₀ coherence exceeds threshold
+// - Outputs: f0_x, f0_y, f0_amplitude, sr_coherence, sr_amplification
+// - Models Schumann Ignition Event (SIE) transient power boost from research
 //
 // v6.3 CHANGES:
 // - Added FAST_SIM parameter for testbench simulation speedup
@@ -49,13 +73,21 @@
 module phi_n_neural_processor #(
     parameter WIDTH = 18,
     parameter FRAC = 14,
-    parameter FAST_SIM = 0  // 1 = use fast clock divider (÷10 vs ÷31250) for simulation
+    parameter FAST_SIM = 0,  // 1 = use fast clock divider (÷10 vs ÷31250) for simulation
+    parameter NUM_HARMONICS = 5,  // v7.3: Number of SR harmonics
+    parameter SR_STOCHASTIC_ENABLE = 1  // Enable stochastic noise in SR oscillators
 )(
     input  wire clk,
     input  wire rst,
 
     input  wire signed [WIDTH-1:0] sensory_input,  // v6.2: ONLY external data input
     input  wire [2:0] state_select,
+
+    // v7.2 compatibility: Single SR field input (uses f₀ only)
+    input  wire signed [WIDTH-1:0] sr_field_input,
+
+    // v7.3: Multi-harmonic SR field inputs (packed: 5 × 18 bits = 90 bits)
+    input  wire signed [NUM_HARMONICS*WIDTH-1:0] sr_field_packed,
 
     output wire [11:0] dac_output,
     output wire signed [WIDTH-1:0] debug_motor_l23,
@@ -67,7 +99,25 @@ module phi_n_neural_processor #(
     output wire [5:0] ca3_phase_pattern,
 
     // v6.1: Expose cortical pattern for debugging
-    output wire [5:0] cortical_pattern_out
+    output wire [5:0] cortical_pattern_out,
+
+    // f₀ SR Reference outputs (v7.2 compatibility)
+    output wire signed [WIDTH-1:0] f0_x,
+    output wire signed [WIDTH-1:0] f0_y,
+    output wire signed [WIDTH-1:0] f0_amplitude,
+
+    // v7.3: Multi-harmonic outputs (packed)
+    output wire signed [NUM_HARMONICS*WIDTH-1:0] sr_f_x_packed,
+    output wire signed [NUM_HARMONICS*WIDTH-1:0] sr_coherence_packed,
+
+    // v7.3: Per-harmonic SIE status
+    output wire [NUM_HARMONICS-1:0] sie_per_harmonic,
+    output wire [NUM_HARMONICS-1:0] coherence_mask,
+
+    // SR Coupling indicators
+    output wire signed [WIDTH-1:0] sr_coherence,  // f₀ coherence (v7.2 compat)
+    output wire                    sr_amplification,  // SIE active (any harmonic)
+    output wire                    beta_quiet  // v7.2: Indicates SR-ready state
 );
 
 localparam signed [WIDTH-1:0] ONE_THIRD = 18'sd5461;
@@ -82,6 +132,23 @@ clock_enable_generator #(
     .rst(rst),
     .clk_4khz_en(clk_4khz_en),
     .clk_100khz_en(clk_100khz_en)
+);
+
+//-----------------------------------------------------------------------------
+// SR Stochastic Noise Generator
+// Generates independent white noise for each SR harmonic oscillator
+//-----------------------------------------------------------------------------
+wire signed [NUM_HARMONICS*WIDTH-1:0] sr_noise_packed;
+
+sr_noise_generator #(
+    .WIDTH(WIDTH),
+    .FRAC(FRAC),
+    .NUM_HARMONICS(NUM_HARMONICS)
+) sr_noise_gen (
+    .clk(clk),
+    .rst(rst),
+    .clk_en(clk_4khz_en),
+    .noise_packed(sr_noise_packed)
 );
 
 wire signed [WIDTH-1:0] mu_dt_theta;
@@ -113,17 +180,81 @@ assign l6_sum = sensory_l6_x + assoc_l6_x + motor_l6_x;
 assign l6_avg_full = l6_sum * ONE_THIRD;
 assign l6_alpha_feedback = l6_avg_full >>> FRAC;
 
-thalamus #(.WIDTH(WIDTH), .FRAC(FRAC)) thal (
+//=============================================================================
+// v7.2: BETA AMPLITUDE COMPUTATION (for Stochastic Resonance gating)
+// Compute average beta amplitude from motor cortex L5a (low beta) and L5b (high beta).
+// This is used to gate the f₀→theta entrainment: when beta is quiet, SR enables
+// detection of the weak external Schumann field.
+//=============================================================================
+wire signed [WIDTH-1:0] motor_l5a_x_fwd, motor_l5b_x_fwd;  // Forward declarations
+wire signed [WIDTH-1:0] motor_l5a_abs, motor_l5b_abs;
+wire signed [WIDTH-1:0] beta_amplitude_sum;
+wire signed [WIDTH-1:0] beta_amplitude_avg;
+
+// Absolute values of L5 oscillator states
+assign motor_l5a_abs = motor_l5a_x_fwd[WIDTH-1] ? -motor_l5a_x_fwd : motor_l5a_x_fwd;
+assign motor_l5b_abs = motor_l5b_x_fwd[WIDTH-1] ? -motor_l5b_x_fwd : motor_l5b_x_fwd;
+
+// Average of L5a and L5b beta amplitudes
+assign beta_amplitude_sum = motor_l5a_abs + motor_l5b_abs;
+assign beta_amplitude_avg = beta_amplitude_sum >>> 1;
+
+// v7.3: Multi-harmonic SR field packed outputs (internal wires)
+wire signed [NUM_HARMONICS*WIDTH-1:0] sr_f_y_packed_int;
+wire signed [NUM_HARMONICS*WIDTH-1:0] sr_amplitude_packed_int;
+
+thalamus #(
+    .WIDTH(WIDTH),
+    .FRAC(FRAC),
+    .NUM_HARMONICS(NUM_HARMONICS),
+    .ENABLE_STOCHASTIC(SR_STOCHASTIC_ENABLE)
+) thal (
     .clk(clk),
     .rst(rst),
     .clk_en(clk_4khz_en),
     .sensory_input(sensory_input),
     .l6_alpha_feedback(l6_alpha_feedback),
     .mu_dt(mu_dt_theta),
+
+    // v7.3: Multi-harmonic SR field inputs
+    .sr_field_packed(sr_field_packed),
+    .noise_packed(sr_noise_packed),  // Stochastic noise for SR oscillators
+    .sr_field_input(sr_field_input),  // v7.2 compatibility
+    .beta_amplitude(beta_amplitude_avg),
+
+    // v7.3: Cortical oscillator states for per-band coherence
+    .alpha_x(sensory_l6_x),
+    .alpha_y(sensory_l6_y),
+    .beta_low_x(motor_l5a_x),
+    .beta_low_y(18'sd0),  // L5a doesn't expose y directly
+    .beta_high_x(motor_l5b_x),
+    .beta_high_y(18'sd0),  // L5b doesn't expose y directly
+    .gamma_x(sensory_l4_x),
+    .gamma_y(18'sd0),  // L4 doesn't expose y directly
+
+    // Theta outputs
     .theta_gated_output(thalamic_theta_output),
     .theta_x(thalamic_theta_x),
     .theta_y(thalamic_theta_y),
-    .theta_amplitude(thalamic_theta_amp)
+    .theta_amplitude(thalamic_theta_amp),
+
+    // f₀ SR Reference outputs (v7.2 compatibility)
+    .f0_x(f0_x),
+    .f0_y(f0_y),
+    .f0_amplitude(f0_amplitude),
+
+    // v7.3: Multi-harmonic outputs (packed)
+    .sr_f_x_packed(sr_f_x_packed),
+    .sr_f_y_packed(sr_f_y_packed_int),
+    .sr_amplitude_packed(sr_amplitude_packed_int),
+    .sr_coherence_packed(sr_coherence_packed),
+    .sie_per_harmonic(sie_per_harmonic),
+    .coherence_mask(coherence_mask),
+
+    // SR Coupling indicators
+    .sr_coherence(sr_coherence),
+    .sr_amplification(sr_amplification),
+    .beta_quiet(beta_quiet)
 );
 
 //=============================================================================
@@ -282,6 +413,11 @@ cortical_column #(.WIDTH(WIDTH), .FRAC(FRAC)) col_motor (
     .l6_y(motor_l6_y),
     .l4_x(motor_l4_x)
 );
+
+// v7.2: Connect forward declarations for beta amplitude computation
+// These feed the stochastic resonance gating in the thalamus
+assign motor_l5a_x_fwd = motor_l5a_x;
+assign motor_l5b_x_fwd = motor_l5b_x;
 
 wire signed [WIDTH-1:0] pink_noise_out;
 

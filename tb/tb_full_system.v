@@ -38,6 +38,8 @@ phi_n_neural_processor #(.WIDTH(WIDTH), .FRAC(FRAC)) dut (
     .rst(rst),
     .sensory_input(sensory_input),
     .state_select(state_select),
+    .sr_field_input(18'sd0),
+    .sr_field_packed(90'd0),
     .dac_output(dac_output),
     .debug_motor_l23(debug_motor_l23),
     .debug_theta(debug_theta),

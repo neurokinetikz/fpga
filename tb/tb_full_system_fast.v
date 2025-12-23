@@ -24,6 +24,10 @@ reg rst;
 reg signed [WIDTH-1:0] sensory_input;
 reg [2:0] state_select;
 
+// SR field inputs (must be tied to 0 if not used, otherwise undefined propagates)
+reg signed [WIDTH-1:0] sr_field_input;
+reg signed [5*WIDTH-1:0] sr_field_packed;
+
 //-----------------------------------------------------------------------------
 // DUT: phi_n_neural_processor with FAST_SIM=1
 // Uses full production module with fast clock divider for simulation
@@ -45,6 +49,8 @@ phi_n_neural_processor #(
     .rst(rst),
     .sensory_input(sensory_input),
     .state_select(state_select),
+    .sr_field_input(sr_field_input),      // v7.2: External Schumann field
+    .sr_field_packed(sr_field_packed),    // v7.3: Multi-harmonic SR fields
     .dac_output(dac_output),
     .debug_motor_l23(debug_motor_l23),
     .debug_theta(debug_theta),
@@ -72,7 +78,7 @@ wire signed [WIDTH-1:0] theta_couple_base = dut.theta_couple_base;
 wire signed [WIDTH-1:0] phase_couple_sensory_l23 = dut.phase_couple_sensory_l23;
 wire signed [WIDTH-1:0] phase_couple_motor_l6 = dut.phase_couple_motor_l6;
 
-// Fast clock: 10ns period
+// Fast clock: 10ns period (100 MHz)
 initial begin
     clk = 0;
     forever #5 clk = ~clk;
@@ -85,14 +91,42 @@ integer dac_min, dac_max;
 integer peak_count;
 reg prev_peak;
 
-// Task to wait for N updates
+//-----------------------------------------------------------------------------
+// Task to wait for N 4kHz updates using clock-based synchronization
+// This approach is more reliable than @(posedge clk_4khz_en) because:
+// 1. It uses the main clock as the timing reference
+// 2. It samples clk_4khz_en after a small delay to avoid race conditions
+// 3. It matches the approach used in working testbenches (tb_multi_harmonic_sr)
+//-----------------------------------------------------------------------------
 task wait_updates;
+    input integer n;
+    integer local_count;
+    begin
+        local_count = 0;
+        while (local_count < n) begin
+            @(posedge clk);
+            #1;  // Small delay to let combinational logic settle
+            if (clk_4khz_en) begin
+                local_count = local_count + 1;
+                update_count = update_count + 1;
+            end
+        end
+    end
+endtask
+
+//-----------------------------------------------------------------------------
+// Task to run for N clock cycles, counting updates
+//-----------------------------------------------------------------------------
+task run_clocks;
     input integer n;
     integer i;
     begin
         for (i = 0; i < n; i = i + 1) begin
-            @(posedge clk_4khz_en);
-            update_count = update_count + 1;
+            @(posedge clk);
+            #1;
+            if (clk_4khz_en) begin
+                update_count = update_count + 1;
+            end
         end
     end
 endtask
@@ -104,9 +138,12 @@ initial begin
     $display("========================================");
 
     // Initialize (v6.2: sensory_input is the ONLY external data input)
+    // Note: Non-zero sensory_input helps excite oscillators during warmup
     rst = 1;
-    sensory_input = 18'sd0;
+    sensory_input = 18'sd4096;  // Moderate stimulus to excite oscillators
     state_select = 3'd0;  // NORMAL
+    sr_field_input = 18'sd0;   // No external SR field (must be initialized!)
+    sr_field_packed = 90'd0;   // No external multi-harmonic SR (must be initialized!)
     test_pass = 0;
     test_fail = 0;
     update_count = 0;
@@ -115,10 +152,13 @@ initial begin
     peak_count = 0;
     prev_peak = 0;
 
-    // Reset
-    repeat(10) @(posedge clk);
+    // Hold reset for 100 clock cycles (allows internal state to settle)
+    repeat(100) @(posedge clk);
     rst = 0;
     $display("\n[INFO] Reset released at time %0t", $time);
+
+    // Wait a few clocks for first clk_4khz_en pulse
+    repeat(20) @(posedge clk);
 
     // TEST 1: Oscillator startup (wait 500 updates = 500ms equivalent)
     $display("\n[TEST 1] Oscillator startup (500ms warmup)");
@@ -141,13 +181,21 @@ initial begin
     $display("\n[TEST 2] Theta oscillation (verify peaks exist)");
     peak_count = 0;
     prev_peak = 0;
-    for (update_count = 0; update_count < 2000; update_count = update_count + 1) begin
-        @(posedge clk_4khz_en);
-        if (debug_theta > 18'sd12000 && !prev_peak) begin
-            peak_count = peak_count + 1;
-            prev_peak = 1;
+    begin : test2_block
+        integer local_updates;
+        local_updates = 0;
+        while (local_updates < 2000) begin
+            @(posedge clk);
+            #1;
+            if (clk_4khz_en) begin
+                local_updates = local_updates + 1;
+                if (debug_theta > 18'sd12000 && !prev_peak) begin
+                    peak_count = peak_count + 1;
+                    prev_peak = 1;
+                end
+                if (debug_theta < 18'sd8000) prev_peak = 0;
+            end
         end
-        if (debug_theta < 18'sd8000) prev_peak = 0;
     end
     $display("         Measured: %0d peaks in 2000 updates", peak_count);
     // In fast mode, just verify oscillation exists (at least 1 peak)
@@ -163,10 +211,18 @@ initial begin
     $display("\n[TEST 3] DAC output range");
     dac_min = 4096;
     dac_max = 0;
-    for (update_count = 0; update_count < 1000; update_count = update_count + 1) begin
-        @(posedge clk_4khz_en);
-        if (dac_output < dac_min) dac_min = dac_output;
-        if (dac_output > dac_max) dac_max = dac_output;
+    begin : test3_block
+        integer local_updates;
+        local_updates = 0;
+        while (local_updates < 1000) begin
+            @(posedge clk);
+            #1;
+            if (clk_4khz_en) begin
+                local_updates = local_updates + 1;
+                if (dac_output < dac_min) dac_min = dac_output;
+                if (dac_output > dac_max) dac_max = dac_output;
+            end
+        end
     end
     $display("         DAC range: %0d - %0d (span: %0d)", dac_min, dac_max, dac_max - dac_min);
     if ((dac_max - dac_min) > 500) begin
@@ -181,17 +237,27 @@ initial begin
     $display("\n[TEST 4] CA3 learning via sensory pathway");
     sensory_input = 18'sd12000;  // Strong sensory stimulus
     // Wait for theta peak and learning to trigger
-    for (update_count = 0; update_count < 500; update_count = update_count + 1) begin
-        @(posedge clk_4khz_en);
-        if (ca3_learning) begin
-            $display("         Learning triggered at update %0d - PASS", update_count);
-            test_pass = test_pass + 1;
-            update_count = 500;
+    begin : test4_block
+        integer local_updates;
+        reg learning_found;
+        local_updates = 0;
+        learning_found = 0;
+        while (local_updates < 500 && !learning_found) begin
+            @(posedge clk);
+            #1;
+            if (clk_4khz_en) begin
+                local_updates = local_updates + 1;
+                if (ca3_learning) begin
+                    $display("         Learning triggered at update %0d - PASS", local_updates);
+                    test_pass = test_pass + 1;
+                    learning_found = 1;
+                end
+            end
         end
-    end
-    if (!ca3_learning && update_count == 500) begin
-        $display("         Learning not triggered - FAIL");
-        test_fail = test_fail + 1;
+        if (!learning_found) begin
+            $display("         Learning not triggered - FAIL");
+            test_fail = test_fail + 1;
+        end
     end
     wait_updates(100);
     sensory_input = 18'sd0;
@@ -200,17 +266,27 @@ initial begin
     $display("\n[TEST 5] CA3 recall via sensory pathway");
     wait_updates(100);
     sensory_input = 18'sd8000;  // Moderate sensory cue
-    for (update_count = 0; update_count < 500; update_count = update_count + 1) begin
-        @(posedge clk_4khz_en);
-        if (ca3_recalling) begin
-            $display("         Recall triggered - PASS");
-            test_pass = test_pass + 1;
-            update_count = 500;
+    begin : test5_block
+        integer local_updates;
+        reg recall_found;
+        local_updates = 0;
+        recall_found = 0;
+        while (local_updates < 500 && !recall_found) begin
+            @(posedge clk);
+            #1;
+            if (clk_4khz_en) begin
+                local_updates = local_updates + 1;
+                if (ca3_recalling) begin
+                    $display("         Recall triggered - PASS");
+                    test_pass = test_pass + 1;
+                    recall_found = 1;
+                end
+            end
         end
-    end
-    if (!ca3_recalling && update_count == 500) begin
-        $display("         Recall not triggered - FAIL");
-        test_fail = test_fail + 1;
+        if (!recall_found) begin
+            $display("         Recall not triggered - FAIL");
+            test_fail = test_fail + 1;
+        end
     end
     wait_updates(50);
     $display("         Phase pattern output: %b", ca3_phase_pattern);
