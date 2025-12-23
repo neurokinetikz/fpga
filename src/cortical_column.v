@@ -1,17 +1,48 @@
 //=============================================================================
-// Cortical Column - v5.5 with Phase Coupling
+// Cortical Column - v8.0 with Scaffold Architecture
 //
-// CHANGES FROM v5.0:
-// - Added phase_couple_l23 input for L2/3 gamma oscillator
-// - Added phase_couple_l6 input for L6 alpha oscillator
-// - Phase coupling pulls oscillators toward in-phase or anti-phase with theta
+// v8.0 CHANGES (Dupret et al. 2025 Integration):
+// - Scaffold architecture: distinguishes stable vs plastic layers
+// - Scaffold layers (L4, L5b) form stable backbone, no phase coupling
+// - Plastic layers (L2/3, L6) receive phase coupling from CA3
+// - Implements the "scaffolding principle" from hippocampal memory research:
+//   "Higher-activity cells form stable backbone; lower-activity cells
+//   integrate new motifs on demand"
+//
+// LAYER CLASSIFICATION (v8.0 Scaffold Architecture):
+//
+//   SCAFFOLD LAYERS (stable backbone, no phase coupling):
+//     - L4 (31.73 Hz, φ³): Thalamocortical input boundary
+//       • Anchors spatial/contextual representation
+//       • Higher rate, more rigid activity
+//       • Robust to perturbation by experience
+//
+//     - L5b (24.94 Hz, φ²·⁵): High beta, subcortical feedback
+//       • Maintains state across time
+//       • Provides stability for motor sequences
+//       • No phase coupling preserves timing
+//
+//   PLASTIC LAYERS (flexible integration, with phase coupling):
+//     - L2/3 (40.36 Hz, φ³·⁵): Gamma, feedforward output [PHASE COUPLED]
+//       • Integrates new sensory patterns
+//       • Lower rate, more plastic activity
+//       • Phase coupling enables memory-guided gating
+//
+//     - L6 (9.53 Hz, φ⁰·⁵): Alpha, gain control / PAC [PHASE COUPLED]
+//       • Modulates processing gain
+//       • Phase coupling from CA3 memory
+//       • Enables memory-dependent attention
+//
+//     - L5a (15.42 Hz, φ¹·⁵): Low beta, motor output
+//       • Intermediate plasticity
+//       • Motor learning and adaptation
 //
 // LAYER FREQUENCIES (φⁿ architecture):
-// - L2/3: 40.36 Hz (φ^3.5) - Gamma, feedforward output [PHASE COUPLED]
-// - L4:   31.73 Hz (φ^3.0) - Boundary, thalamocortical input
-// - L5a:  15.42 Hz (φ^1.5) - Low beta, motor output
-// - L5b:  24.94 Hz (φ^2.5) - High beta, subcortical feedback
-// - L6:    9.53 Hz (φ^0.5) - Alpha, gain control / PAC [PHASE COUPLED]
+// - L2/3: 40.36 Hz (φ^3.5) - Gamma, feedforward output [PLASTIC]
+// - L4:   31.73 Hz (φ^3.0) - Boundary, thalamocortical input [SCAFFOLD]
+// - L5a:  15.42 Hz (φ^1.5) - Low beta, motor output [INTERMEDIATE]
+// - L5b:  24.94 Hz (φ^2.5) - High beta, subcortical feedback [SCAFFOLD]
+// - L6:    9.53 Hz (φ^0.5) - Alpha, gain control / PAC [PLASTIC]
 //=============================================================================
 `timescale 1ns / 1ps
 

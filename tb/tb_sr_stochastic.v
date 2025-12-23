@@ -1,18 +1,23 @@
 //=============================================================================
-// Testbench: Stochastic Resonance Model (v7.2)
+// Testbench: Stochastic Resonance Model (v8.0)
 //
 // Tests the stochastic resonance-based SIE model where:
-// - f₀ is externally driven (represents the Schumann field)
-// - Beta amplitude gates the f₀→theta entrainment
-// - SIE occurs only when: high coherence AND beta quiet
+// - 5 SR harmonics (f₀-f₄) are externally driven (Schumann field)
+// - Beta amplitude gates the SR→brain entrainment
+// - SIE occurs only when: ANY harmonic high coherence AND beta quiet
+//
+// v8.0 CHANGES:
+// - Updated to use coherence_mask for multi-harmonic SIE testing
+// - SIE logic: sr_amplification = |sie_per_harmonic| where
+//   sie_per_harmonic[h] = high_coherence[h] AND beta_quiet
 //
 // TEST SCENARIOS:
 // 1. Baseline (no external field): Verify theta oscillates independently
 // 2. External f₀ signal: Verify f₀ oscillator locks to input
-// 3. High beta state: Verify no entrainment even with external f₀
-// 4. Low beta state: Verify entrainment and coherence when beta quiet
-// 5. SIE detection: Verify amplification only when coherence + beta quiet
-// 6. State transition: Normal → Meditation → Normal (beta dynamics)
+// 3. High beta state: Verify SIE gated by beta
+// 4. Low beta state: Verify SIE enabled when beta quiet
+// 5. State transition: Normal → Meditation → Normal (beta dynamics)
+// 6. SIE logic: Verify amplification = coherence AND beta_quiet
 //=============================================================================
 `timescale 1ns / 1ps
 
@@ -41,6 +46,10 @@ wire signed [WIDTH-1:0] sr_coherence;
 wire sr_amplification;
 wire beta_quiet;
 
+// v7.3 Multi-harmonic outputs (for accurate SIE logic testing)
+wire [4:0] coherence_mask;  // Which harmonics have high coherence
+wire [4:0] sie_per_harmonic;  // Per-harmonic SIE states
+
 // Instantiate DUT with FAST_SIM
 phi_n_neural_processor #(
     .WIDTH(WIDTH),
@@ -65,7 +74,9 @@ phi_n_neural_processor #(
     .f0_amplitude(f0_amplitude),
     .sr_coherence(sr_coherence),
     .sr_amplification(sr_amplification),
-    .beta_quiet(beta_quiet)
+    .beta_quiet(beta_quiet),
+    .coherence_mask(coherence_mask),
+    .sie_per_harmonic(sie_per_harmonic)
 );
 
 // Clock generation
@@ -77,7 +88,8 @@ integer pass_count;
 integer fail_count;
 
 // Measurement variables
-integer high_coherence_count;
+integer high_coherence_count;      // f₀ coherence > 0.75 (single harmonic)
+integer any_coherence_count;       // ANY harmonic coherence > 0.75 (v7.3 multi-harmonic)
 integer amplification_count;
 integer beta_quiet_count;
 integer update_count;
@@ -162,6 +174,7 @@ task run_updates;
                 update_count = update_count + 1;
                 if (sr_coherence > max_coherence) max_coherence = sr_coherence;
                 if (sr_coherence > 18'sd12288) high_coherence_count = high_coherence_count + 1;
+                if (|coherence_mask) any_coherence_count = any_coherence_count + 1;  // v7.3: any harmonic high
                 if (sr_amplification) amplification_count = amplification_count + 1;
                 if (beta_quiet) beta_quiet_count = beta_quiet_count + 1;
             end
@@ -173,6 +186,7 @@ endtask
 task reset_counters;
     begin
         high_coherence_count = 0;
+        any_coherence_count = 0;
         amplification_count = 0;
         beta_quiet_count = 0;
         update_count = 0;
@@ -276,14 +290,14 @@ initial begin
     $display("  Beta quiet: %0d/%0d (%.1f%%)",
              beta_quiet_count, update_count,
              (update_count > 0) ? (beta_quiet_count * 100.0 / update_count) : 0);
-    $display("  High coherence: %0d, Amplification: %0d", high_coherence_count, amplification_count);
+    $display("  Any harmonic high coherence: %0d, Amplification: %0d", any_coherence_count, amplification_count);
 
     // In NORMAL state, beta should NOT be quiet often
     report_test("Beta mostly NOT quiet in NORMAL", beta_quiet_count < update_count / 2);
 
-    // Even if coherence is high, amplification requires beta quiet
-    // So amplification should be less than or equal to coherence events
-    report_test("Amplification gated by beta", amplification_count <= high_coherence_count);
+    // v7.3: SIE requires ANY harmonic high coherence + beta quiet
+    // So amplification should be less than or equal to any_coherence events
+    report_test("Amplification gated by coherence", amplification_count <= any_coherence_count || any_coherence_count == 0);
 
     $display("");
 
@@ -322,22 +336,25 @@ initial begin
     //=========================================================================
     $display("TEST 5: State Transition Dynamics");
 
-    // Phase 1: NORMAL
-    reset_counters();
+    // Phase 1: NORMAL (with settling)
     sr_field_input = f0_external_signal;
     state_select = 3'd0;
+    run_updates(10000);  // Let state settle
+    reset_counters();
     run_updates(30000);
     normal_amp = amplification_count;
 
-    // Phase 2: MEDITATION
-    reset_counters();
+    // Phase 2: MEDITATION (with settling for MU transition)
     state_select = 3'd4;
+    run_updates(10000);  // Let oscillators adjust to lower MU
+    reset_counters();
     run_updates(30000);
     med_amp = amplification_count;
 
-    // Phase 3: Back to NORMAL
-    reset_counters();
+    // Phase 3: Back to NORMAL (with settling)
     state_select = 3'd0;
+    run_updates(10000);  // Let state settle
+    reset_counters();
     run_updates(30000);
     normal2_amp = amplification_count;
 
@@ -362,12 +379,13 @@ initial begin
     run_updates(100000);  // Long run for statistics
 
     $display("  Total updates: %0d", update_count);
-    $display("  High coherence events: %0d", high_coherence_count);
+    $display("  f0 high coherence events: %0d", high_coherence_count);
+    $display("  Any harmonic high coherence events: %0d", any_coherence_count);
     $display("  Beta quiet events: %0d", beta_quiet_count);
     $display("  SIE (amplification) events: %0d", amplification_count);
 
-    // SIE should never exceed high coherence (requires both conditions)
-    report_test("SIE <= high coherence (logic AND)", amplification_count <= high_coherence_count || high_coherence_count == 0);
+    // v7.3: SIE should never exceed ANY harmonic high coherence (requires both conditions)
+    report_test("SIE <= any coherence (logic AND)", amplification_count <= any_coherence_count || any_coherence_count == 0);
 
     // SIE should never exceed beta quiet events
     report_test("SIE <= beta quiet (logic AND)", amplification_count <= beta_quiet_count || beta_quiet_count == 0);

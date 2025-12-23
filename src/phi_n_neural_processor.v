@@ -1,5 +1,12 @@
 //=============================================================================
-// Top-Level Module - v7.3 with Multi-Harmonic Schumann Resonance Bank
+// Top-Level Module - v8.0 with Theta Phase Multiplexing & Scaffold Architecture
+//
+// v8.0 CHANGES (Dupret et al. 2025 Integration):
+// - Theta phase multiplexing: 8 discrete phases per theta cycle
+// - Enables fine-grained encoding/retrieval gating in CA3
+// - Phases 0-3: encoding-dominant window (theta_x > 0)
+// - Phases 4-7: retrieval-dominant window (theta_x < 0)
+// - Scaffold architecture: L4/L5b stable, L2/3/L6 plastic
 //
 // v7.3 CHANGES (Multi-Harmonic SR Bank):
 // - 5 SR harmonics (7.83, 14.3, 20.8, 27.3, 33.8 Hz) externally driven
@@ -117,7 +124,10 @@ module phi_n_neural_processor #(
     // SR Coupling indicators
     output wire signed [WIDTH-1:0] sr_coherence,  // f₀ coherence (v7.2 compat)
     output wire                    sr_amplification,  // SIE active (any harmonic)
-    output wire                    beta_quiet  // v7.2: Indicates SR-ready state
+    output wire                    beta_quiet,  // v7.2: Indicates SR-ready state
+
+    // v8.0: Theta phase output (8 phases per cycle for temporal multiplexing)
+    output wire [2:0] theta_phase
 );
 
 localparam signed [WIDTH-1:0] ONE_THIRD = 18'sd5461;
@@ -170,6 +180,7 @@ config_controller #(.WIDTH(WIDTH), .FRAC(FRAC)) config_ctrl (
 wire signed [WIDTH-1:0] thalamic_theta_output;
 wire signed [WIDTH-1:0] thalamic_theta_x, thalamic_theta_y;
 wire signed [WIDTH-1:0] thalamic_theta_amp;
+wire [2:0] thalamic_theta_phase;  // v8.0: 8-phase theta cycle
 wire signed [WIDTH-1:0] l6_alpha_feedback;
 
 wire signed [WIDTH-1:0] sensory_l6_x, assoc_l6_x, motor_l6_x;
@@ -237,6 +248,7 @@ thalamus #(
     .theta_x(thalamic_theta_x),
     .theta_y(thalamic_theta_y),
     .theta_amplitude(thalamic_theta_amp),
+    .theta_phase(thalamic_theta_phase),  // v8.0: 8-phase theta cycle
 
     // f₀ SR Reference outputs (v7.2 compatibility)
     .f0_x(f0_x),
@@ -275,11 +287,13 @@ assign cortical_pattern[4] = ~motor_l23_x[WIDTH-1];    // Motor L2/3 gamma
 assign cortical_pattern[5] = ~motor_l6_x[WIDTH-1];     // Motor L6 alpha
 
 //=============================================================================
-// CA3 PHASE MEMORY (v5.3 with decay, v6.2 pure closed-loop)
+// CA3 PHASE MEMORY (v8.0 with theta phase multiplexing)
 //=============================================================================
 wire [5:0] phase_pattern;
 wire ca3_learning_int, ca3_recalling_int;
 wire [3:0] ca3_debug;
+wire ca3_encoding_window, ca3_retrieval_window;
+wire [1:0] ca3_phase_subwindow;
 
 ca3_phase_memory #(
     .WIDTH(WIDTH),
@@ -290,11 +304,15 @@ ca3_phase_memory #(
     .rst(rst),
     .clk_en(clk_4khz_en),
     .theta_x(thalamic_theta_x),
+    .theta_phase(thalamic_theta_phase),  // v8.0: 8-phase theta cycle
     .pattern_in(cortical_pattern),  // v6.2: Pure closed-loop, no external injection
     .phase_pattern(phase_pattern),
     .learning(ca3_learning_int),
     .recalling(ca3_recalling_int),
-    .debug_state(ca3_debug)
+    .debug_state(ca3_debug),
+    .encoding_window(ca3_encoding_window),    // v8.0: phase-based windows
+    .retrieval_window(ca3_retrieval_window),
+    .phase_subwindow(ca3_phase_subwindow)
 );
 
 assign ca3_learning = ca3_learning_int;
@@ -444,5 +462,6 @@ output_mixer #(.WIDTH(WIDTH), .FRAC(FRAC)) mixer (
 assign debug_motor_l23 = motor_l23_x;
 assign debug_theta = thalamic_theta_x;
 assign cortical_pattern_out = cortical_pattern;  // v6.1: Expose for debugging
+assign theta_phase = thalamic_theta_phase;       // v8.0: Expose theta phase for analysis
 
 endmodule

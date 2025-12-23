@@ -81,8 +81,10 @@ localparam signed [WIDTH-1:0] OMEGA_DT_F2 = 18'sd504;   // 19.60 Hz (φ² × 7.4
 localparam signed [WIDTH-1:0] OMEGA_DT_F3 = 18'sd817;   // 31.73 Hz (φ³ × 7.49)
 localparam signed [WIDTH-1:0] OMEGA_DT_F4 = 18'sd1321;  // 51.33 Hz (φ⁴ × 7.49)
 
-// Beta quiet threshold: 0.75 in Q14 (power-of-2 friendly for shift operations)
-localparam signed [WIDTH-1:0] BETA_QUIET_THRESHOLD = 18'sd12288;
+// Beta quiet threshold: 0.9375 in Q14
+// At MU=4 (NORMAL), amplitude ~2.0, |x| avg ~1.27 - rarely quiet
+// At MU=2 (MEDITATION), amplitude ~1.41, |x| avg ~0.90 - frequently quiet
+localparam signed [WIDTH-1:0] BETA_QUIET_THRESHOLD = 18'sd15360;
 
 // Coherence threshold: 0.75 in Q14 (high phase-locking = SIE state)
 localparam signed [WIDTH-1:0] COHERENCE_THRESHOLD = 18'sd12288;
@@ -138,10 +140,10 @@ wire signed [2*WIDTH-1:0] beta_factor_full;
 assign beta_diff = (beta_amplitude >= BETA_QUIET_THRESHOLD) ? 18'sd0 :
                    (BETA_QUIET_THRESHOLD - beta_amplitude);
 
-// Scale to Q14: (diff / threshold) * 16384 = diff * (16384/12288) = diff * 4/3
-// Approximate 4/3 as (1 + 1/4 + 1/16) = 1.3125 (close enough)
-// = diff + (diff >> 2) + (diff >> 4)
-assign beta_factor_full = {beta_diff, 14'b0} + {2'b0, beta_diff, 12'b0} + {4'b0, beta_diff, 10'b0};
+// Scale to Q14: (diff / threshold) * 16384 = diff * (16384/15360) = diff * 1.0667
+// Approximate 1.0667 as (1 + 1/16) = 1.0625 (close enough)
+// = diff + (diff >> 4)
+assign beta_factor_full = {beta_diff, 14'b0} + {4'b0, beta_diff, 10'b0};
 assign beta_factor = (beta_factor_full[2*WIDTH-1:FRAC] > ONE_Q14) ? ONE_Q14 :
                      beta_factor_full[FRAC +: WIDTH];
 

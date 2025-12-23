@@ -1,5 +1,14 @@
 //=============================================================================
-// CA3 Phase Memory - v5.5 (incorporating v5.3 memory decay)
+// CA3 Phase Memory - v8.0 with Theta Phase Multiplexing
+//
+// v8.0 CHANGES (Dupret et al. 2025 Integration):
+// - Theta phase multiplexing: uses 8 discrete phases per theta cycle
+// - Early encoding (phases 0-1): strongest learning, sensory-dominated
+// - Late encoding (phases 2-3): consolidation, CA3 recurrence begins
+// - Early retrieval (phases 4-5): pattern completion, CA3-dominated
+// - Late retrieval (phases 6-7): output phase, decay/pruning
+// - Phase window outputs: encoding_window, retrieval_window for downstream gating
+// - Maintains backwards compatibility with theta_x threshold-based gating
 //
 // Implements Hebbian learning with PHASE ENCODING output.
 // Each stored pattern bit indicates phase relationship to theta:
@@ -7,8 +16,8 @@
 //   0 = anti-phase with theta (phase offset = π)
 //
 // THETA-GATED OPERATION (biologically accurate):
-//   - Learn during theta PEAK (encoding window)
-//   - Recall during theta TROUGH (retrieval window)
+//   - Learn during theta PEAK (encoding window, phases 0-3)
+//   - Recall during theta TROUGH (retrieval window, phases 4-7)
 //   - DECAY during theta TROUGH when no pattern active (v5.3)
 //
 // MEMORY DECAY (v5.3):
@@ -19,7 +28,9 @@
 //
 // INTERFACE:
 //   - Input: 6-bit pattern (maps to 6 cortical oscillators)
+//   - Input: 3-bit theta_phase (8 phases per cycle from thalamus, v8.0)
 //   - Output: 6-bit phase_pattern for coupling signals
+//   - Output: encoding_window, retrieval_window (v8.0 phase-based windows)
 //   - Theta phase determines learn vs recall vs decay mode automatically
 //
 // TIMING ANALYSIS:
@@ -41,6 +52,9 @@ module ca3_phase_memory #(
     // Theta phase reference (from thalamus)
     input  wire signed [WIDTH-1:0] theta_x,
 
+    // v8.0: Fine-grained theta phase (8 phases per cycle)
+    input  wire [2:0] theta_phase,
+
     // Pattern input (from external or cortical activity)
     input  wire [N_UNITS-1:0] pattern_in,
 
@@ -50,7 +64,12 @@ module ca3_phase_memory #(
     // Status outputs
     output reg  learning,           // High during learn phase
     output reg  recalling,          // High during recall phase
-    output wire [3:0] debug_state
+    output wire [3:0] debug_state,
+
+    // v8.0: Phase-based window outputs for downstream gating
+    output wire encoding_window,    // High during phases 0-3 (encoding)
+    output wire retrieval_window,   // High during phases 4-7 (retrieval)
+    output wire [1:0] phase_subwindow  // 0=early_enc, 1=late_enc, 2=early_ret, 3=late_ret
 );
 
 //-----------------------------------------------------------------------------
@@ -322,6 +341,35 @@ always @(posedge clk or posedge rst) begin
         endcase
     end
 end
+
+//-----------------------------------------------------------------------------
+// v8.0: Theta Phase Window Computation
+//
+// BIOLOGICAL BASIS (Dupret et al. 2025):
+// "With an across-timescales multiplexing, a single population performs
+// multiple computations at the same time, but with some computations
+// performed over faster-timescale activity and other computations
+// performed over slower-timescale activity."
+//
+// Phase windows enable downstream circuits to gate based on theta phase:
+//   - encoding_window (phases 0-3): sensory inputs should dominate
+//   - retrieval_window (phases 4-7): CA3 recurrence should dominate
+//   - phase_subwindow: finer 4-way distinction for gamma nesting
+//     0 = early_encoding (phases 0-1): fast gamma, sensory
+//     1 = late_encoding (phases 2-3): slow gamma, consolidation
+//     2 = early_retrieval (phases 4-5): pattern completion
+//     3 = late_retrieval (phases 6-7): output/decay
+//-----------------------------------------------------------------------------
+
+// Encoding window: phases 0-3 (theta_x > 0 region, peak vicinity)
+assign encoding_window = ~theta_phase[2];  // Bit 2 = 0 means phases 0-3
+
+// Retrieval window: phases 4-7 (theta_x < 0 region, trough vicinity)
+assign retrieval_window = theta_phase[2];   // Bit 2 = 1 means phases 4-7
+
+// Subwindow computation: {theta_phase[2], theta_phase[1]}
+// This gives 4 windows: 00=early_enc, 01=late_enc, 10=early_ret, 11=late_ret
+assign phase_subwindow = theta_phase[2:1];
 
 assign debug_state = {state, learning};
 

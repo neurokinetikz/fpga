@@ -478,15 +478,17 @@ initial begin
     //=========================================================================
     $display("TEST 7: State Transition Dynamics");
 
-    // Phase 1: NORMAL
-    reset_counters();
+    // Phase 1: NORMAL (with settling)
     state_select = 3'd0;
+    run_clocks(10000);  // Let NORMAL state settle
+    reset_counters();
     run_clocks(30000);
     normal_sie = total_sie_any_count;
 
-    // Phase 2: MEDITATION
-    reset_counters();
+    // Phase 2: MEDITATION (with settling)
     state_select = 3'd4;
+    run_clocks(10000);  // Let MEDITATION state settle (MU transition)
+    reset_counters();
     run_clocks(30000);
     med_sie = total_sie_any_count;
 

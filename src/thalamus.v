@@ -1,10 +1,17 @@
 //=============================================================================
-// Thalamus Module - v7.4 with Continuous Coherence-Based Gain
+// Thalamus Module - v8.0 with Theta Phase Multiplexing
 //
 // NEUROPHYSIOLOGICAL BASIS:
 // "Layer 4 shows characteristic current sinks... with gamma and theta
 // oscillations dominating this feedforward processing layer"
 // "Gamma is not present in LGN... gamma is an emergent property of cortex"
+//
+// v8.0 THETA PHASE MULTIPLEXING (Dupret et al. 2025):
+// - Divides theta cycle into 8 discrete phases (theta_phase[2:0])
+// - Enables fine-grained encoding/retrieval gating in CA3
+// - Phases 0-3: positive theta (encoding-dominant window)
+// - Phases 4-7: negative theta (retrieval-dominant window)
+// - Supports temporal multiplexing: different computations at different phases
 //
 // v7.4 CONTINUOUS GAIN BOOST:
 // - Replaces binary SIE gain switching with continuous scaling
@@ -68,6 +75,13 @@ module thalamus #(
     output wire signed [WIDTH-1:0] theta_x,
     output wire signed [WIDTH-1:0] theta_y,
     output wire signed [WIDTH-1:0] theta_amplitude,
+
+    // v8.0: Theta phase output (8 phases per cycle)
+    // Phase 0-1: rising to peak (early encoding)
+    // Phase 2-3: falling from peak (late encoding)
+    // Phase 4-5: falling to trough (early retrieval)
+    // Phase 6-7: rising from trough (late retrieval)
+    output wire [2:0] theta_phase,
 
     // f₀ SR Reference outputs (driven by external field) - v7.2 compatibility
     output wire signed [WIDTH-1:0] f0_x,
@@ -293,6 +307,119 @@ assign gain_applied = sensory_input * final_gain;
 assign gain_applied_scaled = gain_applied >>> FRAC;
 assign gated_full = gain_applied_scaled * theta_gate;
 assign theta_gated_output = gated_full >>> FRAC;
+
+//-----------------------------------------------------------------------------
+// v8.2: Theta Phase Computation (8 phases per cycle)
+//
+// BIOLOGICAL BASIS (Dupret et al. 2025):
+// "Studying cycle-by-cycle variability of theta oscillations has indicated
+// multiplexing for population-level trading off between encoding and retrieval."
+//
+// CHALLENGE: Both theta_x and theta_y have DC offsets from entrainment coupling.
+// The Hopf oscillator cross-coupling (omega*x in dy/dt) propagates x's DC to y.
+//
+// SOLUTION: Remove DC offset from theta_y using an IIR low-pass filter:
+//   y_avg = y_avg + alpha*(y - y_avg)  // Tracks DC component
+//   y_hp = y - y_avg                    // High-pass (AC only)
+//
+// Using alpha = 1/256 (>>8) for slow adaptation (~40 samples time constant)
+//
+// Phase detection using DC-corrected y:
+//   - y_hp > 0: "rising toward peak" (encoding phases 0-3)
+//   - y_hp <= 0: "falling toward trough" (retrieval phases 4-7)
+//
+// 8-phase mapping: {y_pos, y_rising, |y|>amp/2}
+//   Phase 0: y>0, rising, |y|>amp/2  → early rising (fast)
+//   Phase 1: y>0, rising, |y|<=amp/2 → late rising (slow, near peak)
+//   Phase 2: y>0, falling, |y|<=amp/2 → early falling (just past peak)
+//   Phase 3: y>0, falling, |y|>amp/2  → late falling (fast)
+//   Phase 4: y<=0, falling, |y|>amp/2 → early descending (fast)
+//   Phase 5: y<=0, falling, |y|<=amp/2 → late descending (near trough)
+//   Phase 6: y<=0, rising, |y|<=amp/2 → early rising (just past trough)
+//   Phase 7: y<=0, rising, |y|>amp/2  → late rising (fast)
+//
+// Encoding vs Retrieval windows (based on y sign):
+//   - y_hp > 0 (phases 0-3): Encoding - theta approaching/leaving peak
+//   - y_hp <= 0 (phases 4-7): Retrieval - theta approaching/leaving trough
+//-----------------------------------------------------------------------------
+
+// DC removal: IIR low-pass filter to track mean, then subtract
+// y_avg tracks the DC component of theta_y
+reg signed [WIDTH-1:0] theta_y_avg;
+wire signed [WIDTH-1:0] theta_y_hp;  // High-pass filtered (DC removed)
+
+always @(posedge clk or posedge rst) begin
+    if (rst) begin
+        theta_y_avg <= 18'sd0;
+    end else if (clk_en) begin
+        // IIR filter: y_avg = y_avg + (y - y_avg)/256
+        // = y_avg + (y >> 8) - (y_avg >> 8)
+        theta_y_avg <= theta_y_avg + ((theta_y_int - theta_y_avg) >>> 8);
+    end
+end
+
+// High-pass = signal minus DC average
+assign theta_y_hp = theta_y_int - theta_y_avg;
+
+// Use DC-corrected y for phase detection
+wire theta_y_positive = ~theta_y_hp[WIDTH-1];  // y_hp >= 0
+
+// Compute absolute y for magnitude comparison
+wire signed [WIDTH-1:0] theta_y_abs = theta_y_hp[WIDTH-1] ? -theta_y_hp : theta_y_hp;
+
+// Track DC-removed amplitude using IIR filter on |y_hp| peaks
+// This gives us a better threshold than the DC-inflated raw amplitude
+reg signed [WIDTH-1:0] theta_y_hp_amp;
+always @(posedge clk or posedge rst) begin
+    if (rst) begin
+        theta_y_hp_amp <= 18'sd4096;  // Initial estimate
+    end else if (clk_en) begin
+        // Track peak amplitude: slowly adapt toward current |y_hp|
+        // Use faster adaptation when |y| is larger than current estimate
+        if (theta_y_abs > theta_y_hp_amp)
+            theta_y_hp_amp <= theta_y_hp_amp + ((theta_y_abs - theta_y_hp_amp) >>> 4);
+        else
+            theta_y_hp_amp <= theta_y_hp_amp - (theta_y_hp_amp >>> 8);  // Slow decay
+    end
+end
+
+// Compare |y_hp| to quarter of tracked amplitude to determine "fast" vs "slow" region
+// Using quarter instead of half gives more even phase distribution
+wire signed [WIDTH-1:0] amp_quarter = theta_y_hp_amp >>> 2;
+wire y_gt_half_amp = (theta_y_abs > amp_quarter);
+
+// Track y derivative by comparing to previous value (registered)
+reg signed [WIDTH-1:0] prev_theta_y;
+always @(posedge clk or posedge rst) begin
+    if (rst) begin
+        prev_theta_y <= 18'sd0;
+    end else if (clk_en) begin
+        prev_theta_y <= theta_y_hp;
+    end
+end
+
+wire y_rising = (theta_y_hp > prev_theta_y);  // dy/dt > 0
+
+// Compute phase based on y sign, y derivative, and magnitude
+// Using truth table: {y_pos, y_rising, y_gt_half_amp} → phase
+reg [2:0] theta_phase_int;
+always @(*) begin
+    case ({theta_y_positive, y_rising, y_gt_half_amp})
+        // y > 0 (encoding window, phases 0-3)
+        3'b111: theta_phase_int = 3'd0;  // y>0, rising, |y|>amp/2 → Phase 0
+        3'b110: theta_phase_int = 3'd1;  // y>0, rising, |y|<=amp/2 → Phase 1
+        3'b100: theta_phase_int = 3'd2;  // y>0, falling, |y|<=amp/2 → Phase 2
+        3'b101: theta_phase_int = 3'd3;  // y>0, falling, |y|>amp/2 → Phase 3
+        // y <= 0 (retrieval window, phases 4-7)
+        3'b001: theta_phase_int = 3'd4;  // y<=0, falling, |y|>amp/2 → Phase 4
+        3'b000: theta_phase_int = 3'd5;  // y<=0, falling, |y|<=amp/2 → Phase 5
+        3'b010: theta_phase_int = 3'd6;  // y<=0, rising, |y|<=amp/2 → Phase 6
+        3'b011: theta_phase_int = 3'd7;  // y<=0, rising, |y|>amp/2 → Phase 7
+        default: theta_phase_int = 3'd0;
+    endcase
+end
+
+assign theta_phase = theta_phase_int;
 
 //-----------------------------------------------------------------------------
 // Output Assignments
