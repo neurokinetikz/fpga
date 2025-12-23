@@ -37,6 +37,8 @@ iverilog -o tb_learning_fast.vvp -s tb_learning_fast \
 make iverilog-fast     # Fast CA3/theta test
 make iverilog-full     # Full system test
 make iverilog-hopf     # Hopf oscillator unit test
+make iverilog-theta    # Theta phase multiplexing test (v8.3)
+make iverilog-scaffold # Scaffold architecture test (v8.3)
 make iverilog-all      # All tests
 make wave-fast         # Open waveform in GTKWave
 make clean             # Clean generated files
@@ -68,7 +70,8 @@ fpga/
 │   ├── visualize_*.py            # Python visualization
 │   └── run_vivado_*.tcl          # Vivado TCL scripts
 ├── docs/                         # Specifications
-│   └── FPGA_SPECIFICATION_V8.md  # Current architecture spec (v8.0)
+│   ├── FPGA_SPECIFICATION_V8.md  # Base architecture spec (v8.0)
+│   └── SPEC_v8.4_UPDATE.md       # Current version (v8.4)
 └── Makefile
 ```
 
@@ -132,17 +135,22 @@ fpga/
 
 ## Current Specification
 
-See [docs/FPGA_SPECIFICATION_V8.md](docs/FPGA_SPECIFICATION_V8.md) for the complete v8.0 architecture with:
-- Continuous coherence-based gain (replaces binary SIE switching)
-- 5-harmonic SR bank with piecewise linear sigmoid
-- Continuous beta factor gating
-- Validated entanglement analysis (p=8.1e-38)
+See [docs/SPEC_v8.4_UPDATE.md](docs/SPEC_v8.4_UPDATE.md) for the latest v8.4 architecture with:
+- Theta phase multiplexing (8-phase encoding/retrieval windows)
+- Scaffold architecture (L4/L5b stable, L2/3/L6 plastic)
+- Gamma-theta nesting (L2/3 frequency switching: 65.3/40.36 Hz)
+- Comprehensive integration testing (121+ tests)
+
+Base specification: [docs/FPGA_SPECIFICATION_V8.md](docs/FPGA_SPECIFICATION_V8.md)
 
 ## Testing
 
 All testbenches should pass. Key tests:
-- `tb_full_system_fast`: 8/8 tests - full integration
-- `tb_learning_fast`: 7/7 tests - CA3 Hebbian learning
+- `tb_full_system_fast`: 15/15 tests - full integration (v6.5)
+- `tb_theta_phase_multiplexing`: 19/19 tests - theta phase (v8.3)
+- `tb_scaffold_architecture`: 14/14 tests - scaffold layers (v8.0)
+- `tb_gamma_theta_nesting`: 7/7 tests - gamma-theta PAC (v8.4)
+- `tb_learning_fast`: 8/8 tests - CA3 Hebbian learning (v2.1)
 - `tb_state_transitions`: 12/12 tests - consciousness states
 
 ## Notes

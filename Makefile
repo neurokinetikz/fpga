@@ -1,4 +1,4 @@
-# Makefile for Phi-N Neural Processor v5.5
+# Makefile for Phi-N Neural Processor v8.4
 # Supports both Icarus Verilog (iverilog) and Vivado simulations
 
 # Directories
@@ -19,7 +19,7 @@ all: help
 .PHONY: help
 help:
 	@echo "========================================"
-	@echo "Phi-N Neural Processor v8.3 - Build System"
+	@echo "Phi-N Neural Processor v8.4 - Build System"
 	@echo "========================================"
 	@echo ""
 	@echo "Icarus Verilog targets:"
@@ -70,6 +70,7 @@ $(SIM_DIR)/tb_full_system.vvp: $(SRCS) $(TB_DIR)/tb_full_system.v
 	iverilog -o $@ -s tb_full_system \
 		$(SRC_DIR)/clock_enable_generator.v \
 		$(SRC_DIR)/hopf_oscillator.v \
+		$(SRC_DIR)/hopf_oscillator_stochastic.v \
 		$(SRC_DIR)/ca3_phase_memory.v \
 		$(SRC_DIR)/thalamus.v \
 		$(SRC_DIR)/cortical_column.v \
@@ -77,6 +78,8 @@ $(SIM_DIR)/tb_full_system.vvp: $(SRCS) $(TB_DIR)/tb_full_system.v
 		$(SRC_DIR)/pink_noise_generator.v \
 		$(SRC_DIR)/output_mixer.v \
 		$(SRC_DIR)/phi_n_neural_processor.v \
+		$(SRC_DIR)/sr_harmonic_bank.v \
+		$(SRC_DIR)/sr_noise_generator.v \
 		$(TB_DIR)/tb_full_system.v
 
 # Hopf oscillator unit test
