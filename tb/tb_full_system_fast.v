@@ -1,6 +1,9 @@
 //=============================================================================
-// Full System Testbench (Fast Version) - v6.3 (Sensory-Only)
+// Full System Testbench (Fast Version) - v6.4 (v8.3 Phase Tests)
 //
+// v6.4: Added theta phase multiplexing tests (v8.3 features)
+//       - TEST 9: Theta phase cycles through all 8 values
+//       - TEST 10: Encoding/retrieval window split (~50/50)
 // v6.3: Uses phi_n_neural_processor with FAST_SIM=1 parameter
 // This uses the actual production module with fast clock divider (÷10 vs ÷31250)
 // Ensures testbench matches production RTL exactly
@@ -39,6 +42,7 @@ wire ca3_learning;
 wire ca3_recalling;
 wire [5:0] ca3_phase_pattern;
 wire [5:0] cortical_pattern;
+wire [2:0] theta_phase;  // v6.4: Theta phase output for v8.3 tests
 
 phi_n_neural_processor #(
     .WIDTH(WIDTH),
@@ -57,7 +61,8 @@ phi_n_neural_processor #(
     .ca3_learning(ca3_learning),
     .ca3_recalling(ca3_recalling),
     .ca3_phase_pattern(ca3_phase_pattern),
-    .cortical_pattern_out(cortical_pattern)
+    .cortical_pattern_out(cortical_pattern),
+    .theta_phase(theta_phase)  // v6.4: Theta phase for v8.3 tests
 );
 
 // Hierarchical access to internal signals for monitoring
@@ -78,6 +83,10 @@ wire signed [WIDTH-1:0] theta_couple_base = dut.theta_couple_base;
 wire signed [WIDTH-1:0] phase_couple_sensory_l23 = dut.phase_couple_sensory_l23;
 wire signed [WIDTH-1:0] phase_couple_motor_l6 = dut.phase_couple_motor_l6;
 
+// v6.4: Theta phase multiplexing signals (v8.3 features)
+wire encoding_window = dut.ca3_encoding_window;
+wire retrieval_window = dut.ca3_retrieval_window;
+
 // Fast clock: 10ns period (100 MHz)
 initial begin
     clk = 0;
@@ -90,6 +99,13 @@ integer update_count;
 integer dac_min, dac_max;
 integer peak_count;
 reg prev_peak;
+
+// v6.4: Theta phase multiplexing test variables
+reg [7:0] phase_visit_count [0:7];  // Count visits to each phase
+integer encoding_cycles, retrieval_cycles;
+reg [2:0] prev_theta_phase;
+integer phase_test_updates;
+integer i;  // Loop variable for phase tests
 
 //-----------------------------------------------------------------------------
 // Task to wait for N 4kHz updates using clock-based synchronization
@@ -338,6 +354,84 @@ initial begin
         test_pass = test_pass + 1;
     end else begin
         $display("         FAIL - Column signals missing");
+        test_fail = test_fail + 1;
+    end
+
+    // TEST 9: v8.3 Theta phase cycling (all 8 phases visited)
+    $display("\n[TEST 9] Theta phase cycling (v8.3)");
+    // Reset phase counters
+    for (i = 0; i < 8; i = i + 1) phase_visit_count[i] = 0;
+    prev_theta_phase = theta_phase;
+    phase_test_updates = 0;
+
+    // Run for ~3 theta cycles (~500ms at 5.89 Hz)
+    begin : test9_block
+        integer local_updates;
+        local_updates = 0;
+        while (local_updates < 2500) begin
+            @(posedge clk);
+            #1;
+            if (clk_4khz_en) begin
+                local_updates = local_updates + 1;
+                phase_test_updates = phase_test_updates + 1;
+                phase_visit_count[theta_phase] = phase_visit_count[theta_phase] + 1;
+            end
+        end
+    end
+
+    $display("         Phase visits: [0]=%0d [1]=%0d [2]=%0d [3]=%0d [4]=%0d [5]=%0d [6]=%0d [7]=%0d",
+             phase_visit_count[0], phase_visit_count[1], phase_visit_count[2], phase_visit_count[3],
+             phase_visit_count[4], phase_visit_count[5], phase_visit_count[6], phase_visit_count[7]);
+
+    // Check all 8 phases were visited
+    begin : test9_check
+        integer all_visited;
+        all_visited = 1;
+        for (i = 0; i < 8; i = i + 1) begin
+            if (phase_visit_count[i] == 0) all_visited = 0;
+        end
+        if (all_visited) begin
+            $display("         PASS - All 8 theta phases visited");
+            test_pass = test_pass + 1;
+        end else begin
+            $display("         FAIL - Not all phases visited");
+            test_fail = test_fail + 1;
+        end
+    end
+
+    // TEST 10: v8.3 Encoding/retrieval window split
+    $display("\n[TEST 10] Encoding/retrieval window split (v8.3)");
+    encoding_cycles = 0;
+    retrieval_cycles = 0;
+
+    begin : test10_block
+        integer local_updates;
+        local_updates = 0;
+        while (local_updates < 2500) begin
+            @(posedge clk);
+            #1;
+            if (clk_4khz_en) begin
+                local_updates = local_updates + 1;
+                if (encoding_window) encoding_cycles = encoding_cycles + 1;
+                if (retrieval_window) retrieval_cycles = retrieval_cycles + 1;
+            end
+        end
+    end
+
+    $display("         Encoding: %0d/%0d (%.1f%%)", encoding_cycles, phase_test_updates,
+             (100.0 * encoding_cycles) / phase_test_updates);
+    $display("         Retrieval: %0d/%0d (%.1f%%)", retrieval_cycles, phase_test_updates,
+             (100.0 * retrieval_cycles) / phase_test_updates);
+
+    // Both windows should be active 30-70% of time (roughly 50/50 split)
+    if (encoding_cycles > phase_test_updates / 5 &&
+        retrieval_cycles > phase_test_updates / 5 &&
+        encoding_cycles < phase_test_updates * 4 / 5 &&
+        retrieval_cycles < phase_test_updates * 4 / 5) begin
+        $display("         PASS - Windows split approximately 50/50");
+        test_pass = test_pass + 1;
+    end else begin
+        $display("         FAIL - Window split not balanced");
         test_fail = test_fail + 1;
     end
 

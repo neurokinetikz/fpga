@@ -19,13 +19,15 @@ all: help
 .PHONY: help
 help:
 	@echo "========================================"
-	@echo "Phi-N Neural Processor v5.5 - Build System"
+	@echo "Phi-N Neural Processor v8.3 - Build System"
 	@echo "========================================"
 	@echo ""
 	@echo "Icarus Verilog targets:"
 	@echo "  make iverilog-fast    - Run fast CA3/theta test"
 	@echo "  make iverilog-full    - Run full system test"
 	@echo "  make iverilog-hopf    - Run Hopf oscillator unit test"
+	@echo "  make iverilog-theta   - Run theta phase multiplexing test (v8.3)"
+	@echo "  make iverilog-scaffold - Run scaffold architecture test (v8.3)"
 	@echo "  make iverilog-all     - Run all tests"
 	@echo ""
 	@echo "Vivado targets:"
@@ -90,9 +92,55 @@ $(SIM_DIR)/tb_hopf_oscillator.vvp: $(SRC_DIR)/hopf_oscillator.v $(TB_DIR)/tb_hop
 		$(SRC_DIR)/hopf_oscillator.v \
 		$(TB_DIR)/tb_hopf_oscillator.v
 
+# v8.3: Theta phase multiplexing test
+.PHONY: iverilog-theta
+iverilog-theta: $(SIM_DIR)/tb_theta_phase_multiplexing.vvp
+	@echo "Running theta phase multiplexing test (v8.3)..."
+	cd $(SIM_DIR) && vvp tb_theta_phase_multiplexing.vvp
+
+$(SIM_DIR)/tb_theta_phase_multiplexing.vvp: $(SRCS) $(TB_DIR)/tb_theta_phase_multiplexing.v
+	@mkdir -p $(SIM_DIR)
+	iverilog -o $@ -s tb_theta_phase_multiplexing \
+		$(SRC_DIR)/clock_enable_generator.v \
+		$(SRC_DIR)/hopf_oscillator.v \
+		$(SRC_DIR)/hopf_oscillator_stochastic.v \
+		$(SRC_DIR)/ca3_phase_memory.v \
+		$(SRC_DIR)/thalamus.v \
+		$(SRC_DIR)/cortical_column.v \
+		$(SRC_DIR)/config_controller.v \
+		$(SRC_DIR)/pink_noise_generator.v \
+		$(SRC_DIR)/output_mixer.v \
+		$(SRC_DIR)/phi_n_neural_processor.v \
+		$(SRC_DIR)/sr_harmonic_bank.v \
+		$(SRC_DIR)/sr_noise_generator.v \
+		$(TB_DIR)/tb_theta_phase_multiplexing.v
+
+# v8.3: Scaffold architecture test
+.PHONY: iverilog-scaffold
+iverilog-scaffold: $(SIM_DIR)/tb_scaffold_architecture.vvp
+	@echo "Running scaffold architecture test (v8.3)..."
+	cd $(SIM_DIR) && vvp tb_scaffold_architecture.vvp
+
+$(SIM_DIR)/tb_scaffold_architecture.vvp: $(SRCS) $(TB_DIR)/tb_scaffold_architecture.v
+	@mkdir -p $(SIM_DIR)
+	iverilog -o $@ -s tb_scaffold_architecture \
+		$(SRC_DIR)/clock_enable_generator.v \
+		$(SRC_DIR)/hopf_oscillator.v \
+		$(SRC_DIR)/hopf_oscillator_stochastic.v \
+		$(SRC_DIR)/ca3_phase_memory.v \
+		$(SRC_DIR)/thalamus.v \
+		$(SRC_DIR)/cortical_column.v \
+		$(SRC_DIR)/config_controller.v \
+		$(SRC_DIR)/pink_noise_generator.v \
+		$(SRC_DIR)/output_mixer.v \
+		$(SRC_DIR)/phi_n_neural_processor.v \
+		$(SRC_DIR)/sr_harmonic_bank.v \
+		$(SRC_DIR)/sr_noise_generator.v \
+		$(TB_DIR)/tb_scaffold_architecture.v
+
 # Run all iverilog tests
 .PHONY: iverilog-all
-iverilog-all: iverilog-hopf iverilog-fast iverilog-full
+iverilog-all: iverilog-hopf iverilog-fast iverilog-full iverilog-theta iverilog-scaffold
 	@echo "========================================"
 	@echo "All Icarus Verilog tests complete"
 	@echo "========================================"

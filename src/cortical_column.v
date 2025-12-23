@@ -1,5 +1,13 @@
 //=============================================================================
-// Cortical Column - v8.0 with Scaffold Architecture
+// Cortical Column - v8.1 with Scaffold Architecture + Gamma-Theta Nesting
+//
+// v8.1 CHANGES (Theta-Phase Gamma Nesting):
+// - L2/3 gamma frequency now switches based on theta phase (encoding_window)
+// - encoding_window=1 (encoding): fast gamma (65.3 Hz, φ⁴·⁵)
+// - encoding_window=0 (retrieval): slow gamma (40.36 Hz, φ³·⁵)
+// - Frequency ratio = φ (exactly one golden ratio step)
+// - Implements true theta-gamma PAC with functional meaning:
+//   "Slow gamma at late theta = retrieval; Fast gamma at theta trough = encoding"
 //
 // v8.0 CHANGES (Dupret et al. 2025 Integration):
 // - Scaffold architecture: distinguishes stable vs plastic layers
@@ -23,9 +31,10 @@
 //       • No phase coupling preserves timing
 //
 //   PLASTIC LAYERS (flexible integration, with phase coupling):
-//     - L2/3 (40.36 Hz, φ³·⁵): Gamma, feedforward output [PHASE COUPLED]
+//     - L2/3 (40.36/65.3 Hz, φ³·⁵/φ⁴·⁵): Gamma, feedforward output [PHASE COUPLED]
 //       • Integrates new sensory patterns
-//       • Lower rate, more plastic activity
+//       • Fast gamma (65.3 Hz) during encoding for precise temporal coding
+//       • Slow gamma (40.36 Hz) during retrieval matches CA3 reactivation
 //       • Phase coupling enables memory-guided gating
 //
 //     - L6 (9.53 Hz, φ⁰·⁵): Alpha, gain control / PAC [PHASE COUPLED]
@@ -38,7 +47,7 @@
 //       • Motor learning and adaptation
 //
 // LAYER FREQUENCIES (φⁿ architecture):
-// - L2/3: 40.36 Hz (φ^3.5) - Gamma, feedforward output [PLASTIC]
+// - L2/3: 40.36/65.3 Hz (φ^3.5/φ^4.5) - Gamma, theta-phase dependent [PLASTIC]
 // - L4:   31.73 Hz (φ^3.0) - Boundary, thalamocortical input [SCAFFOLD]
 // - L5a:  15.42 Hz (φ^1.5) - Low beta, motor output [INTERMEDIATE]
 // - L5b:  24.94 Hz (φ^2.5) - High beta, subcortical feedback [SCAFFOLD]
@@ -62,6 +71,9 @@ module cortical_column #(
     input  wire signed [WIDTH-1:0] phase_couple_l23,
     input  wire signed [WIDTH-1:0] phase_couple_l6,
 
+    // v8.1: Theta phase window for gamma nesting
+    input  wire encoding_window,  // From CA3: 1=encoding (fast gamma), 0=retrieval (slow gamma)
+
     input  wire signed [WIDTH-1:0] mu_dt_l6,
     input  wire signed [WIDTH-1:0] mu_dt_l5b,
     input  wire signed [WIDTH-1:0] mu_dt_l5a,
@@ -78,11 +90,22 @@ module cortical_column #(
 );
 
 // OMEGA_DT = 2*pi*f*dt, dt=0.00025 for 4 kHz update rate
+// Formula: OMEGA_DT = round(2π × f_hz × 0.00025 × 16384)
 localparam signed [WIDTH-1:0] OMEGA_DT_L6  = 18'sd245;   // 9.53 Hz
 localparam signed [WIDTH-1:0] OMEGA_DT_L5B = 18'sd642;   // 24.94 Hz
 localparam signed [WIDTH-1:0] OMEGA_DT_L5A = 18'sd397;   // 15.42 Hz
 localparam signed [WIDTH-1:0] OMEGA_DT_L4  = 18'sd817;   // 31.73 Hz
-localparam signed [WIDTH-1:0] OMEGA_DT_L23 = 18'sd1039;  // 40.36 Hz
+localparam signed [WIDTH-1:0] OMEGA_DT_L23 = 18'sd1039;  // 40.36 Hz (slow gamma, φ³·⁵)
+
+// v8.1: Fast gamma for encoding window - exactly φ higher than slow gamma
+// 65.3 Hz = 40.36 Hz × φ (one golden ratio step up)
+localparam signed [WIDTH-1:0] OMEGA_DT_L23_FAST = 18'sd1681;  // 65.3 Hz (fast gamma, φ⁴·⁵)
+
+// v8.1: Theta-phase-dependent gamma frequency selection
+// encoding_window=1 → fast gamma (65.3 Hz) for precise temporal coding during sensory input
+// encoding_window=0 → slow gamma (40.36 Hz) matches CA3 reactivation during retrieval
+wire signed [WIDTH-1:0] omega_dt_l23_active;
+assign omega_dt_l23_active = encoding_window ? OMEGA_DT_L23_FAST : OMEGA_DT_L23;
 
 localparam signed [WIDTH-1:0] K_L4_L23 = 18'sd6554;
 localparam signed [WIDTH-1:0] K_L4_L5  = 18'sd4915;
@@ -145,9 +168,10 @@ hopf_oscillator #(.WIDTH(WIDTH), .FRAC(FRAC)) osc_l4 (
     .x(l4_x_int), .y(l4_y_int), .amplitude(l4_amp)
 );
 
+// v8.1: L2/3 now uses dynamic omega based on theta phase (gamma nesting)
 hopf_oscillator #(.WIDTH(WIDTH), .FRAC(FRAC)) osc_l23 (
     .clk(clk), .rst(rst), .clk_en(clk_en),
-    .mu_dt(mu_dt_l23), .omega_dt(OMEGA_DT_L23),
+    .mu_dt(mu_dt_l23), .omega_dt(omega_dt_l23_active),  // v8.1: theta-phase dependent
     .input_x(l23_input),
     .x(l23_x_int), .y(l23_y_int), .amplitude(l23_amp)
 );

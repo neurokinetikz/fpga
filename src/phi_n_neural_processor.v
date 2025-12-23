@@ -1,5 +1,12 @@
 //=============================================================================
-// Top-Level Module - v8.0 with Theta Phase Multiplexing & Scaffold Architecture
+// Top-Level Module - v8.1 with Gamma-Theta Nesting
+//
+// v8.1 CHANGES (Gamma-Theta PAC):
+// - L2/3 gamma frequency now modulated by theta phase
+// - encoding_window=1: fast gamma (65.3 Hz, φ⁴·⁵) for sensory encoding
+// - encoding_window=0: slow gamma (40.36 Hz, φ³·⁵) for memory retrieval
+// - Frequency ratio = φ (exactly one golden ratio step)
+// - Routes ca3_encoding_window to all cortical columns
 //
 // v8.0 CHANGES (Dupret et al. 2025 Integration):
 // - Theta phase multiplexing: 8 discrete phases per theta cycle
@@ -372,6 +379,7 @@ cortical_column #(.WIDTH(WIDTH), .FRAC(FRAC)) col_sensory (
     .feedback_input(sensory_feedback),
     .phase_couple_l23(phase_couple_sensory_l23),
     .phase_couple_l6(phase_couple_sensory_l6),
+    .encoding_window(ca3_encoding_window),  // v8.1: gamma-theta nesting
     .mu_dt_l6(mu_dt_l6),
     .mu_dt_l5b(mu_dt_l5b),
     .mu_dt_l5a(mu_dt_l5a),
@@ -395,6 +403,7 @@ cortical_column #(.WIDTH(WIDTH), .FRAC(FRAC)) col_assoc (
     .feedback_input(assoc_feedback),
     .phase_couple_l23(phase_couple_assoc_l23),
     .phase_couple_l6(phase_couple_assoc_l6),
+    .encoding_window(ca3_encoding_window),  // v8.1: gamma-theta nesting
     .mu_dt_l6(mu_dt_l6),
     .mu_dt_l5b(mu_dt_l5b),
     .mu_dt_l5a(mu_dt_l5a),
@@ -418,6 +427,7 @@ cortical_column #(.WIDTH(WIDTH), .FRAC(FRAC)) col_motor (
     .feedback_input(motor_feedback),
     .phase_couple_l23(phase_couple_motor_l23),
     .phase_couple_l6(phase_couple_motor_l6),
+    .encoding_window(ca3_encoding_window),  // v8.1: gamma-theta nesting
     .mu_dt_l6(mu_dt_l6),
     .mu_dt_l5b(mu_dt_l5b),
     .mu_dt_l5a(mu_dt_l5a),
