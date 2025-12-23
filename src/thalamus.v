@@ -1,10 +1,16 @@
 //=============================================================================
-// Thalamus Module - v8.0 with Theta Phase Multiplexing
+// Thalamus Module - v8.1 with Theta Phase Multiplexing + SR Frequency Drift
 //
 // NEUROPHYSIOLOGICAL BASIS:
 // "Layer 4 shows characteristic current sinks... with gamma and theta
 // oscillations dominating this feedforward processing layer"
 // "Gamma is not present in LGN... gamma is an emergent property of cortex"
+//
+// v8.1: SR FREQUENCY DRIFT SUPPORT
+// - Accepts external drifting omega_dt values from sr_frequency_drift module
+// - Models realistic SR frequency variation (hours-scale random walk)
+// - Natural detuning between SR and neural oscillators prevents unrealistic
+//   high coherence from exact frequency matches
 //
 // v8.0 THETA PHASE MULTIPLEXING (Dupret et al. 2025):
 // - Divides theta cycle into 8 discrete phases (theta_phase[2:0])
@@ -20,7 +26,7 @@
 // - More biologically plausible: graded response to coherence levels
 //
 // v7.3 MULTI-HARMONIC SCHUMANN RESONANCE BANK:
-// - 5 SR harmonics (7.83, 14.3, 20.8, 27.3, 33.8 Hz) externally driven
+// - 5 SR harmonics at observed frequencies (7.6, 13.75, 20, 25, 32 Hz)
 // - Each harmonic couples to corresponding EEG band:
 //   f₀→theta, f₁→alpha, f₂→low beta, f₃→high beta, f₄→gamma
 // - Per-harmonic coherence and SIE detection
@@ -42,7 +48,8 @@ module thalamus #(
     parameter WIDTH = 18,
     parameter FRAC = 14,
     parameter NUM_HARMONICS = 5,
-    parameter ENABLE_STOCHASTIC = 1  // Enable stochastic noise injection to SR bank
+    parameter ENABLE_STOCHASTIC = 1,  // Enable stochastic noise injection to SR bank
+    parameter ENABLE_DRIFT = 1        // Enable SR frequency drift
 )(
     input  wire clk,
     input  wire rst,
@@ -51,6 +58,9 @@ module thalamus #(
     input  wire signed [WIDTH-1:0] sensory_input,
     input  wire signed [WIDTH-1:0] l6_alpha_feedback,
     input  wire signed [WIDTH-1:0] mu_dt,
+
+    // v8.1: Drifting omega_dt values from sr_frequency_drift (packed: 5 × 18 bits)
+    input  wire signed [NUM_HARMONICS*WIDTH-1:0] omega_dt_packed,
 
     // v7.3: Multi-harmonic SR field inputs (packed: 5 × 18 bits = 90 bits)
     input  wire signed [NUM_HARMONICS*WIDTH-1:0] sr_field_packed,
@@ -147,12 +157,16 @@ sr_harmonic_bank #(
     .WIDTH(WIDTH),
     .FRAC(FRAC),
     .NUM_HARMONICS(NUM_HARMONICS),
-    .ENABLE_STOCHASTIC(ENABLE_STOCHASTIC)
+    .ENABLE_STOCHASTIC(ENABLE_STOCHASTIC),
+    .ENABLE_DRIFT(ENABLE_DRIFT)
 ) sr_bank (
     .clk(clk),
     .rst(rst),
     .clk_en(clk_en),
     .mu_dt(mu_dt),
+
+    // v8.1: Drifting omega_dt values (from sr_frequency_drift)
+    .omega_dt_packed(omega_dt_packed),
 
     // External SR field inputs (packed)
     .sr_field_packed(sr_field_effective),

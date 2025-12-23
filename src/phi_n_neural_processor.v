@@ -1,5 +1,14 @@
 //=============================================================================
-// Top-Level Module - v8.1 with Gamma-Theta Nesting
+// Top-Level Module - v8.2 with SR Frequency Drift
+//
+// v8.2 CHANGES (Realistic SR Frequency Variation):
+// - Added sr_frequency_drift module for realistic Schumann resonance modeling
+// - SR frequencies drift via bounded random walk within observed ranges:
+//   f₀: 7.6 Hz ± 0.6 Hz, f₁: 13.75 Hz ± 0.75 Hz, f₂: 20 Hz ± 1 Hz
+//   f₃: 25 Hz ± 1.5 Hz, f₄: 32 Hz ± 2 Hz
+// - Hours-scale drift pattern mimics real SR monitoring data
+// - Natural detuning prevents unrealistic high coherence from exact frequency match
+// - Controllable via SR_DRIFT_ENABLE parameter
 //
 // v8.1 CHANGES (Gamma-Theta PAC):
 // - L2/3 gamma frequency now modulated by theta phase
@@ -89,7 +98,8 @@ module phi_n_neural_processor #(
     parameter FRAC = 14,
     parameter FAST_SIM = 0,  // 1 = use fast clock divider (÷10 vs ÷31250) for simulation
     parameter NUM_HARMONICS = 5,  // v7.3: Number of SR harmonics
-    parameter SR_STOCHASTIC_ENABLE = 1  // Enable stochastic noise in SR oscillators
+    parameter SR_STOCHASTIC_ENABLE = 1,  // Enable stochastic noise in SR oscillators
+    parameter SR_DRIFT_ENABLE = 1  // v8.2: Enable SR frequency drift (realistic variation)
 )(
     input  wire clk,
     input  wire rst,
@@ -168,6 +178,27 @@ sr_noise_generator #(
     .noise_packed(sr_noise_packed)
 );
 
+//-----------------------------------------------------------------------------
+// v8.2: SR Frequency Drift Generator
+// Models realistic hours-scale frequency drift observed in real SR monitoring
+// Natural detuning between SR and neural frequencies prevents unrealistic coherence
+//-----------------------------------------------------------------------------
+wire signed [NUM_HARMONICS*WIDTH-1:0] sr_omega_dt_packed;
+wire signed [NUM_HARMONICS*WIDTH-1:0] sr_drift_offset_packed;
+
+sr_frequency_drift #(
+    .WIDTH(WIDTH),
+    .FRAC(FRAC),
+    .NUM_HARMONICS(NUM_HARMONICS),
+    .FAST_SIM(FAST_SIM)
+) sr_drift_gen (
+    .clk(clk),
+    .rst(rst),
+    .clk_en(clk_4khz_en),
+    .omega_dt_packed(sr_omega_dt_packed),
+    .drift_offset_packed(sr_drift_offset_packed)
+);
+
 wire signed [WIDTH-1:0] mu_dt_theta;
 wire signed [WIDTH-1:0] mu_dt_l6, mu_dt_l5b, mu_dt_l5a, mu_dt_l4, mu_dt_l23;
 
@@ -225,7 +256,8 @@ thalamus #(
     .WIDTH(WIDTH),
     .FRAC(FRAC),
     .NUM_HARMONICS(NUM_HARMONICS),
-    .ENABLE_STOCHASTIC(SR_STOCHASTIC_ENABLE)
+    .ENABLE_STOCHASTIC(SR_STOCHASTIC_ENABLE),
+    .ENABLE_DRIFT(SR_DRIFT_ENABLE)
 ) thal (
     .clk(clk),
     .rst(rst),
@@ -233,6 +265,9 @@ thalamus #(
     .sensory_input(sensory_input),
     .l6_alpha_feedback(l6_alpha_feedback),
     .mu_dt(mu_dt_theta),
+
+    // v8.2: Drifting omega_dt values for realistic SR frequency variation
+    .omega_dt_packed(sr_omega_dt_packed),
 
     // v7.3: Multi-harmonic SR field inputs
     .sr_field_packed(sr_field_packed),

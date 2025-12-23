@@ -536,7 +536,8 @@ initial begin
 
         begin : learn_loop
             integer m;
-            for (m = 0; m < 2000; m = m + 1) begin
+            // 10000 clk cycles = 1000 clk_en @ divider=10 = ~1.5 theta cycles
+            for (m = 0; m < 10000; m = m + 1) begin
                 @(posedge clk);
                 #1;
                 if (clk_4khz_en) begin
@@ -642,7 +643,8 @@ initial begin
 
     begin : test14_encoding
         integer m;
-        for (m = 0; m < 1500; m = m + 1) begin
+        // 10000 clk cycles = 1000 clk_en @ divider=10 = ~1.5 theta cycles
+        for (m = 0; m < 10000; m = m + 1) begin
             @(posedge clk);
             #1;
             if (clk_4khz_en) begin
@@ -664,7 +666,8 @@ initial begin
 
     begin : test14_retrieval
         integer m;
-        for (m = 0; m < 1500; m = m + 1) begin
+        // 10000 clk cycles = 1000 clk_en @ divider=10 = ~1.5 theta cycles
+        for (m = 0; m < 10000; m = m + 1) begin
             @(posedge clk);
             #1;
             if (clk_4khz_en) begin
@@ -719,7 +722,8 @@ initial begin
 
             begin : state_loop
                 integer m;
-                for (m = 0; m < 1000; m = m + 1) begin
+                // 8000 cycles = 800 clk_4khz_en events = ~1.2 theta cycles
+                for (m = 0; m < 8000; m = m + 1) begin
                     @(posedge clk);
                     #1;
                     if (clk_4khz_en) begin

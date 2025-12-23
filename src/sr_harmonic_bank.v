@@ -1,18 +1,21 @@
 //=============================================================================
-// φⁿ-Scaled Harmonic Bank v7.3.1
+// Schumann-Aligned Harmonic Bank v7.4
 //
-// Implements 5 externally-driven Hopf oscillators at φⁿ-scaled frequencies.
+// Implements 5 externally-driven Hopf oscillators at Schumann-aligned frequencies.
 // Each harmonic can independently couple to brain oscillators when beta quiet.
 //
-// φⁿ HARMONIC MAPPING (φ = 1.618034, f_base = 7.49 Hz):
-//   f₀ (7.49 Hz)  → φ⁰ → Theta band (5.89 Hz internal)
-//   f₁ (12.12 Hz) → φ¹ → Alpha/Low Beta boundary (L6 ~9.53 Hz)
-//   f₂ (19.60 Hz) → φ² → Beta (L5a ~15.42 Hz)
-//   f₃ (31.73 Hz) → φ³ → φ³ consciousness gate (L4 ~31.73 Hz)
-//   f₄ (51.33 Hz) → φ⁴ → High Gamma (beyond L2/3 ~40.36 Hz)
+// v7.4: Support for external drifting omega_dt (realistic SR frequency variation)
+//
+// OBSERVED SR FREQUENCIES (from real-time monitoring):
+//   f₀ = 7.6 Hz  ± 0.6 Hz   → Theta band (5.89 Hz internal)
+//   f₁ = 13.75 Hz ± 0.75 Hz → Alpha (L6 ~9.53 Hz)
+//   f₂ = 20 Hz   ± 1 Hz     → Beta (L5a ~15.42 Hz)
+//   f₃ = 25 Hz   ± 1.5 Hz   → High Beta (L5b ~24.94 Hz)
+//   f₄ = 32 Hz   ± 2 Hz     → Consciousness gate (L4 ~31.73 Hz)
 //
 // STOCHASTIC RESONANCE MODEL:
-// - Each harmonic is externally driven (represents weak φⁿ-scaled field)
+// - Each harmonic is externally driven (represents weak SR field)
+// - Frequency drift creates realistic SR behavior with natural detuning
 // - Beta amplitude gates all entrainment (when beta quiet, coupling enabled)
 // - Per-harmonic coherence computed against matching EEG band
 // - SIE activates when ANY harmonic achieves high coherence + beta quiet
@@ -23,12 +26,17 @@ module sr_harmonic_bank #(
     parameter WIDTH = 18,
     parameter FRAC = 14,
     parameter NUM_HARMONICS = 5,
-    parameter ENABLE_STOCHASTIC = 1  // Enable stochastic noise injection
+    parameter ENABLE_STOCHASTIC = 1,  // Enable stochastic noise injection
+    parameter ENABLE_DRIFT = 1        // Enable external frequency drift
 )(
     input  wire clk,
     input  wire rst,
     input  wire clk_en,
     input  wire signed [WIDTH-1:0] mu_dt,
+
+    // v7.4: External drifting omega_dt values (from sr_frequency_drift)
+    // If ENABLE_DRIFT=0 or all zeros, uses internal defaults
+    input  wire signed [NUM_HARMONICS*WIDTH-1:0] omega_dt_packed,
 
     // External SR field inputs (one per harmonic) - packed for synthesis
     input  wire signed [NUM_HARMONICS*WIDTH-1:0] sr_field_packed,
@@ -72,14 +80,14 @@ module sr_harmonic_bank #(
 // Parameters
 //-----------------------------------------------------------------------------
 
-// OMEGA_DT values for φⁿ-scaled harmonics (Q14 format)
+// OMEGA_DT values for Schumann-aligned harmonics (Q14 format)
 // Formula: OMEGA_DT = round(2π × f_hz × dt × 2^14) where dt = 0.00025s (4 kHz)
-// φ = 1.618034, f_base = 7.49 Hz
-localparam signed [WIDTH-1:0] OMEGA_DT_F0 = 18'sd193;   // 7.49 Hz  (φ⁰ × 7.49)
-localparam signed [WIDTH-1:0] OMEGA_DT_F1 = 18'sd312;   // 12.12 Hz (φ¹ × 7.49)
-localparam signed [WIDTH-1:0] OMEGA_DT_F2 = 18'sd504;   // 19.60 Hz (φ² × 7.49)
-localparam signed [WIDTH-1:0] OMEGA_DT_F3 = 18'sd817;   // 31.73 Hz (φ³ × 7.49)
-localparam signed [WIDTH-1:0] OMEGA_DT_F4 = 18'sd1321;  // 51.33 Hz (φ⁴ × 7.49)
+// Based on observed real-time SR monitoring data
+localparam signed [WIDTH-1:0] OMEGA_DT_F0 = 18'sd196;   // 7.6 Hz (observed SR fundamental)
+localparam signed [WIDTH-1:0] OMEGA_DT_F1 = 18'sd354;   // 13.75 Hz (2nd SR mode)
+localparam signed [WIDTH-1:0] OMEGA_DT_F2 = 18'sd514;   // 20 Hz (3rd SR mode)
+localparam signed [WIDTH-1:0] OMEGA_DT_F3 = 18'sd643;   // 25 Hz (4th SR mode)
+localparam signed [WIDTH-1:0] OMEGA_DT_F4 = 18'sd823;   // 32 Hz (5th SR mode)
 
 // Beta quiet threshold: 0.9375 in Q14
 // At MU=4 (NORMAL), amplitude ~2.0, |x| avg ~1.27 - rarely quiet
@@ -148,14 +156,33 @@ assign beta_factor = (beta_factor_full[2*WIDTH-1:FRAC] > ONE_Q14) ? ONE_Q14 :
                      beta_factor_full[FRAC +: WIDTH];
 
 //-----------------------------------------------------------------------------
-// OMEGA_DT Array for Generate Block
+// Unpack external omega_dt (for drift support)
 //-----------------------------------------------------------------------------
+wire signed [WIDTH-1:0] omega_dt_ext [0:NUM_HARMONICS-1];
+assign omega_dt_ext[0] = omega_dt_packed[0*WIDTH +: WIDTH];
+assign omega_dt_ext[1] = omega_dt_packed[1*WIDTH +: WIDTH];
+assign omega_dt_ext[2] = omega_dt_packed[2*WIDTH +: WIDTH];
+assign omega_dt_ext[3] = omega_dt_packed[3*WIDTH +: WIDTH];
+assign omega_dt_ext[4] = omega_dt_packed[4*WIDTH +: WIDTH];
+
+//-----------------------------------------------------------------------------
+// OMEGA_DT Array for Generate Block
+// v7.4: Use external drifting values if ENABLE_DRIFT=1 and non-zero input
+//-----------------------------------------------------------------------------
+wire signed [WIDTH-1:0] OMEGA_DT_DEFAULT [0:NUM_HARMONICS-1];
+assign OMEGA_DT_DEFAULT[0] = OMEGA_DT_F0;
+assign OMEGA_DT_DEFAULT[1] = OMEGA_DT_F1;
+assign OMEGA_DT_DEFAULT[2] = OMEGA_DT_F2;
+assign OMEGA_DT_DEFAULT[3] = OMEGA_DT_F3;
+assign OMEGA_DT_DEFAULT[4] = OMEGA_DT_F4;
+
 wire signed [WIDTH-1:0] OMEGA_DT_HARMONICS [0:NUM_HARMONICS-1];
-assign OMEGA_DT_HARMONICS[0] = OMEGA_DT_F0;
-assign OMEGA_DT_HARMONICS[1] = OMEGA_DT_F1;
-assign OMEGA_DT_HARMONICS[2] = OMEGA_DT_F2;
-assign OMEGA_DT_HARMONICS[3] = OMEGA_DT_F3;
-assign OMEGA_DT_HARMONICS[4] = OMEGA_DT_F4;
+// Use external if ENABLE_DRIFT=1 and external value is non-zero
+assign OMEGA_DT_HARMONICS[0] = (ENABLE_DRIFT && omega_dt_ext[0] != 0) ? omega_dt_ext[0] : OMEGA_DT_DEFAULT[0];
+assign OMEGA_DT_HARMONICS[1] = (ENABLE_DRIFT && omega_dt_ext[1] != 0) ? omega_dt_ext[1] : OMEGA_DT_DEFAULT[1];
+assign OMEGA_DT_HARMONICS[2] = (ENABLE_DRIFT && omega_dt_ext[2] != 0) ? omega_dt_ext[2] : OMEGA_DT_DEFAULT[2];
+assign OMEGA_DT_HARMONICS[3] = (ENABLE_DRIFT && omega_dt_ext[3] != 0) ? omega_dt_ext[3] : OMEGA_DT_DEFAULT[3];
+assign OMEGA_DT_HARMONICS[4] = (ENABLE_DRIFT && omega_dt_ext[4] != 0) ? omega_dt_ext[4] : OMEGA_DT_DEFAULT[4];
 
 //-----------------------------------------------------------------------------
 // Coherence Target Mapping
