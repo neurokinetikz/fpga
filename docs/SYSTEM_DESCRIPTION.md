@@ -1,6 +1,6 @@
 # φⁿ Neural Processor - Comprehensive System Description
 
-**Version:** 8.5
+**Version:** 8.6
 **Date:** 2025-12-23
 **Based on:** Complete analysis of all 13 source modules (~3,000 lines of Verilog)
 
@@ -8,7 +8,7 @@
 
 ## Executive Summary
 
-The φⁿ Neural Processor is an FPGA implementation of 21 coupled nonlinear oscillators organized as a thalamo-cortical network. The system models biological neural rhythms using golden ratio (φ ≈ 1.618) frequency relationships, implements associative memory through theta-gated Hebbian learning, and exhibits stochastic resonance sensitivity to weak external electromagnetic fields. Version 8.5 adds realistic Schumann Resonance frequency drift based on real-time monitoring data.
+The φⁿ Neural Processor is an FPGA implementation of 21 coupled nonlinear oscillators organized as a thalamo-cortical network. The system models biological neural rhythms using golden ratio (φ ≈ 1.618) frequency relationships, implements associative memory through theta-gated Hebbian learning, and exhibits stochastic resonance sensitivity to weak external electromagnetic fields. Version 8.6 implements canonical cortical microcircuit connectivity with proper L4→L2/3→L5→L6 signal flow.
 
 ---
 
@@ -190,19 +190,19 @@ Transitions controlled by theta_x thresholds with hysteresis (±0.25).
 
 ---
 
-## 6. Cortical Column Architecture (cortical_column.v, v8.1)
+## 6. Cortical Column Architecture (cortical_column.v, v8.6)
 
 ### 6.1 Five-Layer Stack
 
 Each of 3 columns contains 5 oscillators:
 
-| Layer | Frequency | Role | Connectivity |
-|-------|-----------|------|--------------|
+| Layer | Frequency | Role | Connectivity (v8.6 Canonical) |
+|-------|-----------|------|-------------------------------|
 | L2/3 | 40.36/65.3 Hz | Gamma, feedforward | Receives L4 input, phase coupling |
-| L4 | 31.73 Hz | Thalamocortical | Receives theta input |
-| L5a | 15.42 Hz | Low beta, motor output | Receives L4 input |
-| L5b | 24.94 Hz | High beta, feedback | Receives L4 input |
-| L6 | 9.53 Hz | Alpha, gain control | Receives theta input, phase coupling |
+| L4 | 31.73 Hz | Thalamocortical | Receives theta input, feedforward |
+| L5a | 15.42 Hz | Low beta, motor output | Receives L2/3 input (canonical) |
+| L5b | 24.94 Hz | High beta, feedback | Receives L2/3 input (canonical) |
+| L6 | 9.53 Hz | Alpha, gain control | Receives L5b + inter-column FB + phase coupling |
 
 ### 6.2 Scaffold Architecture (v8.0)
 
@@ -236,7 +236,44 @@ else:                   // Phases 4-7, theta trough
 
 This implements differential gamma frequencies for sensory encoding (fast) vs memory retrieval (slow).
 
-### 6.4 Inter-Column Connectivity
+### 6.4 Canonical Microcircuit (v8.6)
+
+v8.6 implements proper cortical signal flow matching neuroscience literature (Douglas & Martin, 2004; Harris & Shepherd, 2015):
+
+**Canonical Pathway:**
+```
+Thalamus → L4 → L2/3 → L5 → Output (subcortical)
+                  ↓
+                 L6 → Thalamus (corticothalamic modulation)
+```
+
+**Key Changes from v8.5:**
+- L5 receives from L2/3 (processed) instead of L4 (raw)
+- L6 receives intra-column L5b feedback for corticothalamic modulation
+
+**Coupling Constants (Q14):**
+```
+K_L4_L23 = 6554  (0.4) - L4 → L2/3 feedforward
+K_L23_L5 = 4915  (0.3) - L2/3 → L5 (canonical pathway)
+K_L5_L6  = 3277  (0.2) - L5b → L6 intra-column feedback
+K_PAC    = 3277  (0.2) - PAC modulation
+K_FB_L5  = 3277  (0.2) - Inter-column feedback
+```
+
+**Signal Chain:**
+```
+L4 oscillates (thalamocortical input)
+    ↓ K_L4_L23
+L2/3 sees L4[N-1] + PAC + phase_coupling
+    ↓ K_L23_L5
+L5 sees L2/3[N-1] + inter-column feedback
+    ↓ K_L5_L6
+L6 sees L5b[N-1] + inter-column feedback + phase_coupling
+```
+
+One-cycle delay between layers implements natural synaptic propagation time.
+
+### 6.5 Inter-Column Connectivity
 
 Three cortical columns with feedforward cascade:
 
@@ -382,9 +419,9 @@ phi_n_neural_processor (top)
 
 ## 11. Test Coverage Summary
 
-- 125+ automated tests across 23 testbenches
-- Coverage: Hopf dynamics, CA3 learning/recall, theta phase, scaffold architecture, gamma nesting, SR coupling, SR drift, state transitions
-- All tests passing as of v8.5
+- 139+ automated tests across 24 testbenches
+- Coverage: Hopf dynamics, CA3 learning/recall, theta phase, scaffold architecture, gamma nesting, canonical microcircuit, SR coupling, SR drift, state transitions
+- All tests passing as of v8.6
 
 ### Key Testbenches
 
@@ -394,7 +431,8 @@ phi_n_neural_processor (top)
 | tb_theta_phase_multiplexing | 19 | 8-phase cycle, windows |
 | tb_scaffold_architecture | 14 | Scaffold/plastic differentiation |
 | tb_gamma_theta_nesting | 7 | L2/3 frequency switching |
-| tb_sr_frequency_drift | — | Drift bounds, random walk |
+| tb_canonical_microcircuit | 20 | v8.6 canonical pathway verification |
+| tb_sr_frequency_drift | 30 | Drift bounds, random walk |
 | tb_multi_harmonic_sr | 17 | Per-harmonic coherence |
 | tb_learning_fast | 8 | CA3 Hebbian learning |
 | tb_state_transitions | 12 | Consciousness states |
@@ -406,6 +444,7 @@ phi_n_neural_processor (top)
 
 | Version | Date | Key Changes |
 |---------|------|-------------|
+| v8.6 | 2025-12-23 | Canonical microcircuit: L2/3→L5, L5b→L6 intra-column feedback |
 | v8.5 | 2025-12-23 | SR frequency drift with bounded random walk |
 | v8.4 | 2025-12-23 | Gamma-theta nesting implementation, integration tests |
 | v8.3 | 2025-12-23 | DC offset fix for theta phase detection |

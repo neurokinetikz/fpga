@@ -1,5 +1,11 @@
 //=============================================================================
-// Cortical Column - v8.1 with Scaffold Architecture + Gamma-Theta Nesting
+// Cortical Column - v8.6 with Canonical Microcircuit Connectivity
+//
+// v8.6 CHANGES (Canonical Microcircuit):
+// - L5 now receives from L2/3 (processed) instead of L4 (raw)
+// - L6 receives intra-column L5b feedback for corticothalamic modulation
+// - Implements canonical L4→L2/3→L5→L6→Thalamus pathway
+// - Signal flow: Thalamus→L4→L2/3→L5→output, L5→L6→Thalamus
 //
 // v8.1 CHANGES (Theta-Phase Gamma Nesting):
 // - L2/3 gamma frequency now switches based on theta phase (encoding_window)
@@ -107,10 +113,12 @@ localparam signed [WIDTH-1:0] OMEGA_DT_L23_FAST = 18'sd1681;  // 65.3 Hz (fast g
 wire signed [WIDTH-1:0] omega_dt_l23_active;
 assign omega_dt_l23_active = encoding_window ? OMEGA_DT_L23_FAST : OMEGA_DT_L23;
 
-localparam signed [WIDTH-1:0] K_L4_L23 = 18'sd6554;
-localparam signed [WIDTH-1:0] K_L4_L5  = 18'sd4915;
-localparam signed [WIDTH-1:0] K_PAC    = 18'sd3277;
-localparam signed [WIDTH-1:0] K_FB_L5  = 18'sd3277;
+// v8.6: Coupling constants for canonical microcircuit
+localparam signed [WIDTH-1:0] K_L4_L23 = 18'sd6554;  // 0.4 - L4 → L2/3
+localparam signed [WIDTH-1:0] K_L23_L5 = 18'sd4915;  // 0.3 - L2/3 → L5 (canonical pathway)
+localparam signed [WIDTH-1:0] K_L5_L6  = 18'sd3277;  // 0.2 - L5b → L6 intra-column feedback
+localparam signed [WIDTH-1:0] K_PAC    = 18'sd3277;  // 0.2 - PAC modulation
+localparam signed [WIDTH-1:0] K_FB_L5  = 18'sd3277;  // 0.2 - Inter-column feedback
 
 wire signed [WIDTH-1:0] l6_x_int, l6_y_int;
 wire signed [WIDTH-1:0] l5b_x_int, l5b_y_int;
@@ -121,17 +129,22 @@ wire signed [WIDTH-1:0] l23_x_int, l23_y_int;
 wire signed [WIDTH-1:0] l6_amp, l5b_amp, l5a_amp, l4_amp, l23_amp;
 
 wire signed [WIDTH-1:0] l4_input, l23_input, l5_input, l6_input;
-wire signed [2*WIDTH-1:0] l4_to_l5_full, l4_to_l23_full, pac_full, fb_l5_full;
+wire signed [2*WIDTH-1:0] l23_to_l5_full, l4_to_l23_full, pac_full, fb_l5_full;
+wire signed [2*WIDTH-1:0] l5_to_l6_full;  // v8.6: Intra-column L5b → L6 feedback
 wire signed [WIDTH-1:0] pac_mod;
 
 assign l4_input = thalamic_theta_input + feedforward_input;
 
-assign l4_to_l5_full = l4_x_int * K_L4_L5;
+// v8.6: L5 receives from L2/3 (processed) instead of L4 (raw)
+// This implements canonical cortical pathway: L4 → L2/3 → L5
+assign l23_to_l5_full = l23_x_int * K_L23_L5;
 assign fb_l5_full = feedback_input * K_FB_L5;
-assign l5_input = (l4_to_l5_full >>> FRAC) + (fb_l5_full >>> FRAC);
+assign l5_input = (l23_to_l5_full >>> FRAC) + (fb_l5_full >>> FRAC);
 
-// L6 receives: feedback + PHASE COUPLING
-assign l6_input = (fb_l5_full >>> FRAC) + phase_couple_l6;
+// v8.6: L6 receives: intra-column L5b feedback + inter-column feedback + PHASE COUPLING
+// Implements corticothalamic pathway: L5 → L6 → Thalamus
+assign l5_to_l6_full = l5b_x_int * K_L5_L6;
+assign l6_input = (l5_to_l6_full >>> FRAC) + (fb_l5_full >>> FRAC) + phase_couple_l6;
 
 assign pac_full = K_PAC * l6_y_int;
 assign pac_mod = pac_full[FRAC +: WIDTH];

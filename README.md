@@ -2,14 +2,14 @@
 
 A biologically-realistic neural oscillator system implemented in Verilog for FPGA, featuring golden ratio (φ) frequency architecture with Schumann Resonance coupling.
 
-**Current Version:** v8.5
+**Current Version:** v8.6
 
 ## Overview
 
 This project implements a thalamo-cortical neural architecture with 21 coupled Hopf oscillators operating at frequencies scaled by powers of the golden ratio (φ ≈ 1.618). The system models:
 
 - **Theta-gated sensory processing** via thalamic relay with 8-phase multiplexing
-- **Multi-layer cortical columns** (L2/3, L4, L5a, L5b, L6) with scaffold/plastic architecture
+- **Multi-layer cortical columns** (L2/3, L4, L5a, L5b, L6) with canonical microcircuit connectivity
 - **Hebbian phase memory** in a CA3-inspired circuit with theta-gated learning
 - **Schumann Resonance coupling** with 5 drifting harmonics (7.6-32 Hz observed frequencies)
 - **Gamma-theta nesting** with dynamic L2/3 frequency switching (40/65 Hz)
@@ -69,7 +69,7 @@ gtkwave tb_full_system_fast.vcd
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                    φⁿ NEURAL PROCESSOR v8.5                     │
+│                    φⁿ NEURAL PROCESSOR v8.6                     │
 │                                                                 │
 │  SR Frequency Drift (bounded random walk per harmonic)          │
 │           ↓                                                     │
@@ -83,11 +83,10 @@ gtkwave tb_full_system_fast.vcd
 │  └─────────────────────────────────────────────────────────┘   │
 │           ↓ phase_coupling[6]                                   │
 │  Cortical Columns ×3 (Sensory → Association → Motor)           │
-│    ├─ L2/3 (40/65 Hz γ) ← gamma-theta nesting, PLASTIC         │
 │    ├─ L4 (32 Hz)        ← thalamocortical, SCAFFOLD            │
-│    ├─ L5a (15 Hz β)     ← motor output                         │
-│    ├─ L5b (25 Hz β)     ← feedback, SCAFFOLD                   │
-│    └─ L6 (10 Hz α)      ← gain control, PLASTIC                │
+│    ├─ L2/3 (40/65 Hz γ) ← L4 input, gamma nesting, PLASTIC     │
+│    ├─ L5a/b (15/25 Hz)  ← L2/3 input (canonical), output       │
+│    └─ L6 (10 Hz α)      ← L5b feedback, gain control, PLASTIC  │
 │           ↓                                                     │
 │  Output Mixer → 12-bit DAC                                      │
 └─────────────────────────────────────────────────────────────────┘
@@ -131,6 +130,7 @@ The system supports 5 consciousness states via `state_select[2:0]`:
 | v8.0 | Theta Phase Multiplexing | 8-phase cycle for encoding/retrieval |
 | v8.1 | Gamma-Theta Nesting | L2/3 frequency switches with theta phase |
 | v8.5 | SR Frequency Drift | Bounded random walk mimics real SR variation |
+| v8.6 | Canonical Microcircuit | L4→L2/3→L5→L6 signal flow, L5b→L6 feedback |
 
 ## Project Structure
 
@@ -140,19 +140,20 @@ The system supports 5 consciousness states via `state_select[2:0]`:
 │   ├── hopf_oscillator.v          # Core oscillator dynamics (v6.0)
 │   ├── hopf_oscillator_stochastic.v # Stochastic variant
 │   ├── thalamus.v                 # Theta + SR integration (v8.1)
-│   ├── cortical_column.v          # 5-layer cortical model (v8.1)
+│   ├── cortical_column.v          # 5-layer cortical model (v8.6)
 │   ├── ca3_phase_memory.v         # Hebbian phase memory (v8.0)
 │   ├── sr_harmonic_bank.v         # SR bank with coherence (v7.4)
 │   ├── sr_noise_generator.v       # Per-harmonic noise (5 LFSRs)
 │   ├── sr_frequency_drift.v       # Frequency drift (v8.5)
 │   ├── config_controller.v        # Consciousness states (v8.0)
 │   └── ...
-├── tb/                     # Testbenches (23 files, 125+ tests)
+├── tb/                     # Testbenches (24 files, 139+ tests)
 │   ├── tb_full_system_fast.v      # Integration tests (15 tests)
 │   ├── tb_theta_phase_multiplexing.v # Phase tests (19 tests)
 │   ├── tb_scaffold_architecture.v    # Scaffold tests (14 tests)
 │   ├── tb_gamma_theta_nesting.v      # PAC tests (7 tests)
-│   ├── tb_sr_frequency_drift.v       # Drift tests (v8.5)
+│   ├── tb_sr_frequency_drift.v       # Drift tests (30 tests)
+│   ├── tb_canonical_microcircuit.v   # v8.6 pathway tests (20 tests)
 │   ├── tb_learning_fast.v         # CA3 tests (8 tests)
 │   └── ...
 ├── scripts/                # Analysis & visualization
@@ -160,7 +161,7 @@ The system supports 5 consciousness states via `state_select[2:0]`:
 │   └── run_vivado_*.tcl           # Synthesis scripts
 ├── docs/                   # Specifications
 │   ├── FPGA_SPECIFICATION_V8.md   # Base architecture
-│   ├── SPEC_v8.5_UPDATE.md        # Latest changes
+│   ├── SPEC_v8.6_UPDATE.md        # Latest changes (v8.6)
 │   └── SYSTEM_DESCRIPTION.md      # Comprehensive description
 └── Makefile
 ```
@@ -177,10 +178,10 @@ The system supports 5 consciousness states via `state_select[2:0]`:
 
 See [docs/SYSTEM_DESCRIPTION.md](docs/SYSTEM_DESCRIPTION.md) for comprehensive technical description.
 
-See [docs/SPEC_v8.5_UPDATE.md](docs/SPEC_v8.5_UPDATE.md) for latest changes including:
-- SR frequency drift implementation
-- Updated observed frequencies
-- Test coverage summary
+See [docs/SPEC_v8.6_UPDATE.md](docs/SPEC_v8.6_UPDATE.md) for latest changes including:
+- Canonical microcircuit connectivity (L4→L2/3→L5→L6)
+- L5b→L6 intra-column feedback
+- 20 new pathway verification tests
 
 See [CLAUDE.md](CLAUDE.md) for development workflow and quick reference.
 

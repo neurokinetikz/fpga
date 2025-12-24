@@ -4,7 +4,7 @@
 
 This is an FPGA implementation of a biologically-realistic neural oscillator system based on the **φⁿ (golden ratio) frequency architecture** with Schumann Resonance coupling. The system implements 21 Hopf oscillators organized into a thalamo-cortical architecture for neural signal processing and consciousness state modeling.
 
-**Current Version:** v8.5 (SR Frequency Drift)
+**Current Version:** v8.6 (Canonical Microcircuit)
 **Target Platform:** Digilent Zybo Z7-20 (Xilinx Zynq-7020)
 
 ## Quick Start
@@ -55,7 +55,7 @@ fpga/
 │   ├── hopf_oscillator_stochastic.v # Stochastic variant with noise input
 │   ├── ca3_phase_memory.v        # Hebbian phase memory (v8.0, theta-gated)
 │   ├── thalamus.v                # Theta oscillator + SR gain (v8.1)
-│   ├── cortical_column.v         # 5-layer cortical model (v8.1, gamma-theta nesting)
+│   ├── cortical_column.v         # 5-layer cortical model (v8.6, canonical microcircuit)
 │   ├── sr_harmonic_bank.v        # 5-harmonic SR bank (v7.4, continuous gain)
 │   ├── sr_noise_generator.v      # Per-harmonic stochastic noise (5 LFSRs)
 │   ├── sr_frequency_drift.v      # v8.5: Realistic SR frequency drift
@@ -63,12 +63,13 @@ fpga/
 │   ├── clock_enable_generator.v  # FAST_SIM-aware 4kHz clock (v6.0)
 │   ├── pink_noise_generator.v    # 1/f noise (v5.5, Voss-McCartney)
 │   └── output_mixer.v            # DAC output mixing (v5.5)
-├── tb/                           # Testbenches (23 files)
+├── tb/                           # Testbenches (24 files)
 │   ├── tb_full_system_fast.v     # Full system integration (v6.5, 15 tests)
 │   ├── tb_theta_phase_multiplexing.v # Theta phase tests (19 tests)
 │   ├── tb_scaffold_architecture.v    # Scaffold layer tests (14 tests)
 │   ├── tb_gamma_theta_nesting.v      # Gamma-theta PAC tests (7 tests)
-│   ├── tb_sr_frequency_drift.v       # v8.5: SR drift tests
+│   ├── tb_sr_frequency_drift.v       # v8.5: SR drift tests (30 tests)
+│   ├── tb_canonical_microcircuit.v   # v8.6: Canonical pathway tests (20 tests)
 │   ├── tb_learning_fast.v        # CA3 learning test (v2.1, 8 tests)
 │   ├── tb_hopf_oscillator.v      # Hopf oscillator unit test
 │   ├── tb_state_transitions.v    # State machine test (12 tests)
@@ -79,7 +80,7 @@ fpga/
 │   └── run_vivado_*.tcl          # Vivado TCL scripts
 ├── docs/                         # Specifications
 │   ├── FPGA_SPECIFICATION_V8.md  # Base architecture spec (v8.0)
-│   ├── SPEC_v8.5_UPDATE.md       # Current version (v8.5)
+│   ├── SPEC_v8.6_UPDATE.md       # Current version (v8.6)
 │   └── SYSTEM_DESCRIPTION.md     # Comprehensive system description
 └── Makefile
 ```
@@ -172,7 +173,8 @@ fpga/
 
 ## Current Specification
 
-See [docs/SPEC_v8.5_UPDATE.md](docs/SPEC_v8.5_UPDATE.md) for the latest v8.5 architecture with:
+See [docs/SPEC_v8.6_UPDATE.md](docs/SPEC_v8.6_UPDATE.md) for the latest v8.6 architecture with:
+- **Canonical Microcircuit** (v8.6): L4→L2/3→L5→L6 signal flow, L5b→L6 feedback
 - **SR Frequency Drift** (v8.5): Realistic bounded random walk within observed SR ranges
 - Theta phase multiplexing (8-phase encoding/retrieval windows)
 - Scaffold architecture (L4/L5b stable, L2/3/L6 plastic)
@@ -183,12 +185,13 @@ Base specification: [docs/FPGA_SPECIFICATION_V8.md](docs/FPGA_SPECIFICATION_V8.m
 
 ## Testing
 
-All testbenches should pass. Key tests (125+ total):
+All testbenches should pass. Key tests (139+ total):
 - `tb_full_system_fast`: 15/15 tests - full integration (v6.5)
 - `tb_theta_phase_multiplexing`: 19/19 tests - theta phase (v8.3)
 - `tb_scaffold_architecture`: 14/14 tests - scaffold layers (v8.0)
 - `tb_gamma_theta_nesting`: 7/7 tests - gamma-theta PAC (v8.4)
-- `tb_sr_frequency_drift`: SR drift tests (v8.5)
+- `tb_sr_frequency_drift`: 30/30 tests - SR drift (v8.5)
+- `tb_canonical_microcircuit`: 20/20 tests - canonical pathway (v8.6)
 - `tb_multi_harmonic_sr`: 17/17 tests - multi-harmonic SR
 - `tb_learning_fast`: 8/8 tests - CA3 Hebbian learning (v2.1)
 - `tb_state_transitions`: 12/12 tests - consciousness states
