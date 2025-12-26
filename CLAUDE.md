@@ -4,7 +4,7 @@
 
 This is an FPGA implementation of a biologically-realistic neural oscillator system based on the **φⁿ (golden ratio) frequency architecture** with Schumann Resonance coupling. The system implements 21 Hopf oscillators organized into a thalamo-cortical architecture for neural signal processing and consciousness state modeling.
 
-**Current Version:** v8.7 (Layer 1 + Matrix Thalamic)
+**Current Version:** v8.8 (L6 Output Connectivity)
 **Target Platform:** Digilent Zybo Z7-20 (Xilinx Zynq-7020)
 
 ## Quick Start
@@ -50,12 +50,12 @@ make clean             # Clean generated files
 ```
 fpga/
 ├── src/                          # Verilog source modules (14 files)
-│   ├── phi_n_neural_processor.v  # Top-level (v8.7, 21 oscillators + L1)
+│   ├── phi_n_neural_processor.v  # Top-level (v8.8, 21 oscillators + L1 + L6)
 │   ├── hopf_oscillator.v         # Core oscillator (v6.0, dx/dt = μx - ωy - r²x)
 │   ├── hopf_oscillator_stochastic.v # Stochastic variant with noise input
 │   ├── ca3_phase_memory.v        # Hebbian phase memory (v8.0, theta-gated)
-│   ├── thalamus.v                # Theta oscillator + SR gain + matrix output (v8.7)
-│   ├── cortical_column.v         # 6-layer cortical model (v8.7, L1 + canonical)
+│   ├── thalamus.v                # Theta + SR + matrix + L6 inhibition (v8.8)
+│   ├── cortical_column.v         # 6-layer cortical model (v8.8, L6→L5a, L4→L5a)
 │   ├── layer1_minimal.v          # Layer 1 apical gain modulation (v8.7)
 │   ├── sr_harmonic_bank.v        # 5-harmonic SR bank (v7.4, continuous gain)
 │   ├── sr_noise_generator.v      # Per-harmonic stochastic noise (5 LFSRs)
@@ -72,6 +72,7 @@ fpga/
 │   ├── tb_sr_frequency_drift.v       # v8.5: SR drift tests (30 tests)
 │   ├── tb_canonical_microcircuit.v   # v8.6: Canonical pathway tests (20 tests)
 │   ├── tb_layer1_minimal.v       # v8.7: Layer 1 gain modulation tests (10 tests)
+│   ├── tb_l6_connectivity.v      # v8.8: L6 output target tests (10 tests)
 │   ├── tb_learning_fast.v        # CA3 learning test (v2.1, 8 tests)
 │   ├── tb_hopf_oscillator.v      # Hopf oscillator unit test
 │   ├── tb_state_transitions.v    # State machine test (12 tests)
@@ -179,10 +180,16 @@ fpga/
 | K_FB2 | 3277 | 0.2 | Distant column feedback weight |
 | GAIN_MIN | 8192 | 0.5 | L1 minimum apical gain |
 | GAIN_MAX | 24576 | 1.5 | L1 maximum apical gain |
+| K_L6_L5A | 2458 | 0.15 | L6 → L5a intra-column (v8.8) |
+| K_L4_L5A | 1638 | 0.1 | L4 → L5a bypass (v8.8) |
+| K_L6_THAL | 1638 | 0.1 | L6 → Thalamus direct inhibition (v8.8) |
+| K_TRN | 3277 | 0.2 | TRN amplification of L6 inhibition (v8.8) |
 
 ## Current Specification
 
-See [docs/SPEC_v8.7_UPDATE.md](docs/SPEC_v8.7_UPDATE.md) for the latest v8.7 architecture with:
+See [docs/SPEC_v8.8_UPDATE.md](docs/SPEC_v8.8_UPDATE.md) for the latest v8.8 architecture with:
+- **L6 Output Connectivity** (v8.8): L6→L5a, L4→L5a bypass, L6→Thalamus+TRN inhibition
+- **Separate L5a/L5b Inputs** (v8.8): L5a receives L6 feedback + L4 bypass; L5b unchanged
 - **Layer 1 Gain Modulation** (v8.7): Molecular layer integrates matrix + feedback → apical gain [0.5, 1.5]
 - **Matrix Thalamic Pathway** (v8.7): L5b → Thalamus → L1 diffuse broadcast (POm/Pulvinar analog)
 - **Canonical Microcircuit** (v8.6): L4→L2/3→L5→L6 signal flow, L5b→L6 feedback
@@ -196,7 +203,7 @@ Base specification: [docs/FPGA_SPECIFICATION_V8.md](docs/FPGA_SPECIFICATION_V8.m
 
 ## Testing
 
-All testbenches should pass. Key tests (152 total):
+All testbenches should pass. Key tests (162+ total):
 - `tb_full_system_fast`: 15/15 tests - full integration (v6.5)
 - `tb_theta_phase_multiplexing`: 19/19 tests - theta phase (v8.3)
 - `tb_scaffold_architecture`: 14/14 tests - scaffold layers (v8.0)
@@ -204,9 +211,10 @@ All testbenches should pass. Key tests (152 total):
 - `tb_sr_frequency_drift`: 30/30 tests - SR drift (v8.5)
 - `tb_canonical_microcircuit`: 20/20 tests - canonical pathway (v8.6)
 - `tb_layer1_minimal`: 10/10 tests - Layer 1 gain modulation (v8.7)
+- `tb_l6_connectivity`: 10/10 tests - L6 output targets (v8.8)
 - `tb_multi_harmonic_sr`: 17/17 tests - multi-harmonic SR
 - `tb_learning_fast`: 8/8 tests - CA3 Hebbian learning (v2.1)
-- `tb_sr_coupling`: 2/2 tests - SR coupling
+- `tb_sr_coupling`: 12/12 tests - SR coupling
 - `tb_v55_fast`: 6/6 tests - fast integration
 
 ## Notes

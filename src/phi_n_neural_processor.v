@@ -1,5 +1,11 @@
 //=============================================================================
-// Top-Level Module - v8.7 with Matrix Thalamic Pathway
+// Top-Level Module - v8.8 with L6 Output Connectivity
+//
+// v8.8 CHANGES (L6 Output Targets):
+// - L6 → Thalamus inhibitory modulation (10:1 ratio + TRN amplification)
+// - L6 → L5a intra-column pathway (K_L6_L5A = 0.15)
+// - L4 → L5a bypass pathway (K_L4_L5A = 0.1)
+// - L5a now has separate input from L5b
 //
 // v8.7 CHANGES (Matrix Thalamic Input):
 // - Added matrix thalamic pathway: L5b (all columns) → Thalamus → L1 (all columns)
@@ -7,13 +13,8 @@
 // - Computes theta-gated average for matrix_output
 // - matrix_output broadcast identically to all cortical columns' L1
 // - Implements biologically accurate POm/Pulvinar pathway
-//
-// v9.1 CHANGES (Dual Feedback Inputs for L1):
-// - Cortical columns now have two feedback inputs for L1 gain modulation
-// - feedback_input_1: adjacent column (weight 0.3 in L1)
-// - feedback_input_2: distant column (weight 0.2 in L1)
+// - Dual feedback inputs for L1 gain modulation
 // - Hierarchical top-down: Motor → Association → Sensory
-// - Sensory receives feedback from both association AND motor columns
 //
 // v8.2 CHANGES (Realistic SR Frequency Variation):
 // - Added sr_frequency_drift module for realistic Schumann resonance modeling

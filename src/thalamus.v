@@ -1,5 +1,11 @@
 //=============================================================================
-// Thalamus Module - v8.7 with Matrix Thalamic Pathway
+// Thalamus Module - v8.8 with L6 CT Inhibitory Modulation
+//
+// v8.8 CHANGES (L6 → Thalamus + TRN-like Inhibition):
+// - L6 CT neurons now modulate theta_gate (10:1 ratio, K_L6_THAL = 0.1)
+// - Added TRN-like amplification of L6 inhibition (K_TRN = 0.2)
+// - Combined effect: L6 activity reduces thalamic transmission
+// - Implements corticothalamic inhibitory control
 //
 // v8.7 CHANGES (Matrix Thalamic System):
 // - Added L5b inputs from all cortical columns for matrix pathway
@@ -147,6 +153,12 @@ localparam signed [WIDTH-1:0] K_ENTRAIN = 18'sd2048;
 localparam signed [WIDTH-1:0] AMPLIFICATION_GAIN = 18'sd24576;
 // Baseline gain: 1.0× in Q14
 localparam signed [WIDTH-1:0] SR_BASELINE_GAIN = 18'sd16384;
+
+// v8.8: L6 CT → Thalamus inhibitory modulation constants
+// L6 projects to thalamus with 10:1 convergence ratio (weak individual effect)
+localparam signed [WIDTH-1:0] K_L6_THAL = 18'sd1638;  // 0.1 - direct L6 inhibition
+// TRN (Thalamic Reticular Nucleus) amplifies L6 inhibitory effect
+localparam signed [WIDTH-1:0] K_TRN = 18'sd3277;      // 0.2 - TRN amplification
 
 //-----------------------------------------------------------------------------
 // v7.3: Build SR field input - use packed if non-zero, else replicate single
@@ -301,12 +313,29 @@ assign dynamic_gain = (dynamic_gain_raw > MAX_GAIN) ? MAX_GAIN : dynamic_gain_ra
 //-----------------------------------------------------------------------------
 // Theta Gate and Gain Computation
 //-----------------------------------------------------------------------------
+// v8.8: L6 CT → Thalamus inhibitory modulation
+// L6 corticothalamic neurons inhibit thalamic relay (direct + TRN-amplified)
+// Combined effect reduces theta_gate when L6 is active
 
 wire signed [WIDTH-1:0] theta_gate_raw;
+wire signed [WIDTH-1:0] theta_gate_pre_l6;  // Before L6 modulation
 wire signed [WIDTH-1:0] theta_gate;
 wire signed [2*WIDTH-1:0] gated_full;
 
-assign theta_gate_raw = HALF + (theta_x_int >>> 1);
+// v8.8: Compute L6 inhibitory effect on theta gate
+// Direct L6 inhibition (K_L6_THAL = 0.1) + TRN amplification (K_TRN = 0.2)
+wire signed [2*WIDTH-1:0] l6_direct_full;
+wire signed [2*WIDTH-1:0] l6_trn_full;
+wire signed [WIDTH-1:0] l6_inhibition;  // Combined L6 + TRN inhibition
+
+assign l6_direct_full = l6_alpha_feedback * K_L6_THAL;
+assign l6_trn_full = l6_alpha_feedback * K_TRN;
+// Total inhibition = direct (0.1) + TRN-amplified (0.2) = 0.3 × l6_alpha_feedback
+assign l6_inhibition = (l6_direct_full >>> FRAC) + (l6_trn_full >>> FRAC);
+
+// Theta gate with L6 inhibition (active L6 reduces thalamic transmission)
+assign theta_gate_pre_l6 = HALF + (theta_x_int >>> 1);
+assign theta_gate_raw = theta_gate_pre_l6 - l6_inhibition;
 assign theta_gate = (theta_gate_raw[WIDTH-1]) ? 18'sd0 : theta_gate_raw;
 
 // Alpha feedback modulation (existing behavior)

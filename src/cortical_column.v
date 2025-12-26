@@ -1,24 +1,24 @@
 //=============================================================================
-// Cortical Column - v8.7 with Matrix Thalamic Input to Layer 1
+// Cortical Column - v8.8 with L6 Output Connectivity
+//
+// v8.8 CHANGES (L6 Output Targets):
+// - L5a now has SEPARATE input from L5b (was shared)
+// - Added L6 → L5a intra-column pathway (K_L6_L5A = 0.15)
+//   Recent finding: L6 CT projects to L5a, NOT L4
+// - Added L4 → L5a bypass pathway (K_L4_L5A = 0.1)
+//   Enables faster sensorimotor responses
+// - L5a input = L2/3 + L6_feedback + L4_bypass (all × apical_gain)
+// - L5b input = L2/3 + inter-column_feedback (unchanged)
 //
 // v8.7 CHANGES (Matrix Thalamic Input):
 // - Added matrix_thalamic_input port for diffuse thalamic modulation
 // - Matrix thalamus (POm, Pulvinar) projects to L1 across all columns
 // - Implements cortex→matrix thalamus→L1 feedback loop
 // - L1 now integrates: matrix input + feedback_1 + feedback_2
-//
-// v9.1 CHANGES (Dual Feedback Inputs):
-// - L1 now receives two feedback inputs for longer-range modulation
-// - feedback_input_1: adjacent column feedback (weight 0.3)
-// - feedback_input_2: distant column feedback (weight 0.2)
-// - Enables hierarchical top-down: Motor → Association → Sensory
-//
-// v9.0 CHANGES (Spectrolaminar Architecture - Layer 1):
-// - Added Layer 1 (molecular layer) for top-down gain modulation
-// - L1 receives feedback_input, outputs apical_gain (0.5 to 1.5)
-// - L2/3 input is modulated by apical_gain (apical dendrites in L1)
-// - L5 input is modulated by apical_gain (thick-tufted PT neurons reach L1)
-// - Implements: feedback -> L1 -> gain modulation of superficial processing
+// - Dual feedback inputs for L1 gain modulation
+// - Layer 1 (molecular layer) for top-down gain modulation
+// - L2/3 input modulated by apical_gain (apical dendrites in L1)
+// - L5 input modulated by apical_gain (thick-tufted PT neurons reach L1)
 //
 // v8.6 CHANGES (Canonical Microcircuit):
 // - L5 now receives from L2/3 (processed) instead of L4 (raw)
@@ -145,6 +145,10 @@ localparam signed [WIDTH-1:0] K_L5_L6  = 18'sd3277;  // 0.2 - L5b → L6 intra-c
 localparam signed [WIDTH-1:0] K_PAC    = 18'sd3277;  // 0.2 - PAC modulation
 localparam signed [WIDTH-1:0] K_FB_L5  = 18'sd3277;  // 0.2 - Inter-column feedback
 
+// v8.8: L6 output connectivity constants
+localparam signed [WIDTH-1:0] K_L6_L5A = 18'sd2458;  // 0.15 - L6 → L5a intra-column
+localparam signed [WIDTH-1:0] K_L4_L5A = 18'sd1638;  // 0.1 - L4 → L5a bypass (fast sensorimotor)
+
 wire signed [WIDTH-1:0] l6_x_int, l6_y_int;
 wire signed [WIDTH-1:0] l5b_x_int, l5b_y_int;
 wire signed [WIDTH-1:0] l5a_x_int, l5a_y_int;
@@ -156,10 +160,12 @@ wire signed [WIDTH-1:0] l6_amp, l5b_amp, l5a_amp, l4_amp, l23_amp;
 // v9.0: Layer 1 apical gain modulation
 wire signed [WIDTH-1:0] l1_apical_gain;
 
-wire signed [WIDTH-1:0] l4_input, l23_input, l5_input, l6_input;
-wire signed [WIDTH-1:0] l23_input_raw, l5_input_raw;  // v9.0: Pre-modulation inputs
+wire signed [WIDTH-1:0] l4_input, l23_input, l5b_input, l5a_input, l6_input;  // v8.8: separate L5a/L5b
+wire signed [WIDTH-1:0] l23_input_raw, l5b_input_raw, l5a_input_raw;  // v8.8: separate pre-modulation
 wire signed [2*WIDTH-1:0] l23_to_l5_full, l4_to_l23_full, pac_full, fb_l5_full;
 wire signed [2*WIDTH-1:0] l5_to_l6_full;  // v8.6: Intra-column L5b → L6 feedback
+wire signed [2*WIDTH-1:0] l6_to_l5a_full;  // v8.8: L6 → L5a intra-column
+wire signed [2*WIDTH-1:0] l4_to_l5a_full;  // v8.8: L4 → L5a bypass
 wire signed [WIDTH-1:0] pac_mod;
 
 //=============================================================================
@@ -193,16 +199,40 @@ assign l4_input = thalamic_theta_input + feedforward_input;
 // v8.6: L5 receives from L2/3 (processed) instead of L4 (raw)
 // This implements canonical cortical pathway: L4 → L2/3 → L5
 assign l23_to_l5_full = l23_x_int * K_L23_L5;
-// v9.1: Use primary feedback (feedback_input_1) for L5/L6 direct input
+// v9.1: Use primary feedback (feedback_input_1) for L5b/L6 direct input
 assign fb_l5_full = feedback_input_1 * K_FB_L5;
 
-// v9.0: L5 raw input (before L1 modulation)
-assign l5_input_raw = (l23_to_l5_full >>> FRAC) + (fb_l5_full >>> FRAC);
+//=============================================================================
+// v8.8: Separate L5a and L5b Inputs
+//=============================================================================
+// L5b: receives L2/3 feedforward + inter-column feedback (unchanged from v8.7)
+// L5a: receives L2/3 feedforward + L6 feedback + L4 bypass (NEW in v8.8)
+//
+// Biological basis:
+// - L6 CT → L5a: Recent finding shows L6 projects to L5a, not L4
+// - L4 → L5a bypass: Fast sensorimotor pathway bypassing L2/3
 
-// v9.0: Apply L1 apical gain to L5 input (PT neurons have thick-tufted dendrites in L1)
-wire signed [2*WIDTH-1:0] l5_input_modulated;
-assign l5_input_modulated = l5_input_raw * l1_apical_gain;
-assign l5_input = l5_input_modulated >>> FRAC;
+// L5b raw input (before L1 modulation) - unchanged
+assign l5b_input_raw = (l23_to_l5_full >>> FRAC) + (fb_l5_full >>> FRAC);
+
+// v8.8: L5a receives L6 intra-column feedback
+assign l6_to_l5a_full = l6_x_int * K_L6_L5A;
+
+// v8.8: L5a receives L4 bypass (fast sensorimotor pathway)
+assign l4_to_l5a_full = l4_x_int * K_L4_L5A;
+
+// L5a raw input: L2/3 + L6 feedback + L4 bypass
+assign l5a_input_raw = (l23_to_l5_full >>> FRAC) + (l6_to_l5a_full >>> FRAC) + (l4_to_l5a_full >>> FRAC);
+
+// Apply L1 apical gain to L5b input (PT neurons have thick-tufted dendrites in L1)
+wire signed [2*WIDTH-1:0] l5b_input_modulated;
+assign l5b_input_modulated = l5b_input_raw * l1_apical_gain;
+assign l5b_input = l5b_input_modulated >>> FRAC;
+
+// Apply L1 apical gain to L5a input
+wire signed [2*WIDTH-1:0] l5a_input_modulated;
+assign l5a_input_modulated = l5a_input_raw * l1_apical_gain;
+assign l5a_input = l5a_input_modulated >>> FRAC;
 
 // v8.6: L6 receives: intra-column L5b feedback + inter-column feedback + PHASE COUPLING
 // Implements corticothalamic pathway: L5 → L6 → Thalamus
@@ -234,14 +264,15 @@ hopf_oscillator #(.WIDTH(WIDTH), .FRAC(FRAC)) osc_l6 (
 hopf_oscillator #(.WIDTH(WIDTH), .FRAC(FRAC)) osc_l5b (
     .clk(clk), .rst(rst), .clk_en(clk_en),
     .mu_dt(mu_dt_l5b), .omega_dt(OMEGA_DT_L5B),
-    .input_x(l5_input),
+    .input_x(l5b_input),  // v8.8: separate L5b input
     .x(l5b_x_int), .y(l5b_y_int), .amplitude(l5b_amp)
 );
 
+// v8.8: L5a now has separate input with L6 feedback and L4 bypass
 hopf_oscillator #(.WIDTH(WIDTH), .FRAC(FRAC)) osc_l5a (
     .clk(clk), .rst(rst), .clk_en(clk_en),
     .mu_dt(mu_dt_l5a), .omega_dt(OMEGA_DT_L5A),
-    .input_x(l5_input),
+    .input_x(l5a_input),  // v8.8: separate L5a input (L2/3 + L6 + L4_bypass)
     .x(l5a_x_int), .y(l5a_y_int), .amplitude(l5a_amp)
 );
 
