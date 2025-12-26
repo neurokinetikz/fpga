@@ -4,7 +4,7 @@
 
 This is an FPGA implementation of a biologically-realistic neural oscillator system based on the **φⁿ (golden ratio) frequency architecture** with Schumann Resonance coupling. The system implements 21 Hopf oscillators organized into a thalamo-cortical architecture for neural signal processing and consciousness state modeling.
 
-**Current Version:** v8.6 (Canonical Microcircuit)
+**Current Version:** v8.7 (Layer 1 + Matrix Thalamic)
 **Target Platform:** Digilent Zybo Z7-20 (Xilinx Zynq-7020)
 
 ## Quick Start
@@ -49,13 +49,14 @@ make clean             # Clean generated files
 
 ```
 fpga/
-├── src/                          # Verilog source modules (13 files)
-│   ├── phi_n_neural_processor.v  # Top-level (v8.2, 21 oscillators integrated)
+├── src/                          # Verilog source modules (14 files)
+│   ├── phi_n_neural_processor.v  # Top-level (v8.7, 21 oscillators + L1)
 │   ├── hopf_oscillator.v         # Core oscillator (v6.0, dx/dt = μx - ωy - r²x)
 │   ├── hopf_oscillator_stochastic.v # Stochastic variant with noise input
 │   ├── ca3_phase_memory.v        # Hebbian phase memory (v8.0, theta-gated)
-│   ├── thalamus.v                # Theta oscillator + SR gain (v8.1)
-│   ├── cortical_column.v         # 5-layer cortical model (v8.6, canonical microcircuit)
+│   ├── thalamus.v                # Theta oscillator + SR gain + matrix output (v8.7)
+│   ├── cortical_column.v         # 6-layer cortical model (v8.7, L1 + canonical)
+│   ├── layer1_minimal.v          # Layer 1 apical gain modulation (v8.7)
 │   ├── sr_harmonic_bank.v        # 5-harmonic SR bank (v7.4, continuous gain)
 │   ├── sr_noise_generator.v      # Per-harmonic stochastic noise (5 LFSRs)
 │   ├── sr_frequency_drift.v      # v8.5: Realistic SR frequency drift
@@ -70,6 +71,7 @@ fpga/
 │   ├── tb_gamma_theta_nesting.v      # Gamma-theta PAC tests (7 tests)
 │   ├── tb_sr_frequency_drift.v       # v8.5: SR drift tests (30 tests)
 │   ├── tb_canonical_microcircuit.v   # v8.6: Canonical pathway tests (20 tests)
+│   ├── tb_layer1_minimal.v       # v8.7: Layer 1 gain modulation tests (10 tests)
 │   ├── tb_learning_fast.v        # CA3 learning test (v2.1, 8 tests)
 │   ├── tb_hopf_oscillator.v      # Hopf oscillator unit test
 │   ├── tb_state_transitions.v    # State machine test (12 tests)
@@ -80,7 +82,8 @@ fpga/
 │   └── run_vivado_*.tcl          # Vivado TCL scripts
 ├── docs/                         # Specifications
 │   ├── FPGA_SPECIFICATION_V8.md  # Base architecture spec (v8.0)
-│   ├── SPEC_v8.6_UPDATE.md       # Current version (v8.6)
+│   ├── SPEC_v8.7_UPDATE.md       # Current version (v8.7)
+│   ├── SPEC_v8.6_UPDATE.md       # Canonical microcircuit (v8.6)
 │   └── SYSTEM_DESCRIPTION.md     # Comprehensive system description
 └── Makefile
 ```
@@ -138,6 +141,7 @@ fpga/
 | L2/3 | Plastic | Receives phase coupling, gamma feedforward |
 | L6 | Plastic | Receives phase coupling, alpha gain control |
 | L5a | Intermediate | Motor output, no direct coupling |
+| L1 | Gain modulator | Matrix thalamic + dual feedback → apical gain |
 
 ### Simulation Speedup (FAST_SIM parameter)
 - `FAST_SIM=0`: Real-time (4 kHz, divider=31250)
@@ -170,10 +174,17 @@ fpga/
 | MAX_GAIN | 32768 | 2.0 | SR amplification limit |
 | BETA_QUIET_THRESHOLD | 15360 | 0.9375 | SR gating threshold |
 | COHERENCE_THRESHOLD | 12288 | 0.75 | SIE detection |
+| K_MATRIX | 2458 | 0.15 | Matrix thalamus → L1 weight |
+| K_FB1 | 4915 | 0.3 | Adjacent column feedback weight |
+| K_FB2 | 3277 | 0.2 | Distant column feedback weight |
+| GAIN_MIN | 8192 | 0.5 | L1 minimum apical gain |
+| GAIN_MAX | 24576 | 1.5 | L1 maximum apical gain |
 
 ## Current Specification
 
-See [docs/SPEC_v8.6_UPDATE.md](docs/SPEC_v8.6_UPDATE.md) for the latest v8.6 architecture with:
+See [docs/SPEC_v8.7_UPDATE.md](docs/SPEC_v8.7_UPDATE.md) for the latest v8.7 architecture with:
+- **Layer 1 Gain Modulation** (v8.7): Molecular layer integrates matrix + feedback → apical gain [0.5, 1.5]
+- **Matrix Thalamic Pathway** (v8.7): L5b → Thalamus → L1 diffuse broadcast (POm/Pulvinar analog)
 - **Canonical Microcircuit** (v8.6): L4→L2/3→L5→L6 signal flow, L5b→L6 feedback
 - **SR Frequency Drift** (v8.5): Realistic bounded random walk within observed SR ranges
 - Theta phase multiplexing (8-phase encoding/retrieval windows)
@@ -185,17 +196,18 @@ Base specification: [docs/FPGA_SPECIFICATION_V8.md](docs/FPGA_SPECIFICATION_V8.m
 
 ## Testing
 
-All testbenches should pass. Key tests (139+ total):
+All testbenches should pass. Key tests (152 total):
 - `tb_full_system_fast`: 15/15 tests - full integration (v6.5)
 - `tb_theta_phase_multiplexing`: 19/19 tests - theta phase (v8.3)
 - `tb_scaffold_architecture`: 14/14 tests - scaffold layers (v8.0)
 - `tb_gamma_theta_nesting`: 7/7 tests - gamma-theta PAC (v8.4)
 - `tb_sr_frequency_drift`: 30/30 tests - SR drift (v8.5)
 - `tb_canonical_microcircuit`: 20/20 tests - canonical pathway (v8.6)
+- `tb_layer1_minimal`: 10/10 tests - Layer 1 gain modulation (v8.7)
 - `tb_multi_harmonic_sr`: 17/17 tests - multi-harmonic SR
 - `tb_learning_fast`: 8/8 tests - CA3 Hebbian learning (v2.1)
-- `tb_state_transitions`: 12/12 tests - consciousness states
-- `tb_hopf_oscillator`: 5/5 tests - Hopf dynamics
+- `tb_sr_coupling`: 2/2 tests - SR coupling
+- `tb_v55_fast`: 6/6 tests - fast integration
 
 ## Notes
 

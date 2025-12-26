@@ -1,14 +1,14 @@
 # φⁿ Neural Processor - Comprehensive System Description
 
-**Version:** 8.6
-**Date:** 2025-12-23
-**Based on:** Complete analysis of all 13 source modules (~3,000 lines of Verilog)
+**Version:** 8.7
+**Date:** 2025-12-26
+**Based on:** Complete analysis of all 14 source modules (~3,200 lines of Verilog)
 
 ---
 
 ## Executive Summary
 
-The φⁿ Neural Processor is an FPGA implementation of 21 coupled nonlinear oscillators organized as a thalamo-cortical network. The system models biological neural rhythms using golden ratio (φ ≈ 1.618) frequency relationships, implements associative memory through theta-gated Hebbian learning, and exhibits stochastic resonance sensitivity to weak external electromagnetic fields. Version 8.6 implements canonical cortical microcircuit connectivity with proper L4→L2/3→L5→L6 signal flow.
+The φⁿ Neural Processor is an FPGA implementation of 21 coupled nonlinear oscillators organized as a thalamo-cortical network. The system models biological neural rhythms using golden ratio (φ ≈ 1.618) frequency relationships, implements associative memory through theta-gated Hebbian learning, and exhibits stochastic resonance sensitivity to weak external electromagnetic fields. Version 8.7 implements Layer 1 (molecular layer) with matrix thalamic input for top-down gain modulation, completing the 6-layer spectrolaminar cortical architecture.
 
 ---
 
@@ -62,7 +62,7 @@ All 21 oscillators follow structured frequency relationships:
 
 ---
 
-## 3. Thalamic Theta System (thalamus.v, v8.1)
+## 3. Thalamic Theta System (thalamus.v, v8.7)
 
 ### 3.1 Theta Phase Multiplexing (v8.0)
 
@@ -89,6 +89,28 @@ The theta oscillator (5.89 Hz) provides an 8-phase cycle (~170ms period):
 ### 3.2 SR Integration
 
 Thalamus instantiates the SR harmonic bank and applies per-harmonic continuous gain to the theta oscillator input.
+
+### 3.3 Matrix Thalamic Pathway (v8.7)
+
+In addition to the core relay (sensory → theta-gated → L4), thalamus now implements a matrix pathway:
+
+**Two Thalamic Systems:**
+| System | Nuclei | Projection | Function |
+|--------|--------|------------|----------|
+| **Core** | dLGN, VPM | Focal to L4 | Fast, precise sensory relay |
+| **Matrix** | POm, Pulvinar | Diffuse to L1 | Attention, arousal, context |
+
+**Matrix Computation:**
+```
+// L5b from all cortical columns drives matrix thalamus
+l5b_sum = l5b_sensory + l5b_assoc + l5b_motor
+l5b_avg = l5b_sum × ONE_THIRD
+
+// Theta-gated for temporal coherence
+matrix_output = l5b_avg × theta_gate
+```
+
+The matrix_output is broadcast identically to all cortical columns' Layer 1, enabling global attention/arousal modulation.
 
 ---
 
@@ -190,19 +212,27 @@ Transitions controlled by theta_x thresholds with hysteresis (±0.25).
 
 ---
 
-## 6. Cortical Column Architecture (cortical_column.v, v8.6)
+## 6. Cortical Column Architecture (cortical_column.v, v8.7)
 
-### 6.1 Five-Layer Stack
+### 6.1 Six-Layer Stack (v8.7)
 
-Each of 3 columns contains 5 oscillators:
+Each of 3 columns contains Layer 1 plus 5 oscillators:
 
-| Layer | Frequency | Role | Connectivity (v8.6 Canonical) |
-|-------|-----------|------|-------------------------------|
-| L2/3 | 40.36/65.3 Hz | Gamma, feedforward | Receives L4 input, phase coupling |
-| L4 | 31.73 Hz | Thalamocortical | Receives theta input, feedforward |
-| L5a | 15.42 Hz | Low beta, motor output | Receives L2/3 input (canonical) |
-| L5b | 24.94 Hz | High beta, feedback | Receives L2/3 input (canonical) |
-| L6 | 9.53 Hz | Alpha, gain control | Receives L5b + inter-column FB + phase coupling |
+**Layer 1 (Molecular Layer) - v8.7:**
+- Contains only GABAergic interneurons (no oscillator)
+- Receives: matrix thalamic input, dual cortico-cortical feedback
+- Outputs: apical_gain for L2/3 and L5 modulation
+- Function: top-down attention/context gating
+
+**Layers 2-6 (Oscillator Stack):**
+
+| Layer | Frequency | Role | Connectivity (v8.7) |
+|-------|-----------|------|---------------------|
+| L2/3 | 40.36/65.3 Hz | Gamma, feedforward | L4 input × **apical_gain** + phase coupling |
+| L4 | 31.73 Hz | Thalamocortical | Receives theta input, feedforward (no L1 gain) |
+| L5a | 15.42 Hz | Low beta, motor output | L2/3 input × **apical_gain** |
+| L5b | 24.94 Hz | High beta, feedback | L2/3 input × **apical_gain** |
+| L6 | 9.53 Hz | Alpha, gain control | L5b + inter-column FB + phase coupling (no L1 gain) |
 
 ### 6.2 Scaffold Architecture (v8.0)
 
@@ -236,39 +266,49 @@ else:                   // Phases 4-7, theta trough
 
 This implements differential gamma frequencies for sensory encoding (fast) vs memory retrieval (slow).
 
-### 6.4 Canonical Microcircuit (v8.6)
+### 6.4 Canonical Microcircuit with L1 Modulation (v8.7)
 
-v8.6 implements proper cortical signal flow matching neuroscience literature (Douglas & Martin, 2004; Harris & Shepherd, 2015):
+v8.7 adds Layer 1 gain modulation to the canonical cortical signal flow:
 
-**Canonical Pathway:**
+**Canonical Pathway with L1:**
 ```
-Thalamus → L4 → L2/3 → L5 → Output (subcortical)
+Matrix Thalamus ──────────────────────▶ L1 (apical_gain)
+                                         │
+Thalamus → L4 → L2/3 ──────────────────▶ L5 → Output
+              (×apical_gain)        (×apical_gain)
                   ↓
-                 L6 → Thalamus (corticothalamic modulation)
+                 L6 → Thalamus (corticothalamic)
 ```
 
-**Key Changes from v8.5:**
-- L5 receives from L2/3 (processed) instead of L4 (raw)
-- L6 receives intra-column L5b feedback for corticothalamic modulation
+**Layer 1 Gain Formula (v8.7):**
+```
+combined = 0.15 × matrix + 0.3 × fb1 + 0.2 × fb2
+apical_gain = clamp(1.0 + combined, 0.5, 1.5)
+```
 
 **Coupling Constants (Q14):**
 ```
-K_L4_L23 = 6554  (0.4) - L4 → L2/3 feedforward
-K_L23_L5 = 4915  (0.3) - L2/3 → L5 (canonical pathway)
-K_L5_L6  = 3277  (0.2) - L5b → L6 intra-column feedback
-K_PAC    = 3277  (0.2) - PAC modulation
-K_FB_L5  = 3277  (0.2) - Inter-column feedback
+K_MATRIX = 2458  (0.15) - Matrix thalamus → L1
+K_FB1    = 4915  (0.3)  - Adjacent column feedback → L1
+K_FB2    = 3277  (0.2)  - Distant column feedback → L1
+K_L4_L23 = 6554  (0.4)  - L4 → L2/3 feedforward
+K_L23_L5 = 4915  (0.3)  - L2/3 → L5 (canonical pathway)
+K_L5_L6  = 3277  (0.2)  - L5b → L6 intra-column feedback
+K_PAC    = 3277  (0.2)  - PAC modulation
+K_FB_L5  = 3277  (0.2)  - Inter-column feedback
 ```
 
-**Signal Chain:**
+**Signal Chain (v8.7):**
 ```
+L1 computes apical_gain from matrix + feedbacks
+    ↓
 L4 oscillates (thalamocortical input)
     ↓ K_L4_L23
-L2/3 sees L4[N-1] + PAC + phase_coupling
+L2/3 input = (L4[N-1] + PAC + phase_coupling) × apical_gain
     ↓ K_L23_L5
-L5 sees L2/3[N-1] + inter-column feedback
+L5 input = (L2/3[N-1] + inter-column feedback) × apical_gain
     ↓ K_L5_L6
-L6 sees L5b[N-1] + inter-column feedback + phase_coupling
+L6 sees L5b[N-1] + inter-column feedback + phase_coupling (no gain)
 ```
 
 One-cycle delay between layers implements natural synaptic propagation time.
@@ -333,7 +373,7 @@ dac_output = (mixed + 1.0) × 2048  // 12-bit, 0-4095
 
 ---
 
-## 9. Top-Level Integration (phi_n_neural_processor.v, v8.2)
+## 9. Top-Level Integration (phi_n_neural_processor.v, v8.7)
 
 ### 9.1 Signal Flow
 
@@ -343,23 +383,26 @@ dac_output = (mixed + 1.0) × 2048  // 12-bit, 0-4095
 External SR Fields → SR Harmonic Bank → sr_gains[5]
                                             ↓
 Thalamus (theta) ← sr_gain_sum ← weighted_sum(sr_gains × coherence)
-     ↓
-  theta_x, theta_phase, encoding_window
-     ↓
-  ┌──────────────────────────────────────────┐
-  │ CA3 Phase Memory                          │
-  │   pattern_in[6] → Hebbian weights → phase_pattern[6] │
-  └──────────────────────────────────────────┘
-     ↓
-phase_coupling[6] = K_PHASE × (phase_bit ? +1 : -1)
-     ↓
-  ┌────────────┬────────────┬────────────┐
-  │ Column 0   │ Column 1   │ Column 2   │
+     │
+     ├─▶ theta_x, theta_phase, encoding_window
+     │
+     └─▶ matrix_output (v8.7) ─────────────────────────────┐
+                                                            │
+  ┌──────────────────────────────────────────┐              │
+  │ CA3 Phase Memory                          │              │
+  │   pattern_in[6] → Hebbian weights → phase_pattern[6] │  │
+  └──────────────────────────────────────────┘              │
+     ↓                                                      │
+phase_coupling[6] = K_PHASE × (phase_bit ? +1 : -1)         │
+     ↓                                                      ↓
+  ┌────────────┬────────────┬────────────┐           matrix broadcast
+  │ Column 0   │ Column 1   │ Column 2   │◀──────────────────┘
   │ (Sensory)  │ (Assoc)    │ (Motor)    │
+  │ L1←matrix  │ L1←matrix  │ L1←matrix  │  ← v8.7: Layer 1
   │ L2/3←coup  │ L2/3←coup  │ L2/3←coup  │
   │ L4         │ L4         │ L4         │
   │ L5a        │ L5a        │ L5a        │
-  │ L5b        │ L5b        │ L5b        │
+  │ L5b ───────┼─▶ Thalamus (matrix input) ← v8.7: L5b feedback
   │ L6←coup    │ L6←coup    │ L6←coup    │
   └────────────┴────────────┴────────────┘
      ↓
@@ -377,21 +420,25 @@ phase_coupling[6] = K_PHASE × (phase_bit ? +1 : -1)
 ### 9.3 Module Hierarchy
 
 ```
-phi_n_neural_processor (top)
+phi_n_neural_processor (top) - v8.7
 ├── clock_enable_generator
 ├── sr_noise_generator
 ├── sr_frequency_drift (v8.5)
 ├── config_controller
-├── thalamus
+├── thalamus - v8.7
 │   ├── hopf_oscillator (theta)
-│   └── sr_harmonic_bank
-│       └── hopf_oscillator_stochastic ×5
+│   ├── sr_harmonic_bank
+│   │   └── hopf_oscillator_stochastic ×5
+│   └── matrix thalamic computation (L5b→matrix_output)
 ├── ca3_phase_memory
-├── cortical_column (sensory)
+├── cortical_column (sensory) - v8.7
+│   ├── layer1_minimal (matrix + dual feedback → apical_gain)
 │   └── hopf_oscillator ×5
-├── cortical_column (association)
+├── cortical_column (association) - v8.7
+│   ├── layer1_minimal
 │   └── hopf_oscillator ×5
-├── cortical_column (motor)
+├── cortical_column (motor) - v8.7
+│   ├── layer1_minimal
 │   └── hopf_oscillator ×5
 ├── pink_noise_generator
 └── output_mixer
@@ -415,13 +462,17 @@ phi_n_neural_processor (top)
 
 7. **SR Frequency Drift (v8.5)**: Bounded random walk models realistic hours-scale SR variation, preventing artificial coherence from exact frequency matches
 
+8. **Layer 1 Gain Modulation (v8.7)**: Molecular layer integrates matrix thalamic + dual cortico-cortical feedback to produce apical gain [0.5, 1.5] for L2/3 and L5 modulation
+
+9. **Matrix Thalamic Pathway (v8.7)**: L5b PT neurons from all columns drive matrix thalamus (POm/Pulvinar analog), which broadcasts diffuse modulation to all L1
+
 ---
 
 ## 11. Test Coverage Summary
 
-- 139+ automated tests across 24 testbenches
-- Coverage: Hopf dynamics, CA3 learning/recall, theta phase, scaffold architecture, gamma nesting, canonical microcircuit, SR coupling, SR drift, state transitions
-- All tests passing as of v8.6
+- 152 automated tests across 11 testbenches
+- Coverage: Hopf dynamics, CA3 learning/recall, theta phase, scaffold architecture, gamma nesting, canonical microcircuit, SR coupling, SR drift, state transitions, Layer 1 gain modulation
+- All tests passing as of v8.7
 
 ### Key Testbenches
 
@@ -431,12 +482,13 @@ phi_n_neural_processor (top)
 | tb_theta_phase_multiplexing | 19 | 8-phase cycle, windows |
 | tb_scaffold_architecture | 14 | Scaffold/plastic differentiation |
 | tb_gamma_theta_nesting | 7 | L2/3 frequency switching |
-| tb_canonical_microcircuit | 20 | v8.6 canonical pathway verification |
+| tb_canonical_microcircuit | 20 | Canonical pathway verification |
 | tb_sr_frequency_drift | 30 | Drift bounds, random walk |
 | tb_multi_harmonic_sr | 17 | Per-harmonic coherence |
 | tb_learning_fast | 8 | CA3 Hebbian learning |
-| tb_state_transitions | 12 | Consciousness states |
-| tb_hopf_oscillator | 5 | Core dynamics |
+| tb_sr_coupling | 2 | SR coupling tests |
+| tb_v55_fast | 6 | Fast integration tests |
+| tb_layer1_minimal | 10 | v8.7: Layer 1 gain modulation |
 
 ---
 
@@ -444,6 +496,7 @@ phi_n_neural_processor (top)
 
 | Version | Date | Key Changes |
 |---------|------|-------------|
+| **v8.7** | **2025-12-26** | **Layer 1, dual feedback, matrix thalamic pathway** |
 | v8.6 | 2025-12-23 | Canonical microcircuit: L2/3→L5, L5b→L6 intra-column feedback |
 | v8.5 | 2025-12-23 | SR frequency drift with bounded random walk |
 | v8.4 | 2025-12-23 | Gamma-theta nesting implementation, integration tests |

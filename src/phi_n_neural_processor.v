@@ -1,5 +1,19 @@
 //=============================================================================
-// Top-Level Module - v8.2 with SR Frequency Drift
+// Top-Level Module - v8.7 with Matrix Thalamic Pathway
+//
+// v8.7 CHANGES (Matrix Thalamic Input):
+// - Added matrix thalamic pathway: L5b (all columns) → Thalamus → L1 (all columns)
+// - Thalamus receives L5b from sensory, association, and motor columns
+// - Computes theta-gated average for matrix_output
+// - matrix_output broadcast identically to all cortical columns' L1
+// - Implements biologically accurate POm/Pulvinar pathway
+//
+// v9.1 CHANGES (Dual Feedback Inputs for L1):
+// - Cortical columns now have two feedback inputs for L1 gain modulation
+// - feedback_input_1: adjacent column (weight 0.3 in L1)
+// - feedback_input_2: distant column (weight 0.2 in L1)
+// - Hierarchical top-down: Motor → Association → Sensory
+// - Sensory receives feedback from both association AND motor columns
 //
 // v8.2 CHANGES (Realistic SR Frequency Variation):
 // - Added sr_frequency_drift module for realistic Schumann resonance modeling
@@ -221,6 +235,9 @@ wire signed [WIDTH-1:0] thalamic_theta_amp;
 wire [2:0] thalamic_theta_phase;  // v8.0: 8-phase theta cycle
 wire signed [WIDTH-1:0] l6_alpha_feedback;
 
+// v9.2: Matrix thalamic output (broadcast to all columns' L1)
+wire signed [WIDTH-1:0] thalamic_matrix_output;
+
 wire signed [WIDTH-1:0] sensory_l6_x, assoc_l6_x, motor_l6_x;
 wire signed [WIDTH-1:0] l6_sum;
 wire signed [2*WIDTH-1:0] l6_avg_full;
@@ -275,6 +292,11 @@ thalamus #(
     .sr_field_input(sr_field_input),  // v7.2 compatibility
     .beta_amplitude(beta_amplitude_avg),
 
+    // v9.2: L5b inputs from all cortical columns (for matrix thalamic pathway)
+    .l5b_sensory(sensory_l5b_x),
+    .l5b_assoc(assoc_l5b_x),
+    .l5b_motor(motor_l5b_x),
+
     // v7.3: Cortical oscillator states for per-band coherence
     .alpha_x(sensory_l6_x),
     .alpha_y(sensory_l6_y),
@@ -308,7 +330,10 @@ thalamus #(
     // SR Coupling indicators
     .sr_coherence(sr_coherence),
     .sr_amplification(sr_amplification),
-    .beta_quiet(beta_quiet)
+    .beta_quiet(beta_quiet),
+
+    // v9.2: Matrix thalamic output (broadcast to all columns' L1)
+    .matrix_output(thalamic_matrix_output)
 );
 
 //=============================================================================
@@ -401,9 +426,17 @@ wire signed [WIDTH-1:0] sensory_feedforward = 18'sd0;
 wire signed [WIDTH-1:0] assoc_feedforward   = sensory_l23_x;
 wire signed [WIDTH-1:0] motor_feedforward   = assoc_l23_x;
 
-wire signed [WIDTH-1:0] motor_feedback   = 18'sd0;
-wire signed [WIDTH-1:0] assoc_feedback   = motor_l5b_x;
-wire signed [WIDTH-1:0] sensory_feedback = assoc_l5b_x;
+// v9.1: Dual feedback inputs for L1 gain modulation
+// Each column receives feedback from higher-level columns:
+// - Sensory: fb1=association (adjacent), fb2=motor (distant)
+// - Association: fb1=motor (adjacent), fb2=0 (no distant)
+// - Motor: fb1=0, fb2=0 (top of hierarchy)
+wire signed [WIDTH-1:0] sensory_feedback_1 = assoc_l5b_x;   // Adjacent: Association
+wire signed [WIDTH-1:0] sensory_feedback_2 = motor_l5b_x;   // Distant: Motor
+wire signed [WIDTH-1:0] assoc_feedback_1   = motor_l5b_x;   // Adjacent: Motor
+wire signed [WIDTH-1:0] assoc_feedback_2   = 18'sd0;        // No distant feedback
+wire signed [WIDTH-1:0] motor_feedback_1   = 18'sd0;        // Top of hierarchy
+wire signed [WIDTH-1:0] motor_feedback_2   = 18'sd0;        // Top of hierarchy
 
 cortical_column #(.WIDTH(WIDTH), .FRAC(FRAC)) col_sensory (
     .clk(clk),
@@ -411,7 +444,9 @@ cortical_column #(.WIDTH(WIDTH), .FRAC(FRAC)) col_sensory (
     .clk_en(clk_4khz_en),
     .thalamic_theta_input(thalamic_theta_output),
     .feedforward_input(sensory_feedforward),
-    .feedback_input(sensory_feedback),
+    .matrix_thalamic_input(thalamic_matrix_output),  // v9.2: broadcast to all
+    .feedback_input_1(sensory_feedback_1),  // v9.1: Adjacent (association)
+    .feedback_input_2(sensory_feedback_2),  // v9.1: Distant (motor)
     .phase_couple_l23(phase_couple_sensory_l23),
     .phase_couple_l6(phase_couple_sensory_l6),
     .encoding_window(ca3_encoding_window),  // v8.1: gamma-theta nesting
@@ -435,7 +470,9 @@ cortical_column #(.WIDTH(WIDTH), .FRAC(FRAC)) col_assoc (
     .clk_en(clk_4khz_en),
     .thalamic_theta_input(thalamic_theta_output),
     .feedforward_input(assoc_feedforward),
-    .feedback_input(assoc_feedback),
+    .matrix_thalamic_input(thalamic_matrix_output),  // v9.2: broadcast to all
+    .feedback_input_1(assoc_feedback_1),    // v9.1: Adjacent (motor)
+    .feedback_input_2(assoc_feedback_2),    // v9.1: Distant (none)
     .phase_couple_l23(phase_couple_assoc_l23),
     .phase_couple_l6(phase_couple_assoc_l6),
     .encoding_window(ca3_encoding_window),  // v8.1: gamma-theta nesting
@@ -459,7 +496,9 @@ cortical_column #(.WIDTH(WIDTH), .FRAC(FRAC)) col_motor (
     .clk_en(clk_4khz_en),
     .thalamic_theta_input(thalamic_theta_output),
     .feedforward_input(motor_feedforward),
-    .feedback_input(motor_feedback),
+    .matrix_thalamic_input(thalamic_matrix_output),  // v9.2: broadcast to all
+    .feedback_input_1(motor_feedback_1),    // v9.1: No adjacent (top of hierarchy)
+    .feedback_input_2(motor_feedback_2),    // v9.1: No distant (top of hierarchy)
     .phase_couple_l23(phase_couple_motor_l23),
     .phase_couple_l6(phase_couple_motor_l6),
     .encoding_window(ca3_encoding_window),  // v8.1: gamma-theta nesting

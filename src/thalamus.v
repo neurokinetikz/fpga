@@ -1,5 +1,12 @@
 //=============================================================================
-// Thalamus Module - v8.1 with Theta Phase Multiplexing + SR Frequency Drift
+// Thalamus Module - v8.7 with Matrix Thalamic Pathway
+//
+// v8.7 CHANGES (Matrix Thalamic System):
+// - Added L5b inputs from all cortical columns for matrix pathway
+// - Matrix thalamus (POm, Pulvinar) receives driver input from L5 PT neurons
+// - Computes theta-gated average of L5b outputs
+// - matrix_output broadcast to all columns' L1 for diffuse modulation
+// - Implements cortex→matrix thalamus→L1 feedback loop
 //
 // NEUROPHYSIOLOGICAL BASIS:
 // "Layer 4 shows characteristic current sinks... with gamma and theta
@@ -74,6 +81,11 @@ module thalamus #(
     // v7.2: Beta amplitude from cortical L5 (for SR gating)
     input  wire signed [WIDTH-1:0] beta_amplitude,
 
+    // v8.2: L5b inputs from all cortical columns (for matrix thalamic pathway)
+    input  wire signed [WIDTH-1:0] l5b_sensory,
+    input  wire signed [WIDTH-1:0] l5b_assoc,
+    input  wire signed [WIDTH-1:0] l5b_motor,
+
     // v7.3: Cortical oscillator states for per-band coherence
     input  wire signed [WIDTH-1:0] alpha_x, alpha_y,        // L6 ~10 Hz
     input  wire signed [WIDTH-1:0] beta_low_x, beta_low_y,  // L5a ~15 Hz
@@ -111,7 +123,10 @@ module thalamus #(
     // SR Coupling indicators (v7.2 compatibility + v7.3 aggregate)
     output wire signed [WIDTH-1:0] sr_coherence,      // f₀ coherence (v7.2 compat)
     output wire                    sr_amplification,  // SIE active (any harmonic)
-    output wire                    beta_quiet         // Beta below threshold (SR-ready)
+    output wire                    beta_quiet,        // Beta below threshold (SR-ready)
+
+    // v8.2: Matrix thalamic output (diffuse projection to all columns' L1)
+    output wire signed [WIDTH-1:0] matrix_output
 );
 
 //-----------------------------------------------------------------------------
@@ -434,6 +449,34 @@ always @(*) begin
 end
 
 assign theta_phase = theta_phase_int;
+
+//-----------------------------------------------------------------------------
+// v8.2: Matrix Thalamic Pathway (POm, Pulvinar analog)
+//
+// BIOLOGICAL BASIS:
+// Matrix thalamus receives driver input from L5 PT (pyramidal tract) neurons,
+// not direct sensory input. It projects diffusely to L1 across multiple
+// cortical areas, providing a global arousal/attention signal.
+//
+// Signal flow: Cortex L5b → Matrix Thalamus → L1 (all columns)
+//-----------------------------------------------------------------------------
+
+// Sum and average L5b outputs from all columns
+wire signed [WIDTH-1:0] l5b_sum_matrix;
+wire signed [2*WIDTH-1:0] l5b_avg_full;
+wire signed [WIDTH-1:0] l5b_avg;
+
+localparam signed [WIDTH-1:0] ONE_THIRD_MATRIX = 18'sd5461;  // 1/3 in Q14
+
+assign l5b_sum_matrix = l5b_sensory + l5b_assoc + l5b_motor;
+assign l5b_avg_full = l5b_sum_matrix * ONE_THIRD_MATRIX;
+assign l5b_avg = l5b_avg_full >>> FRAC;
+
+// Apply theta gate for temporal coherence with core pathway
+// Matrix output peaks when theta peaks (same phase as core relay)
+wire signed [2*WIDTH-1:0] matrix_gated_full;
+assign matrix_gated_full = l5b_avg * theta_gate;
+assign matrix_output = matrix_gated_full >>> FRAC;
 
 //-----------------------------------------------------------------------------
 // Output Assignments

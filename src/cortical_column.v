@@ -1,5 +1,24 @@
 //=============================================================================
-// Cortical Column - v8.6 with Canonical Microcircuit Connectivity
+// Cortical Column - v8.7 with Matrix Thalamic Input to Layer 1
+//
+// v8.7 CHANGES (Matrix Thalamic Input):
+// - Added matrix_thalamic_input port for diffuse thalamic modulation
+// - Matrix thalamus (POm, Pulvinar) projects to L1 across all columns
+// - Implements cortex→matrix thalamus→L1 feedback loop
+// - L1 now integrates: matrix input + feedback_1 + feedback_2
+//
+// v9.1 CHANGES (Dual Feedback Inputs):
+// - L1 now receives two feedback inputs for longer-range modulation
+// - feedback_input_1: adjacent column feedback (weight 0.3)
+// - feedback_input_2: distant column feedback (weight 0.2)
+// - Enables hierarchical top-down: Motor → Association → Sensory
+//
+// v9.0 CHANGES (Spectrolaminar Architecture - Layer 1):
+// - Added Layer 1 (molecular layer) for top-down gain modulation
+// - L1 receives feedback_input, outputs apical_gain (0.5 to 1.5)
+// - L2/3 input is modulated by apical_gain (apical dendrites in L1)
+// - L5 input is modulated by apical_gain (thick-tufted PT neurons reach L1)
+// - Implements: feedback -> L1 -> gain modulation of superficial processing
 //
 // v8.6 CHANGES (Canonical Microcircuit):
 // - L5 now receives from L2/3 (processed) instead of L4 (raw)
@@ -71,7 +90,13 @@ module cortical_column #(
 
     input  wire signed [WIDTH-1:0] thalamic_theta_input,
     input  wire signed [WIDTH-1:0] feedforward_input,
-    input  wire signed [WIDTH-1:0] feedback_input,
+
+    // v9.2: Matrix thalamic input (diffuse projection to L1)
+    input  wire signed [WIDTH-1:0] matrix_thalamic_input,
+
+    // v9.1: Dual feedback inputs for L1 gain modulation
+    input  wire signed [WIDTH-1:0] feedback_input_1,  // Adjacent column (weight 0.3)
+    input  wire signed [WIDTH-1:0] feedback_input_2,  // Distant column (weight 0.2)
 
     // Phase coupling inputs from CA3
     input  wire signed [WIDTH-1:0] phase_couple_l23,
@@ -128,21 +153,60 @@ wire signed [WIDTH-1:0] l23_x_int, l23_y_int;
 
 wire signed [WIDTH-1:0] l6_amp, l5b_amp, l5a_amp, l4_amp, l23_amp;
 
+// v9.0: Layer 1 apical gain modulation
+wire signed [WIDTH-1:0] l1_apical_gain;
+
 wire signed [WIDTH-1:0] l4_input, l23_input, l5_input, l6_input;
+wire signed [WIDTH-1:0] l23_input_raw, l5_input_raw;  // v9.0: Pre-modulation inputs
 wire signed [2*WIDTH-1:0] l23_to_l5_full, l4_to_l23_full, pac_full, fb_l5_full;
 wire signed [2*WIDTH-1:0] l5_to_l6_full;  // v8.6: Intra-column L5b → L6 feedback
 wire signed [WIDTH-1:0] pac_mod;
 
+//=============================================================================
+// v9.2: Layer 1 - Matrix Thalamic + Dual Feedback Apical Gain Modulation
+//=============================================================================
+// L1 receives matrix thalamic input plus TWO cortico-cortical feedback sources.
+// This models the molecular layer's integration of:
+// - matrix_thalamic_input: diffuse projection from POm/Pulvinar (global attention)
+// - feedback_input_1: adjacent column (e.g., association → sensory)
+// - feedback_input_2: distant column (e.g., motor → sensory)
+layer1_minimal #(
+    .WIDTH(WIDTH),
+    .FRAC(FRAC)
+) l1 (
+    .clk(clk),
+    .rst(rst),
+    .clk_en(clk_en),
+    .matrix_thalamic_input(matrix_thalamic_input),  // v9.2: diffuse thalamic
+    .feedback_input_1(feedback_input_1),
+    .feedback_input_2(feedback_input_2),
+    .apical_gain(l1_apical_gain)
+);
+
+//=============================================================================
+// Layer Input Computations with L1 Gain Modulation
+//=============================================================================
+
+// L4 input: thalamic + feedforward (L4 dendrites don't reach L1, no gain)
 assign l4_input = thalamic_theta_input + feedforward_input;
 
 // v8.6: L5 receives from L2/3 (processed) instead of L4 (raw)
 // This implements canonical cortical pathway: L4 → L2/3 → L5
 assign l23_to_l5_full = l23_x_int * K_L23_L5;
-assign fb_l5_full = feedback_input * K_FB_L5;
-assign l5_input = (l23_to_l5_full >>> FRAC) + (fb_l5_full >>> FRAC);
+// v9.1: Use primary feedback (feedback_input_1) for L5/L6 direct input
+assign fb_l5_full = feedback_input_1 * K_FB_L5;
+
+// v9.0: L5 raw input (before L1 modulation)
+assign l5_input_raw = (l23_to_l5_full >>> FRAC) + (fb_l5_full >>> FRAC);
+
+// v9.0: Apply L1 apical gain to L5 input (PT neurons have thick-tufted dendrites in L1)
+wire signed [2*WIDTH-1:0] l5_input_modulated;
+assign l5_input_modulated = l5_input_raw * l1_apical_gain;
+assign l5_input = l5_input_modulated >>> FRAC;
 
 // v8.6: L6 receives: intra-column L5b feedback + inter-column feedback + PHASE COUPLING
 // Implements corticothalamic pathway: L5 → L6 → Thalamus
+// Note: L6 dendrites don't extend to L1, so no gain modulation here
 assign l5_to_l6_full = l5b_x_int * K_L5_L6;
 assign l6_input = (l5_to_l6_full >>> FRAC) + (fb_l5_full >>> FRAC) + phase_couple_l6;
 
@@ -151,7 +215,14 @@ assign pac_mod = pac_full[FRAC +: WIDTH];
 
 // L2/3 receives: L4 feedforward + PAC modulation + PHASE COUPLING
 assign l4_to_l23_full = l4_x_int * K_L4_L23;
-assign l23_input = (l4_to_l23_full >>> FRAC) + pac_mod + phase_couple_l23;
+
+// v9.0: L2/3 raw input (before L1 modulation)
+assign l23_input_raw = (l4_to_l23_full >>> FRAC) + pac_mod + phase_couple_l23;
+
+// v9.0: Apply L1 apical gain to L2/3 input (pyramidal neurons have apical tufts in L1)
+wire signed [2*WIDTH-1:0] l23_input_modulated;
+assign l23_input_modulated = l23_input_raw * l1_apical_gain;
+assign l23_input = l23_input_modulated >>> FRAC;
 
 hopf_oscillator #(.WIDTH(WIDTH), .FRAC(FRAC)) osc_l6 (
     .clk(clk), .rst(rst), .clk_en(clk_en),
