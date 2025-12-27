@@ -1,12 +1,16 @@
 //=============================================================================
-// Cortical Column - v9.0 with PV+ Basket Cell Inhibition
+// Cortical Column - v9.2 with PV+ PING Network
+//
+// v9.2 CHANGES (PV+ Interneuron - Phase 3 PING Network):
+// - PV+ interneuron now has its own dynamics (pv_interneuron module)
+// - Leaky integrator with tau = 5ms creates phase lag behind pyramids
+// - Creates proper PING (Pyramidal-Interneuron Gamma Network) dynamics
+// - PV+ state oscillates at gamma frequency with ~90° phase lag
+// - More realistic E-I balance than Phase 1 amplitude-proportional model
+// - Biological basis: PV+ cells fire at gamma, creating E-I loop
 //
 // v9.0 CHANGES (PV+ Interneuron - Phase 1):
-// - Added minimal PV+ basket cell model for L2/3 gamma stabilization
-// - PV+ inhibition proportional to L2/3 amplitude (K_PV = 0.3)
-// - Creates E-I balance for realistic gamma oscillation
-// - Subtractive inhibition applied before L1 gain modulation
-// - Biological basis: PV+ cells are fast-spiking, target soma/proximal dendrites
+// - [Superseded by v9.2] Amplitude-proportional inhibition replaced with dynamic model
 //
 // v8.8 CHANGES (L6 Output Targets):
 // - L5a now has SEPARATE input from L5b (was shared)
@@ -156,8 +160,8 @@ localparam signed [WIDTH-1:0] K_FB_L5  = 18'sd3277;  // 0.2 - Inter-column feedb
 localparam signed [WIDTH-1:0] K_L6_L5A = 18'sd2458;  // 0.15 - L6 → L5a intra-column
 localparam signed [WIDTH-1:0] K_L4_L5A = 18'sd1638;  // 0.1 - L4 → L5a bypass (fast sensorimotor)
 
-// v9.0: PV+ basket cell inhibition constant
-localparam signed [WIDTH-1:0] K_PV = 18'sd4915;  // 0.3 - PV+ amplitude-proportional inhibition
+// v9.2: PV+ interneuron now uses separate module with its own dynamics
+// K_PV, K_EXCITE, TAU_INV are inside pv_interneuron.v
 
 wire signed [WIDTH-1:0] l6_x_int, l6_y_int;
 wire signed [WIDTH-1:0] l5b_x_int, l5b_y_int;
@@ -260,23 +264,34 @@ assign l4_to_l23_full = l4_x_int * K_L4_L23;
 assign l23_input_raw = (l4_to_l23_full >>> FRAC) + pac_mod + phase_couple_l23;
 
 //=============================================================================
-// v9.0: PV+ Basket Cell Inhibition (Phase 1 - Minimal Model)
+// v9.2: PV+ PING Network (Phase 3 - Dynamic Interneuron Model)
 //=============================================================================
-// PV+ (parvalbumin-positive) basket cells provide fast perisomatic inhibition
-// proportional to L2/3 pyramidal cell activity (amplitude).
-// This creates a negative feedback loop that:
-// - Stabilizes gamma oscillation amplitude
-// - Prevents runaway excitation
-// - Contributes to E-I balance necessary for gamma generation
+// PV+ interneuron now has its own dynamics instead of just amplitude-proportional
+// inhibition. This creates a proper PING (Pyramidal-Interneuron Gamma Network):
 //
-// Biological basis:
-// - PV+ cells are fast-spiking interneurons targeting soma/proximal dendrites
-// - They receive same excitatory input as pyramidal cells
-// - Their inhibition is proportional to population activity
-wire signed [2*WIDTH-1:0] pv_full;
+// - PV+ receives excitation from L2/3 pyramidal output (l23_x_int)
+// - PV+ has leaky integrator dynamics with tau = 5ms
+// - PV+ output oscillates at gamma frequency
+// - ~90° phase lag behind pyramidal activity
+// - Creates more realistic E-I balance for gamma generation
+//
+// Key difference from Phase 1:
+// - Phase 1: pv_inhibition = K_PV × l23_amp (instantaneous, no dynamics)
+// - Phase 3: pv_inhibition = K_INHIB × pv_state (dynamic with temporal filtering)
 wire signed [WIDTH-1:0] pv_inhibition;
-assign pv_full = l23_amp * K_PV;
-assign pv_inhibition = pv_full >>> FRAC;
+wire signed [WIDTH-1:0] pv_state_debug;  // For testbench access
+
+pv_interneuron #(
+    .WIDTH(WIDTH),
+    .FRAC(FRAC)
+) pv_l23 (
+    .clk(clk),
+    .rst(rst),
+    .clk_en(clk_en),
+    .pyramid_input(l23_x_int),     // Excitation from L2/3 pyramidal oscillator
+    .inhibition(pv_inhibition),    // Inhibitory output to L2/3 input
+    .pv_state_out(pv_state_debug)  // Debug: internal PV+ state
+);
 
 // L2/3 input with PV+ inhibition subtracted (before L1 gain modulation)
 wire signed [WIDTH-1:0] l23_input_with_pv;

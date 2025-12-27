@@ -4,7 +4,7 @@
 
 This is an FPGA implementation of a biologically-realistic neural oscillator system based on the **φⁿ (golden ratio) frequency architecture** with Schumann Resonance coupling. The system implements 21 Hopf oscillators organized into a thalamo-cortical architecture for neural signal processing and consciousness state modeling.
 
-**Current Version:** v9.1 (SST+ Slow Dynamics)
+**Current Version:** v9.2 (PV+ PING Network)
 **Target Platform:** Digilent Zybo Z7-20 (Xilinx Zynq-7020)
 
 ## Quick Start
@@ -49,14 +49,15 @@ make clean             # Clean generated files
 
 ```
 fpga/
-├── src/                          # Verilog source modules (14 files)
+├── src/                          # Verilog source modules (15 files)
 │   ├── phi_n_neural_processor.v  # Top-level (v8.8, 21 oscillators + L1 + L6)
 │   ├── hopf_oscillator.v         # Core oscillator (v6.0, dx/dt = μx - ωy - r²x)
 │   ├── hopf_oscillator_stochastic.v # Stochastic variant with noise input
 │   ├── ca3_phase_memory.v        # Hebbian phase memory (v8.0, theta-gated)
 │   ├── thalamus.v                # Theta + SR + matrix + L6 inhibition (v8.8)
-│   ├── cortical_column.v         # 6-layer cortical model (v8.8, L6→L5a, L4→L5a)
-│   ├── layer1_minimal.v          # Layer 1 apical gain modulation (v8.7)
+│   ├── cortical_column.v         # 6-layer cortical model (v9.2, PV+ PING)
+│   ├── layer1_minimal.v          # Layer 1 apical gain modulation (v9.1)
+│   ├── pv_interneuron.v          # PV+ basket cell dynamics (v9.2)
 │   ├── sr_harmonic_bank.v        # 5-harmonic SR bank (v7.4, continuous gain)
 │   ├── sr_noise_generator.v      # Per-harmonic stochastic noise (5 LFSRs)
 │   ├── sr_frequency_drift.v      # v8.5: Realistic SR frequency drift
@@ -184,14 +185,16 @@ fpga/
 | K_L4_L5A | 1638 | 0.1 | L4 → L5a bypass (v8.8) |
 | K_L6_THAL | 1638 | 0.1 | L6 → Thalamus direct inhibition (v8.8) |
 | K_TRN | 3277 | 0.2 | TRN amplification of L6 inhibition (v8.8) |
-| K_PV | 4915 | 0.3 | PV+ basket cell inhibition weight (v9.0) |
 | SST_ALPHA | 164 | 0.01 | SST+ slow dynamics filter coefficient (v9.1) |
+| TAU_INV | 819 | 0.05 | PV+ time constant inverse (tau=5ms) (v9.2) |
+| K_EXCITE | 8192 | 0.5 | PV+ excitation gain from pyramid (v9.2) |
+| K_INHIB | 4915 | 0.3 | PV+ inhibition output weight (v9.2) |
 
 ## Current Specification
 
-See [docs/SPEC_v9.1_UPDATE.md](docs/SPEC_v9.1_UPDATE.md) for the latest v9.1 architecture with:
+See [docs/SPEC_v9.2_UPDATE.md](docs/SPEC_v9.2_UPDATE.md) for the latest v9.2 architecture with:
+- **PV+ PING Network** (v9.2): Dynamic PV+ interneuron model creates proper E-I loop with phase lag
 - **SST+ Slow Dynamics** (v9.1): IIR lowpass filter models GABA-B kinetics (~25ms time constant)
-- **PV+ Basket Cell Inhibition** (v9.0): Amplitude-proportional inhibition stabilizes L2/3 gamma
 - **L6 Output Connectivity** (v8.8): L6→L5a, L4→L5a bypass, L6→Thalamus+TRN inhibition
 - **Separate L5a/L5b Inputs** (v8.8): L5a receives L6 feedback + L4 bypass; L5b unchanged
 - **Layer 1 Gain Modulation** (v8.7): Molecular layer integrates matrix + feedback → apical gain [0.5, 1.5]
@@ -207,7 +210,7 @@ Base specification: [docs/FPGA_SPECIFICATION_V8.md](docs/FPGA_SPECIFICATION_V8.m
 
 ## Testing
 
-All testbenches should pass. Key tests (182+ total):
+All testbenches should pass. Key tests (190+ total):
 - `tb_full_system_fast`: 15/15 tests - full integration (v6.5)
 - `tb_theta_phase_multiplexing`: 19/19 tests - theta phase (v8.3)
 - `tb_scaffold_architecture`: 14/14 tests - scaffold layers (v8.0)
@@ -218,6 +221,7 @@ All testbenches should pass. Key tests (182+ total):
 - `tb_l6_connectivity`: 10/10 tests - L6 output targets (v8.8)
 - `tb_pv_minimal`: 6/6 tests - PV+ basket cell inhibition (v9.0)
 - `tb_sst_dynamics`: 8/8 tests - SST+ slow dynamics (v9.1)
+- `tb_pv_feedback`: 8/8 tests - PV+ PING network dynamics (v9.2)
 - `tb_multi_harmonic_sr`: 17/17 tests - multi-harmonic SR
 - `tb_learning_fast`: 8/8 tests - CA3 Hebbian learning (v2.1)
 - `tb_sr_coupling`: 12/12 tests - SR coupling
