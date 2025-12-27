@@ -1,5 +1,12 @@
 //=============================================================================
-// Layer 1 Minimal - v8.7 with Matrix Thalamic Input
+// Layer 1 with SST+ Slow Dynamics - v9.1
+//
+// v9.1 CHANGES (SST+ Slow Dynamics):
+// - Added SST+ (somatostatin-positive) Martinotti cell dynamics
+// - IIR lowpass filter models slow GABA-B kinetics (~25ms time constant)
+// - Gain now tracks FILTERED input, not instantaneous
+// - Creates realistic slow inhibition matching biological SST+ cells
+// - Biological basis: SST+ cells target distal dendrites with slow kinetics
 //
 // v8.7 CHANGES (Matrix Thalamic Input):
 // - Added matrix_thalamic_input port for diffuse thalamic modulation
@@ -16,22 +23,21 @@
 //
 // BIOLOGICAL BASIS:
 // - L1 contains only GABAergic interneurons (no excitatory neurons)
+// - SST+ Martinotti cells: slow GABA-B kinetics, target distal dendrites
 // - Receives: matrix thalamic input, cortico-cortical feedback, neuromodulators
 // - Outputs: modulation to L2/3 and L5 apical dendrites
 // - Function: top-down attention gating, contextual integration
-// - L1 integrates feedback from MULTIPLE higher areas, not just one
 //
-// GAIN MODEL (v9.2):
-// combined = 0.15 * matrix + 0.3 * feedback_1 + 0.2 * feedback_2
-// apical_gain = clamp(1.0 + combined, 0.5, 1.5)
-// - Zero input = unity gain (1.0)
-// - Positive input = enhancement (up to 1.5)
-// - Negative input = suppression (down to 0.5)
+// SST+ GAIN MODEL (v9.1):
+// 1. combined = 0.15 * matrix + 0.3 * feedback_1 + 0.2 * feedback_2
+// 2. sst_activity = lowpass(combined, tau=25ms)  // SST+ slow dynamics
+// 3. apical_gain = clamp(1.0 + sst_activity, 0.5, 1.5)
+// - Slow rise/fall creates realistic inhibition dynamics
+// - Time constant ~25ms matches GABA-B kinetics
 //
 // FUTURE ENHANCEMENTS:
-// v1.3: ACh neuromodulator input
-// v1.4: Neurogliaform-like slow inhibition dynamics
-// v1.5: Delta/theta oscillator for L1 rhythm
+// v9.4: VIP+ disinhibition of SST+
+// v9.5: ACh neuromodulator input
 //=============================================================================
 `timescale 1ns / 1ps
 
@@ -70,6 +76,15 @@ localparam signed [WIDTH-1:0] K_FB2 = 18'sd3277;   // 0.2 - distant column weigh
 localparam signed [WIDTH-1:0] GAIN_MIN = 18'sd8192;   // 0.5 minimum
 localparam signed [WIDTH-1:0] GAIN_MAX = 18'sd24576;  // 1.5 maximum
 
+//=============================================================================
+// v9.1: SST+ Slow Dynamics Constants
+//=============================================================================
+// SST+ (Martinotti) cells have slow GABA-B kinetics
+// Time constant ~25ms at 4 kHz update rate
+// IIR filter: y[n] = y[n-1] + alpha * (x[n] - y[n-1])
+// For tau = 25ms at dt = 0.25ms: alpha = dt/tau = 0.25/25 = 0.01
+localparam signed [WIDTH-1:0] SST_ALPHA = 18'sd164;  // 0.01 - IIR filter coefficient
+
 // v9.2: Matrix thalamic contribution
 wire signed [2*WIDTH-1:0] scaled_matrix;
 assign scaled_matrix = matrix_thalamic_input * K_MATRIX;
@@ -90,9 +105,38 @@ assign fb2_contrib = scaled_fb2 >>> FRAC;
 wire signed [WIDTH-1:0] gain_offset;
 assign gain_offset = matrix_contrib + fb1_contrib + fb2_contrib;
 
-// Compute raw gain: 1.0 + combined feedback
+//=============================================================================
+// v9.1: SST+ Slow Dynamics (IIR Lowpass Filter)
+//=============================================================================
+// SST+ Martinotti cells have slow GABA-B receptor kinetics
+// This creates a lowpass-filtered version of the input
+// Time constant ~25ms provides realistic slow inhibition dynamics
+//
+// Filter equation: sst[n] = sst[n-1] + alpha * (input - sst[n-1])
+// This is equivalent to: sst[n] = (1-alpha) * sst[n-1] + alpha * input
+reg signed [WIDTH-1:0] sst_activity;
+
+// Intermediate signals for filter computation
+wire signed [WIDTH-1:0] sst_error;
+wire signed [2*WIDTH-1:0] sst_delta_full;
+wire signed [WIDTH-1:0] sst_delta;
+
+assign sst_error = gain_offset - sst_activity;
+assign sst_delta_full = sst_error * SST_ALPHA;
+assign sst_delta = sst_delta_full >>> FRAC;
+
+always @(posedge clk) begin
+    if (rst) begin
+        sst_activity <= 0;
+    end else if (clk_en) begin
+        // IIR lowpass: sst_activity += alpha * (gain_offset - sst_activity)
+        sst_activity <= sst_activity + sst_delta;
+    end
+end
+
+// Compute raw gain using FILTERED SST+ activity (not instantaneous)
 wire signed [WIDTH-1:0] gain_raw;
-assign gain_raw = GAIN_BASE + gain_offset;
+assign gain_raw = GAIN_BASE + sst_activity;
 
 // Clamp gain to valid range [0.5, 1.5]
 wire signed [WIDTH-1:0] gain_clamped;

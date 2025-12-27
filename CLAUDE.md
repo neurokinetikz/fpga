@@ -4,7 +4,7 @@
 
 This is an FPGA implementation of a biologically-realistic neural oscillator system based on the **φⁿ (golden ratio) frequency architecture** with Schumann Resonance coupling. The system implements 21 Hopf oscillators organized into a thalamo-cortical architecture for neural signal processing and consciousness state modeling.
 
-**Current Version:** v9.0 (PV+ Basket Cell Inhibition)
+**Current Version:** v9.1 (SST+ Slow Dynamics)
 **Target Platform:** Digilent Zybo Z7-20 (Xilinx Zynq-7020)
 
 ## Quick Start
@@ -185,10 +185,12 @@ fpga/
 | K_L6_THAL | 1638 | 0.1 | L6 → Thalamus direct inhibition (v8.8) |
 | K_TRN | 3277 | 0.2 | TRN amplification of L6 inhibition (v8.8) |
 | K_PV | 4915 | 0.3 | PV+ basket cell inhibition weight (v9.0) |
+| SST_ALPHA | 164 | 0.01 | SST+ slow dynamics filter coefficient (v9.1) |
 
 ## Current Specification
 
-See [docs/SPEC_v9.0_UPDATE.md](docs/SPEC_v9.0_UPDATE.md) for the latest v9.0 architecture with:
+See [docs/SPEC_v9.1_UPDATE.md](docs/SPEC_v9.1_UPDATE.md) for the latest v9.1 architecture with:
+- **SST+ Slow Dynamics** (v9.1): IIR lowpass filter models GABA-B kinetics (~25ms time constant)
 - **PV+ Basket Cell Inhibition** (v9.0): Amplitude-proportional inhibition stabilizes L2/3 gamma
 - **L6 Output Connectivity** (v8.8): L6→L5a, L4→L5a bypass, L6→Thalamus+TRN inhibition
 - **Separate L5a/L5b Inputs** (v8.8): L5a receives L6 feedback + L4 bypass; L5b unchanged
@@ -205,7 +207,7 @@ Base specification: [docs/FPGA_SPECIFICATION_V8.md](docs/FPGA_SPECIFICATION_V8.m
 
 ## Testing
 
-All testbenches should pass. Key tests (174+ total):
+All testbenches should pass. Key tests (182+ total):
 - `tb_full_system_fast`: 15/15 tests - full integration (v6.5)
 - `tb_theta_phase_multiplexing`: 19/19 tests - theta phase (v8.3)
 - `tb_scaffold_architecture`: 14/14 tests - scaffold layers (v8.0)
@@ -215,6 +217,7 @@ All testbenches should pass. Key tests (174+ total):
 - `tb_layer1_minimal`: 10/10 tests - Layer 1 gain modulation (v8.7)
 - `tb_l6_connectivity`: 10/10 tests - L6 output targets (v8.8)
 - `tb_pv_minimal`: 6/6 tests - PV+ basket cell inhibition (v9.0)
+- `tb_sst_dynamics`: 8/8 tests - SST+ slow dynamics (v9.1)
 - `tb_multi_harmonic_sr`: 17/17 tests - multi-harmonic SR
 - `tb_learning_fast`: 8/8 tests - CA3 Hebbian learning (v2.1)
 - `tb_sr_coupling`: 12/12 tests - SR coupling
