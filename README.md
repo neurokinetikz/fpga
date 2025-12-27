@@ -2,7 +2,7 @@
 
 A biologically-realistic neural oscillator system implemented in Verilog for FPGA, featuring golden ratio (φ) frequency architecture, complete interneuron microcircuits, and Schumann Resonance coupling.
 
-**Current Version:** v9.4 (VIP+ Disinhibition)
+**Current Version:** v9.6 (Extended L6 Connectivity)
 **Target Platform:** Digilent Zybo Z7-20 (Xilinx Zynq-7020)
 
 ---
@@ -16,6 +16,8 @@ This project implements a comprehensive thalamo-cortical neural architecture wit
 - **Multi-layer cortical columns** (L1, L2/3, L4, L5a, L5b, L6) with canonical microcircuit connectivity
 - **Dual thalamic pathways**: Core (sensory relay to L4) and Matrix (L5b→L1 diffuse broadcast)
 - **Hebbian phase memory** in CA3-inspired circuit with theta-gated learning
+- **Two-compartment dendritic model** (v9.5): Basal/apical separation with Ca²⁺ spike dynamics and BAC firing
+- **Extended L6 connectivity** (v9.6): L6→L2/3, L6→L5b, L6→L1 modulatory pathways
 
 ### Interneuron Microcircuits (v9.x)
 - **PV+ basket cells**: Fast perisomatic inhibition, PING gamma mechanism (τ=5ms)
@@ -28,6 +30,7 @@ This project implements a comprehensive thalamo-cortical neural architecture wit
 - **Spectrolaminar organization**: Gamma superficial, alpha/beta deep
 - **Schumann Resonance coupling**: 5 drifting harmonics (7.6-32 Hz)
 - **Consciousness state transitions**: Normal, Anesthesia, Psychedelic, Flow, Meditation
+- **State-dependent Ca²⁺ threshold** (v9.5): Lower in PSYCHEDELIC (more Ca²⁺ spikes), higher in ANESTHESIA
 
 ---
 
@@ -35,7 +38,7 @@ This project implements a comprehensive thalamo-cortical neural architecture wit
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────┐
-│                     φⁿ NEURAL PROCESSOR v9.4                                 │
+│                     φⁿ NEURAL PROCESSOR v9.6                                 │
 │                                                                              │
 │  ┌─────────────────────────────────────────────────────────────────────────┐ │
 │  │ SCHUMANN RESONANCE SYSTEM                                               │ │
@@ -63,16 +66,17 @@ This project implements a comprehensive thalamo-cortical neural architecture wit
 │  │                                                                         │ │
 │  │   ┌─────────────────────────────────────────────────────────────────┐   │ │
 │  │   │ LAYER 1 (Molecular) - Modulatory Integration Zone              │   │ │
-│  │   │   Matrix thalamic input + Dual cortico-cortical feedback        │   │ │
+│  │   │   Matrix thalamic input + Dual cortico-cortical feedback + L6   │   │ │
 │  │   │   SST+ slow dynamics (τ=25ms) → VIP+ disinhibition (τ=50ms)    │   │ │
-│  │   │   Output: apical_gain [0.5, 1.5] → modulates L2/3 and L5       │   │ │
+│  │   │   Output: apical_gain [0.25, 2.0] → modulates dendritic Ca²⁺   │   │ │
 │  │   └─────────────────────────────────────────────────────────────────┘   │ │
 │  │   ┌─────────────────────────────────────────────────────────────────┐   │ │
 │  │   │ LAYER 2/3 (Supragranular) - Feedforward Gamma Engine    PLASTIC│   │ │
 │  │   │   40.36/65.3 Hz (φ³·⁵/φ⁴·⁵) - switches with theta phase        │   │ │
-│  │   │   ← L4 input × apical_gain + PAC + phase_coupling               │   │ │
+│  │   │   ← L4 + L6 (basal) + CA3 (apical) × dendritic_gain             │   │ │
 │  │   │   ← PV+ inhibition (L2/3 PING + L4 ff + L5 fb)                  │   │ │
 │  │   │   → Feedforward to next column + CA3                            │   │ │
+│  │   │   Two-compartment: basal + apical with Ca²⁺ spike/BAC (v9.5)   │   │ │
 │  │   └─────────────────────────────────────────────────────────────────┘   │ │
 │  │   ┌─────────────────────────────────────────────────────────────────┐   │ │
 │  │   │ LAYER 4 (Granular) - Thalamocortical Relay          SCAFFOLD   │   │ │
@@ -98,7 +102,8 @@ This project implements a comprehensive thalamo-cortical neural architecture wit
 │  │   │ LAYER 6 (Multiform) - Corticothalamic Control       PLASTIC    │   │ │
 │  │   │   9.53 Hz (φ⁰·⁵) - alpha gain control                           │   │ │
 │  │   │   ← L5b feedback + inter-column + phase_coupling                │   │ │
-│  │   │   → Thalamus (inhibitory via TRN) + L5a intra-column            │   │ │
+│  │   │   → Thalamus (inhibitory via TRN) + L5a + L5b + L2/3 + L1       │   │ │
+│  │   │   Extended connectivity (v9.6): L6→L2/3, L6→L5b, L6→L1          │   │ │
 │  │   └─────────────────────────────────────────────────────────────────┘   │ │
 │  └─────────────────────────────────────────────────────────────────────────┘ │
 │                              ↓                                               │
@@ -212,6 +217,28 @@ Matrix + Feedback ──▶ SST+ ──┤ (inhibits)
 
 When VIP+ is active: VIP+ inhibits SST+ → SST+ inhibition decreases → Pyramidal gain increases (disinhibition)
 
+### Two-Compartment Dendritic Model (v9.5)
+
+Each pyramidal cell (L2/3, L5a, L5b) has separate basal and apical compartments:
+
+```
+                        ┌─────────────────────────┐
+  apical_input ───────▶ │ APICAL COMPARTMENT      │
+  (CA3/top-down)        │   Ca²⁺ spike detector   │──▶ ca_spike
+                        │   threshold varies by   │
+  apical_gain ─────────▶│   consciousness state   │
+  (from L1)             └──────────┬──────────────┘
+                                   │
+                        ┌──────────▼──────────────┐
+  basal_input ────────▶ │ BASAL COMPARTMENT       │
+  (L4/L6/local)         │   + K_APICAL × apical   │──▶ dendritic_out
+                        │   × BAC boost if Ca²⁺   │
+                        └─────────────────────────┘
+```
+
+**BAC (Backpropagating Action Potential-Activated Ca²⁺) Firing:**
+When apical activity exceeds the Ca²⁺ threshold AND basal input is sufficient, the dendritic output is boosted by K_BAC (1.5×). This implements associative computation: top-down context (apical) gates bottom-up input (basal).
+
 ### Cross-Layer PV+ Network (v9.3)
 
 L2/3 receives combined inhibition from three PV+ populations:
@@ -225,13 +252,15 @@ L2/3 receives combined inhibition from three PV+ populations:
 
 The system supports 5 consciousness states via `state_select[2:0]`:
 
-| Code | State | Key Changes | Biological Model |
-|------|-------|-------------|------------------|
-| 0 | **Normal** | All MU = 4 | Balanced waking state |
-| 1 | **Anesthesia** | L6 high, L4/L2/3 suppressed | Propofol-like alpha dominance |
-| 2 | **Psychedelic** | L4/L2/3 enhanced, L6 reduced | Enhanced gamma entropy |
-| 3 | **Flow** | L5a/L5b enhanced | Motor-optimized state |
-| 4 | **Meditation** | Beta reduced, theta coherent | SR-sensitive, theta coherence |
+| Code | State | Key Changes | Ca²⁺ Threshold | Biological Model |
+|------|-------|-------------|----------------|------------------|
+| 0 | **Normal** | All MU = 4 | 0.5 | Balanced waking state |
+| 1 | **Anesthesia** | L6 high, L4/L2/3 suppressed | 0.75 | Propofol-like alpha dominance |
+| 2 | **Psychedelic** | L4/L2/3 enhanced, L6 reduced | 0.25 | Enhanced gamma entropy |
+| 3 | **Flow** | L5a/L5b enhanced | 0.5 | Motor-optimized state |
+| 4 | **Meditation** | Beta reduced, theta coherent | 0.5 | SR-sensitive, theta coherence |
+
+**State-Dependent Ca²⁺ Dynamics (v9.5):** The dendritic Ca²⁺ spike threshold varies by state. Lower thresholds in PSYCHEDELIC produce more Ca²⁺ spikes and BAC firing, enabling enhanced associative processing. Higher thresholds in ANESTHESIA suppress Ca²⁺ spikes, reducing consciousness.
 
 ---
 
@@ -254,25 +283,28 @@ Based on Dupret et al. 2025 findings:
 
 ```
 fpga/
-├── src/                              # Verilog source modules (15 files)
-│   ├── phi_n_neural_processor.v      # Top-level (v9.4, 21 oscillators)
+├── src/                              # Verilog source modules (16 files)
+│   ├── phi_n_neural_processor.v      # Top-level (v9.6, 21 oscillators + dendritic)
 │   ├── hopf_oscillator.v             # Core oscillator (dx/dt = μx - ωy - r²x)
 │   ├── hopf_oscillator_stochastic.v  # Stochastic variant with noise
-│   ├── cortical_column.v             # 6-layer cortical model (v9.4)
-│   ├── layer1_minimal.v              # L1 with VIP+ disinhibition (v9.4)
+│   ├── cortical_column.v             # 6-layer cortical model (v9.6, extended L6)
+│   ├── dendritic_compartment.v       # Two-compartment dendritic model (v9.5)
+│   ├── layer1_minimal.v              # L1 with VIP+ + L6 input (v9.6)
 │   ├── pv_interneuron.v              # PV+ basket cell dynamics (v9.2)
 │   ├── thalamus.v                    # Theta + SR + matrix + L6 inhib (v8.8)
 │   ├── ca3_phase_memory.v            # Hebbian phase memory (v8.0)
 │   ├── sr_harmonic_bank.v            # 5-harmonic SR bank (v7.4)
 │   ├── sr_noise_generator.v          # Per-harmonic stochastic noise
 │   ├── sr_frequency_drift.v          # Realistic SR frequency drift (v8.5)
-│   ├── config_controller.v           # Consciousness states (v8.0)
+│   ├── config_controller.v           # Consciousness states (v9.5, state-dependent Ca²⁺)
 │   ├── clock_enable_generator.v      # FAST_SIM-aware 4kHz clock
 │   ├── pink_noise_generator.v        # 1/f noise (Voss-McCartney)
 │   └── output_mixer.v                # DAC output mixing
 │
-├── tb/                               # Testbenches (31 files, 220+ tests)
+├── tb/                               # Testbenches (33 files, 230+ tests)
 │   ├── tb_full_system_fast.v         # Full integration (15 tests)
+│   ├── tb_l6_extended.v              # Extended L6 connectivity (10 tests) - v9.6
+│   ├── tb_dendritic_compartment.v    # Dendritic Ca²⁺/BAC (10 tests) - v9.5
 │   ├── tb_vip_disinhibition.v        # VIP+ tests (8 tests) - v9.4
 │   ├── tb_pv_crosslayer.v            # Cross-layer PV+ (8 tests) - v9.3
 │   ├── tb_pv_feedback.v              # PING network (8 tests) - v9.2
@@ -297,10 +329,10 @@ fpga/
 │
 ├── docs/                             # Specifications
 │   ├── FPGA_SPECIFICATION_V8.md      # Base architecture spec
-│   ├── SPEC_v9.4_UPDATE.md           # Latest version (VIP+ disinhibition)
+│   ├── SPEC_v9.6_UPDATE.md           # Latest version (extended L6 connectivity)
+│   ├── SPEC_v9.5_UPDATE.md           # Two-compartment dendritic model
+│   ├── SPEC_v9.4_UPDATE.md           # VIP+ disinhibition
 │   ├── SPEC_v9.3_UPDATE.md           # Cross-layer PV+
-│   ├── SPEC_v9.2_UPDATE.md           # PV+ PING network
-│   ├── SPEC_v9.1_UPDATE.md           # SST+ slow dynamics
 │   └── SYSTEM_DESCRIPTION.md         # Comprehensive system description
 │
 ├── CLAUDE.md                         # Development workflow & quick reference
@@ -330,8 +362,15 @@ fpga/
 | K_EXCITE | 8192 | 0.5 | PV+ pyramid excitation |
 | K_INHIB | 4915 | 0.3 | PV+ inhibition weight |
 | K_VIP | 8192 | 0.5 | VIP+ attention scaling |
-| GAIN_MIN | 8192 | 0.5 | L1 minimum apical gain |
-| GAIN_MAX | 24576 | 1.5 | L1 maximum apical gain |
+| GAIN_MIN | 4096 | 0.25 | L1 minimum apical gain (v9.6) |
+| GAIN_MAX | 32768 | 2.0 | L1 maximum apical gain (v9.6) |
+| K_APICAL | 4096 | 0.25 | Apical contribution weight (v9.5) |
+| K_BAC | 24576 | 1.5 | BAC supralinear boost (v9.5) |
+| CA_THRESH_NORMAL | 8192 | 0.5 | Ca²⁺ threshold in NORMAL state |
+| CA_THRESH_PSYCHEDELIC | 4096 | 0.25 | Ca²⁺ threshold in PSYCHEDELIC |
+| K_L6_L23 | 2458 | 0.15 | L6 → L2/3 coupling (v9.6) |
+| K_L6_L5B | 1638 | 0.1 | L6 → L5b coupling (v9.6) |
+| K_L6_L1 | 1638 | 0.1 | L6 → L1 coupling (v9.6) |
 
 ### Simulation Parameters
 - **Update rate:** 4 kHz oscillator dynamics
@@ -345,7 +384,9 @@ fpga/
 
 | Version | Date | Key Features |
 |---------|------|--------------|
-| **v9.4** | 2025-12-27 | VIP+ disinhibition for attention gating |
+| **v9.6** | 2025-12-27 | Extended L6 connectivity (L6→L2/3, L6→L5b, L6→L1) |
+| v9.5 | 2025-12-27 | Two-compartment dendritic model, Ca²⁺ spikes, BAC firing |
+| v9.4 | 2025-12-27 | VIP+ disinhibition for attention gating |
 | v9.3 | 2025-12-27 | Cross-layer PV+ network (L4, L5 populations) |
 | v9.2 | 2025-12-27 | PV+ PING network with dynamic E-I loop |
 | v9.1 | 2025-12-27 | SST+ explicit slow dynamics (IIR filter) |
@@ -370,11 +411,13 @@ All testbenches should pass. Run the full test suite:
 make iverilog-all
 ```
 
-### Test Summary (~220 tests)
+### Test Summary (~230 tests)
 
 | Testbench | Tests | Version | Feature |
 |-----------|-------|---------|---------|
 | tb_full_system_fast | 15 | v6.5 | Full integration |
+| tb_l6_extended | 10 | v9.6 | Extended L6 connectivity |
+| tb_dendritic_compartment | 10 | v9.5 | Dendritic Ca²⁺/BAC |
 | tb_vip_disinhibition | 8 | v9.4 | VIP+ attention gating |
 | tb_pv_crosslayer | 8 | v9.3 | Cross-layer PV+ |
 | tb_pv_feedback | 8 | v9.2 | PING network dynamics |
@@ -398,7 +441,8 @@ make iverilog-all
 
 | Document | Description |
 |----------|-------------|
-| [docs/SPEC_v9.4_UPDATE.md](docs/SPEC_v9.4_UPDATE.md) | Latest v9.4 VIP+ disinhibition spec |
+| [docs/SPEC_v9.6_UPDATE.md](docs/SPEC_v9.6_UPDATE.md) | Latest v9.6 extended L6 connectivity spec |
+| [docs/SPEC_v9.5_UPDATE.md](docs/SPEC_v9.5_UPDATE.md) | Two-compartment dendritic model spec |
 | [docs/FPGA_SPECIFICATION_V8.md](docs/FPGA_SPECIFICATION_V8.md) | Base architecture specification |
 | [docs/SYSTEM_DESCRIPTION.md](docs/SYSTEM_DESCRIPTION.md) | Comprehensive system description |
 | [CLAUDE.md](CLAUDE.md) | Development workflow & quick reference |
@@ -409,11 +453,11 @@ make iverilog-all
 
 | Phase | Version | Feature |
 |-------|---------|---------|
-| 10 | v9.5+ | Neuromodulation (ACh, NE, DA) |
+| 10 | v9.7+ | Neuromodulation (ACh, NE, DA) |
 | 11 | v9.8+ | Slow oscillations (<1 Hz) and delta |
-| 12 | v9.10+ | Sleep spindles (11-16 Hz) |
-| 13 | v9.11+ | Multiple gamma sub-bands |
-| 14 | v9.12+ | Synaptic realism (lognormal weights) |
+| 12 | v9.9+ | Sleep spindles (11-16 Hz) |
+| 13 | v9.10+ | Multiple gamma sub-bands |
+| 14 | v9.11+ | Synaptic realism (lognormal weights) |
 
 ---
 
@@ -432,3 +476,5 @@ Copyright (c) 2024-2025 Neurokinetikz
 - Dupret et al. 2025: Scaffold vs plastic neural populations
 - Douglas & Martin: Canonical cortical microcircuit
 - PV/SST/VIP interneuron classification and function
+- Larkum (2013): A cellular mechanism for cortical associations (BAC firing)
+- Thomson (2010): Neocortical layer 6 (L6 connectivity)
