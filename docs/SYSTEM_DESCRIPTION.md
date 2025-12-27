@@ -1,14 +1,14 @@
 # φⁿ Neural Processor - Comprehensive System Description
 
-**Version:** 8.7
-**Date:** 2025-12-26
-**Based on:** Complete analysis of all 14 source modules (~3,200 lines of Verilog)
+**Version:** 8.8
+**Date:** 2025-12-27
+**Based on:** Complete analysis of all 14 source modules (~3,400 lines of Verilog)
 
 ---
 
 ## Executive Summary
 
-The φⁿ Neural Processor is an FPGA implementation of 21 coupled nonlinear oscillators organized as a thalamo-cortical network. The system models biological neural rhythms using golden ratio (φ ≈ 1.618) frequency relationships, implements associative memory through theta-gated Hebbian learning, and exhibits stochastic resonance sensitivity to weak external electromagnetic fields. Version 8.7 implements Layer 1 (molecular layer) with matrix thalamic input for top-down gain modulation, completing the 6-layer spectrolaminar cortical architecture.
+The φⁿ Neural Processor is an FPGA implementation of 21 coupled nonlinear oscillators organized as a thalamo-cortical network. The system models biological neural rhythms using golden ratio (φ ≈ 1.618) frequency relationships, implements associative memory through theta-gated Hebbian learning, and exhibits stochastic resonance sensitivity to weak external electromagnetic fields. Version 8.8 implements biologically accurate L6 output connectivity: L6→L5a intra-column feedback (instead of L4), L4→L5a bypass for fast sensorimotor responses, and L6 CT→Thalamus inhibitory modulation with TRN amplification.
 
 ---
 
@@ -112,6 +112,33 @@ matrix_output = l5b_avg × theta_gate
 
 The matrix_output is broadcast identically to all cortical columns' Layer 1, enabling global attention/arousal modulation.
 
+### 3.4 L6 CT Inhibitory Modulation (v8.8)
+
+Layer 6 corticothalamic (CT) neurons provide inhibitory feedback to modulate thalamic transmission:
+
+**Dual Inhibitory Pathway:**
+```
+L6 alpha feedback (from all columns)
+    ├── Direct inhibition (K_L6_THAL = 0.1)
+    └── TRN amplification (K_TRN = 0.2)
+        ↓
+Combined inhibition = 0.3 × L6 activity
+        ↓
+theta_gate = theta_gate_pre_l6 - l6_inhibition
+```
+
+**Neurophysiological Basis:**
+- L6 CT neurons project to thalamus at 10:1 ratio (modulatory, not driving)
+- TRN (Thalamic Reticular Nucleus) amplifies L6 inhibition
+- High cortical alpha (L6) → reduced thalamic relay → sensory gating
+- Low cortical alpha → increased thalamic transmission → enhanced input
+
+**Constants (Q14):**
+```
+K_L6_THAL = 1638   (0.1) - Direct L6 → Thalamus inhibition
+K_TRN     = 3277   (0.2) - TRN amplification of L6 inhibition
+```
+
 ---
 
 ## 4. Stochastic Resonance System
@@ -212,9 +239,9 @@ Transitions controlled by theta_x thresholds with hysteresis (±0.25).
 
 ---
 
-## 6. Cortical Column Architecture (cortical_column.v, v8.7)
+## 6. Cortical Column Architecture (cortical_column.v, v8.8)
 
-### 6.1 Six-Layer Stack (v8.7)
+### 6.1 Six-Layer Stack (v8.8)
 
 Each of 3 columns contains Layer 1 plus 5 oscillators:
 
@@ -226,15 +253,42 @@ Each of 3 columns contains Layer 1 plus 5 oscillators:
 
 **Layers 2-6 (Oscillator Stack):**
 
-| Layer | Frequency | Role | Connectivity (v8.7) |
+| Layer | Frequency | Role | Connectivity (v8.8) |
 |-------|-----------|------|---------------------|
 | L2/3 | 40.36/65.3 Hz | Gamma, feedforward | L4 input × **apical_gain** + phase coupling |
 | L4 | 31.73 Hz | Thalamocortical | Receives theta input, feedforward (no L1 gain) |
-| L5a | 15.42 Hz | Low beta, motor output | L2/3 input × **apical_gain** |
-| L5b | 24.94 Hz | High beta, feedback | L2/3 input × **apical_gain** |
-| L6 | 9.53 Hz | Alpha, gain control | L5b + inter-column FB + phase coupling (no L1 gain) |
+| L5a | 15.42 Hz | Low beta, motor output | L2/3 + **L6 feedback** + **L4 bypass** × apical_gain |
+| L5b | 24.94 Hz | High beta, feedback | L2/3 + inter-column FB × **apical_gain** (unchanged) |
+| L6 | 9.53 Hz | Alpha, gain control | L5b + inter-column FB + phase coupling → **Thalamus**, **L5a** |
 
-### 6.2 Scaffold Architecture (v8.0)
+### 6.2 L6 Output Connectivity (v8.8)
+
+v8.8 corrects L6 projection targets based on recent neurophysiology:
+
+**L6 → L5a Intra-column (NEW):**
+- L6 CT neurons project to L5a, NOT L4 (previous assumption was incorrect)
+- Provides feedback modulation of motor output layer
+- Weight: K_L6_L5A = 0.15
+
+**L4 → L5a Bypass (NEW):**
+- Fast pathway for rapid sensorimotor responses
+- Bypasses L2/3 processing for time-critical signals
+- Weight: K_L4_L5A = 0.1
+
+**L6 → Thalamus + TRN (NEW):**
+- Corticothalamic inhibitory control (see Section 3.4)
+- 10:1 modulatory ratio with TRN amplification
+
+**L5a vs L5b Input Separation (v8.8):**
+```
+// L5a: motor output, receives L6 feedback + L4 bypass
+L5a_input = (L2/3 + L6_feedback + L4_bypass) × apical_gain
+
+// L5b: feedback, unchanged from v8.7
+L5b_input = (L2/3 + inter_column_feedback) × apical_gain
+```
+
+### 6.3 Scaffold Architecture (v8.0)
 
 Based on Dupret et al. 2025 - stable backbone vs plastic integration:
 
@@ -253,7 +307,7 @@ input_x = K_PHASE × (phase_bit ? +16384 : -16384)
         = ±0.25 (4096 Q14)
 ```
 
-### 6.3 Gamma-Theta Nesting (v8.1)
+### 6.4 Gamma-Theta Nesting (v8.1)
 
 L2/3 omega_dt dynamically switches based on encoding_window:
 
@@ -266,7 +320,7 @@ else:                   // Phases 4-7, theta trough
 
 This implements differential gamma frequencies for sensory encoding (fast) vs memory retrieval (slow).
 
-### 6.4 Canonical Microcircuit with L1 Modulation (v8.7)
+### 6.5 Canonical Microcircuit with L1 Modulation (v8.7)
 
 v8.7 adds Layer 1 gain modulation to the canonical cortical signal flow:
 
@@ -288,32 +342,46 @@ apical_gain = clamp(1.0 + combined, 0.5, 1.5)
 
 **Coupling Constants (Q14):**
 ```
+// Layer 1 and inter-column
 K_MATRIX = 2458  (0.15) - Matrix thalamus → L1
 K_FB1    = 4915  (0.3)  - Adjacent column feedback → L1
 K_FB2    = 3277  (0.2)  - Distant column feedback → L1
+
+// Canonical microcircuit
 K_L4_L23 = 6554  (0.4)  - L4 → L2/3 feedforward
 K_L23_L5 = 4915  (0.3)  - L2/3 → L5 (canonical pathway)
 K_L5_L6  = 3277  (0.2)  - L5b → L6 intra-column feedback
 K_PAC    = 3277  (0.2)  - PAC modulation
 K_FB_L5  = 3277  (0.2)  - Inter-column feedback
+
+// v8.8: L6 output connectivity
+K_L6_L5A = 2458  (0.15) - L6 → L5a intra-column (NEW)
+K_L4_L5A = 1638  (0.1)  - L4 → L5a bypass (NEW)
+K_L6_THAL = 1638 (0.1)  - L6 → Thalamus direct inhibition (NEW)
+K_TRN    = 3277  (0.2)  - TRN amplification of L6 inhibition (NEW)
 ```
 
-**Signal Chain (v8.7):**
+**Signal Chain (v8.8):**
 ```
 L1 computes apical_gain from matrix + feedbacks
     ↓
 L4 oscillates (thalamocortical input)
-    ↓ K_L4_L23
+    ├── K_L4_L23 → L2/3
+    └── K_L4_L5A → L5a (v8.8 bypass)
+         ↓
 L2/3 input = (L4[N-1] + PAC + phase_coupling) × apical_gain
     ↓ K_L23_L5
-L5 input = (L2/3[N-1] + inter-column feedback) × apical_gain
+L5a input = (L2/3[N-1] + L6_feedback + L4_bypass) × apical_gain  ← v8.8
+L5b input = (L2/3[N-1] + inter-column feedback) × apical_gain
     ↓ K_L5_L6
 L6 sees L5b[N-1] + inter-column feedback + phase_coupling (no gain)
+    ├── K_L6_L5A → L5a (v8.8 intra-column)
+    └── K_L6_THAL + K_TRN → Thalamus (v8.8 inhibition)
 ```
 
 One-cycle delay between layers implements natural synaptic propagation time.
 
-### 6.5 Inter-Column Connectivity
+### 6.6 Inter-Column Connectivity
 
 Three cortical columns with feedforward cascade:
 
@@ -373,7 +441,7 @@ dac_output = (mixed + 1.0) × 2048  // 12-bit, 0-4095
 
 ---
 
-## 9. Top-Level Integration (phi_n_neural_processor.v, v8.7)
+## 9. Top-Level Integration (phi_n_neural_processor.v, v8.8)
 
 ### 9.1 Signal Flow
 
@@ -383,7 +451,9 @@ dac_output = (mixed + 1.0) × 2048  // 12-bit, 0-4095
 External SR Fields → SR Harmonic Bank → sr_gains[5]
                                             ↓
 Thalamus (theta) ← sr_gain_sum ← weighted_sum(sr_gains × coherence)
-     │
+     │                    ↑
+     │        ┌───────────┤ v8.8: L6 inhibition + TRN
+     │        │           │
      ├─▶ theta_x, theta_phase, encoding_window
      │
      └─▶ matrix_output (v8.7) ─────────────────────────────┐
@@ -400,10 +470,10 @@ phase_coupling[6] = K_PHASE × (phase_bit ? +1 : -1)         │
   │ (Sensory)  │ (Assoc)    │ (Motor)    │
   │ L1←matrix  │ L1←matrix  │ L1←matrix  │  ← v8.7: Layer 1
   │ L2/3←coup  │ L2/3←coup  │ L2/3←coup  │
-  │ L4         │ L4         │ L4         │
-  │ L5a        │ L5a        │ L5a        │
+  │ L4─────────┼─▶ L5a (bypass)            │  ← v8.8: L4→L5a
+  │ L5a←L6     │ L5a←L6     │ L5a←L6     │  ← v8.8: L6→L5a
   │ L5b ───────┼─▶ Thalamus (matrix input) ← v8.7: L5b feedback
-  │ L6←coup    │ L6←coup    │ L6←coup    │
+  │ L6──────────────────────▶ Thalamus     │  ← v8.8: L6 inhibition
   └────────────┴────────────┴────────────┘
      ↓
   Output Mixer → 12-bit DAC
@@ -420,25 +490,32 @@ phase_coupling[6] = K_PHASE × (phase_bit ? +1 : -1)         │
 ### 9.3 Module Hierarchy
 
 ```
-phi_n_neural_processor (top) - v8.7
+phi_n_neural_processor (top) - v8.8
 ├── clock_enable_generator
 ├── sr_noise_generator
 ├── sr_frequency_drift (v8.5)
 ├── config_controller
-├── thalamus - v8.7
+├── thalamus - v8.8
 │   ├── hopf_oscillator (theta)
 │   ├── sr_harmonic_bank
 │   │   └── hopf_oscillator_stochastic ×5
-│   └── matrix thalamic computation (L5b→matrix_output)
+│   ├── matrix thalamic computation (L5b→matrix_output)
+│   └── L6 CT inhibition computation (v8.8)
 ├── ca3_phase_memory
-├── cortical_column (sensory) - v8.7
+├── cortical_column (sensory) - v8.8
 │   ├── layer1_minimal (matrix + dual feedback → apical_gain)
+│   ├── L6→L5a pathway (v8.8)
+│   ├── L4→L5a bypass (v8.8)
 │   └── hopf_oscillator ×5
-├── cortical_column (association) - v8.7
+├── cortical_column (association) - v8.8
 │   ├── layer1_minimal
+│   ├── L6→L5a pathway
+│   ├── L4→L5a bypass
 │   └── hopf_oscillator ×5
-├── cortical_column (motor) - v8.7
+├── cortical_column (motor) - v8.8
 │   ├── layer1_minimal
+│   ├── L6→L5a pathway
+│   ├── L4→L5a bypass
 │   └── hopf_oscillator ×5
 ├── pink_noise_generator
 └── output_mixer
@@ -466,13 +543,17 @@ phi_n_neural_processor (top) - v8.7
 
 9. **Matrix Thalamic Pathway (v8.7)**: L5b PT neurons from all columns drive matrix thalamus (POm/Pulvinar analog), which broadcasts diffuse modulation to all L1
 
+10. **L6 Output Connectivity (v8.8)**: Corrects L6 CT projections based on recent neurophysiology - L6 targets L5a (not L4), with additional L4→L5a bypass for fast sensorimotor responses
+
+11. **Corticothalamic Inhibition (v8.8)**: L6 CT neurons modulate thalamic relay (10:1 ratio) with TRN amplification, enabling cortical control of sensory gating
+
 ---
 
 ## 11. Test Coverage Summary
 
-- 152 automated tests across 11 testbenches
-- Coverage: Hopf dynamics, CA3 learning/recall, theta phase, scaffold architecture, gamma nesting, canonical microcircuit, SR coupling, SR drift, state transitions, Layer 1 gain modulation
-- All tests passing as of v8.7
+- 168+ automated tests across 12 testbenches
+- Coverage: Hopf dynamics, CA3 learning/recall, theta phase, scaffold architecture, gamma nesting, canonical microcircuit, SR coupling, SR drift, state transitions, Layer 1 gain modulation, L6 connectivity
+- All tests passing as of v8.8
 
 ### Key Testbenches
 
@@ -486,9 +567,10 @@ phi_n_neural_processor (top) - v8.7
 | tb_sr_frequency_drift | 30 | Drift bounds, random walk |
 | tb_multi_harmonic_sr | 17 | Per-harmonic coherence |
 | tb_learning_fast | 8 | CA3 Hebbian learning |
-| tb_sr_coupling | 2 | SR coupling tests |
+| tb_sr_coupling | 12 | SR coupling tests |
 | tb_v55_fast | 6 | Fast integration tests |
 | tb_layer1_minimal | 10 | v8.7: Layer 1 gain modulation |
+| tb_l6_connectivity | 10 | v8.8: L6→L5a, L4→L5a, L6→Thalamus |
 
 ---
 
@@ -496,7 +578,8 @@ phi_n_neural_processor (top) - v8.7
 
 | Version | Date | Key Changes |
 |---------|------|-------------|
-| **v8.7** | **2025-12-26** | **Layer 1, dual feedback, matrix thalamic pathway** |
+| **v8.8** | **2025-12-27** | **L6 output connectivity: L6→L5a, L4→L5a bypass, L6→Thalamus+TRN inhibition** |
+| v8.7 | 2025-12-26 | Layer 1, dual feedback, matrix thalamic pathway |
 | v8.6 | 2025-12-23 | Canonical microcircuit: L2/3→L5, L5b→L6 intra-column feedback |
 | v8.5 | 2025-12-23 | SR frequency drift with bounded random walk |
 | v8.4 | 2025-12-23 | Gamma-theta nesting implementation, integration tests |
