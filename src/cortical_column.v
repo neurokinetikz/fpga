@@ -1,5 +1,12 @@
 //=============================================================================
-// Cortical Column - v8.8 with L6 Output Connectivity
+// Cortical Column - v9.0 with PV+ Basket Cell Inhibition
+//
+// v9.0 CHANGES (PV+ Interneuron - Phase 1):
+// - Added minimal PV+ basket cell model for L2/3 gamma stabilization
+// - PV+ inhibition proportional to L2/3 amplitude (K_PV = 0.3)
+// - Creates E-I balance for realistic gamma oscillation
+// - Subtractive inhibition applied before L1 gain modulation
+// - Biological basis: PV+ cells are fast-spiking, target soma/proximal dendrites
 //
 // v8.8 CHANGES (L6 Output Targets):
 // - L5a now has SEPARATE input from L5b (was shared)
@@ -149,6 +156,9 @@ localparam signed [WIDTH-1:0] K_FB_L5  = 18'sd3277;  // 0.2 - Inter-column feedb
 localparam signed [WIDTH-1:0] K_L6_L5A = 18'sd2458;  // 0.15 - L6 → L5a intra-column
 localparam signed [WIDTH-1:0] K_L4_L5A = 18'sd1638;  // 0.1 - L4 → L5a bypass (fast sensorimotor)
 
+// v9.0: PV+ basket cell inhibition constant
+localparam signed [WIDTH-1:0] K_PV = 18'sd4915;  // 0.3 - PV+ amplitude-proportional inhibition
+
 wire signed [WIDTH-1:0] l6_x_int, l6_y_int;
 wire signed [WIDTH-1:0] l5b_x_int, l5b_y_int;
 wire signed [WIDTH-1:0] l5a_x_int, l5a_y_int;
@@ -249,9 +259,32 @@ assign l4_to_l23_full = l4_x_int * K_L4_L23;
 // v9.0: L2/3 raw input (before L1 modulation)
 assign l23_input_raw = (l4_to_l23_full >>> FRAC) + pac_mod + phase_couple_l23;
 
+//=============================================================================
+// v9.0: PV+ Basket Cell Inhibition (Phase 1 - Minimal Model)
+//=============================================================================
+// PV+ (parvalbumin-positive) basket cells provide fast perisomatic inhibition
+// proportional to L2/3 pyramidal cell activity (amplitude).
+// This creates a negative feedback loop that:
+// - Stabilizes gamma oscillation amplitude
+// - Prevents runaway excitation
+// - Contributes to E-I balance necessary for gamma generation
+//
+// Biological basis:
+// - PV+ cells are fast-spiking interneurons targeting soma/proximal dendrites
+// - They receive same excitatory input as pyramidal cells
+// - Their inhibition is proportional to population activity
+wire signed [2*WIDTH-1:0] pv_full;
+wire signed [WIDTH-1:0] pv_inhibition;
+assign pv_full = l23_amp * K_PV;
+assign pv_inhibition = pv_full >>> FRAC;
+
+// L2/3 input with PV+ inhibition subtracted (before L1 gain modulation)
+wire signed [WIDTH-1:0] l23_input_with_pv;
+assign l23_input_with_pv = l23_input_raw - pv_inhibition;
+
 // v9.0: Apply L1 apical gain to L2/3 input (pyramidal neurons have apical tufts in L1)
 wire signed [2*WIDTH-1:0] l23_input_modulated;
-assign l23_input_modulated = l23_input_raw * l1_apical_gain;
+assign l23_input_modulated = l23_input_with_pv * l1_apical_gain;
 assign l23_input = l23_input_modulated >>> FRAC;
 
 hopf_oscillator #(.WIDTH(WIDTH), .FRAC(FRAC)) osc_l6 (
