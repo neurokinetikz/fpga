@@ -1,5 +1,10 @@
 //=============================================================================
-// Configuration Controller - v8.0 with Scaffold Architecture
+// Configuration Controller - v9.5 with Dendritic Computation
+//
+// v9.5 CHANGES:
+// - Add state-dependent Ca2+ threshold for two-compartment dendritic model
+// - Lower threshold in PSYCHEDELIC = more Ca2+ spikes (enhanced top-down)
+// - Higher threshold in ANESTHESIA = fewer Ca2+ spikes (reduced integration)
 //
 // v8.0 CHANGES (Dupret et al. 2025 Integration):
 // - Scaffold architecture: distinguishes stable vs plastic cortical layers
@@ -38,6 +43,9 @@ module config_controller #(
     output reg signed [WIDTH-1:0] mu_dt_l4,
     output reg signed [WIDTH-1:0] mu_dt_l23,
 
+    // v9.5: State-dependent Ca2+ threshold for dendritic compartment
+    output reg signed [WIDTH-1:0] ca_threshold,
+
     // v8.0: Scaffold architecture indicator outputs
     output wire scaffold_l4,        // L4 is scaffold layer
     output wire scaffold_l5b,       // L5b is scaffold layer
@@ -57,6 +65,15 @@ localparam signed [WIDTH-1:0] MU_HALF     = 18'sd2;
 localparam signed [WIDTH-1:0] MU_WEAK     = 18'sd1;   // min practical value
 localparam signed [WIDTH-1:0] MU_ENHANCED = 18'sd6;
 
+// v9.5: Ca2+ threshold values (Q14)
+// Lower threshold = more Ca2+ spikes = enhanced top-down integration
+// Higher threshold = fewer Ca2+ spikes = reduced integration
+localparam signed [WIDTH-1:0] CA_THRESH_NORMAL     = 18'sd8192;   // 0.5 - balanced
+localparam signed [WIDTH-1:0] CA_THRESH_ANESTHESIA = 18'sd12288;  // 0.75 - harder to trigger
+localparam signed [WIDTH-1:0] CA_THRESH_PSYCHEDELIC = 18'sd4096;  // 0.25 - easier to trigger
+localparam signed [WIDTH-1:0] CA_THRESH_FLOW       = 18'sd8192;   // 0.5 - balanced
+localparam signed [WIDTH-1:0] CA_THRESH_MEDITATION = 18'sd6144;   // 0.375 - slightly easier
+
 // v8.0: Scaffold layer type indicators (static classification)
 // These can be used by downstream modules to apply different processing
 assign scaffold_l4  = 1'b1;  // L4 is always scaffold
@@ -72,57 +89,64 @@ always @(posedge clk or posedge rst) begin
         mu_dt_l5a   <= MU_FULL;
         mu_dt_l4    <= MU_FULL;
         mu_dt_l23   <= MU_FULL;
+        ca_threshold <= CA_THRESH_NORMAL;
     end else if (clk_en) begin
         case (state_select)
             STATE_NORMAL: begin
-                mu_dt_theta <= MU_FULL;
-                mu_dt_l6    <= MU_FULL;
-                mu_dt_l5b   <= MU_FULL;
-                mu_dt_l5a   <= MU_FULL;
-                mu_dt_l4    <= MU_FULL;
-                mu_dt_l23   <= MU_FULL;
+                mu_dt_theta  <= MU_FULL;
+                mu_dt_l6     <= MU_FULL;
+                mu_dt_l5b    <= MU_FULL;
+                mu_dt_l5a    <= MU_FULL;
+                mu_dt_l4     <= MU_FULL;
+                mu_dt_l23    <= MU_FULL;
+                ca_threshold <= CA_THRESH_NORMAL;  // 0.5 - balanced
             end
             STATE_ANESTHESIA: begin
-                mu_dt_theta <= MU_HALF;
-                mu_dt_l6    <= MU_ENHANCED;
-                mu_dt_l5b   <= MU_HALF;
-                mu_dt_l5a   <= MU_HALF;
-                mu_dt_l4    <= MU_WEAK;
-                mu_dt_l23   <= MU_WEAK;
+                mu_dt_theta  <= MU_HALF;
+                mu_dt_l6     <= MU_ENHANCED;
+                mu_dt_l5b    <= MU_HALF;
+                mu_dt_l5a    <= MU_HALF;
+                mu_dt_l4     <= MU_WEAK;
+                mu_dt_l23    <= MU_WEAK;
+                ca_threshold <= CA_THRESH_ANESTHESIA;  // 0.75 - fewer Ca2+ spikes
             end
             STATE_PSYCHEDELIC: begin
-                mu_dt_theta <= MU_FULL;
-                mu_dt_l6    <= MU_HALF;
-                mu_dt_l5b   <= MU_FULL;
-                mu_dt_l5a   <= MU_FULL;
-                mu_dt_l4    <= MU_ENHANCED;
-                mu_dt_l23   <= MU_ENHANCED;
+                mu_dt_theta  <= MU_FULL;
+                mu_dt_l6     <= MU_HALF;
+                mu_dt_l5b    <= MU_FULL;
+                mu_dt_l5a    <= MU_FULL;
+                mu_dt_l4     <= MU_ENHANCED;
+                mu_dt_l23    <= MU_ENHANCED;
+                ca_threshold <= CA_THRESH_PSYCHEDELIC;  // 0.25 - more Ca2+ spikes
             end
             STATE_FLOW: begin
-                mu_dt_theta <= MU_FULL;
-                mu_dt_l6    <= MU_HALF;
-                mu_dt_l5b   <= MU_ENHANCED;
-                mu_dt_l5a   <= MU_ENHANCED;
-                mu_dt_l4    <= MU_FULL;
-                mu_dt_l23   <= MU_FULL;
+                mu_dt_theta  <= MU_FULL;
+                mu_dt_l6     <= MU_HALF;
+                mu_dt_l5b    <= MU_ENHANCED;
+                mu_dt_l5a    <= MU_ENHANCED;
+                mu_dt_l4     <= MU_FULL;
+                mu_dt_l23    <= MU_FULL;
+                ca_threshold <= CA_THRESH_FLOW;  // 0.5 - balanced
             end
             STATE_MEDITATION: begin
                 // Reduced MU values for frequency stability (high MU destabilizes)
                 // MEDITATION = stable theta coherence, not aggressive amplitude
-                mu_dt_theta <= MU_FULL;     // 4 (was 6) - stable theta
-                mu_dt_l6    <= MU_FULL;     // 4 (was 6) - moderate alpha
-                mu_dt_l5b   <= MU_HALF;     // 2 - low motor feedback
-                mu_dt_l5a   <= MU_HALF;     // 2 - low motor output
-                mu_dt_l4    <= MU_HALF;     // 2 - sensory withdrawal
-                mu_dt_l23   <= MU_HALF;     // 2 - reduced gamma (internal focus)
+                mu_dt_theta  <= MU_FULL;     // 4 (was 6) - stable theta
+                mu_dt_l6     <= MU_FULL;     // 4 (was 6) - moderate alpha
+                mu_dt_l5b    <= MU_HALF;     // 2 - low motor feedback
+                mu_dt_l5a    <= MU_HALF;     // 2 - low motor output
+                mu_dt_l4     <= MU_HALF;     // 2 - sensory withdrawal
+                mu_dt_l23    <= MU_HALF;     // 2 - reduced gamma (internal focus)
+                ca_threshold <= CA_THRESH_MEDITATION;  // 0.375 - enhanced top-down
             end
             default: begin
-                mu_dt_theta <= MU_FULL;
-                mu_dt_l6    <= MU_FULL;
-                mu_dt_l5b   <= MU_FULL;
-                mu_dt_l5a   <= MU_FULL;
-                mu_dt_l4    <= MU_FULL;
-                mu_dt_l23   <= MU_FULL;
+                mu_dt_theta  <= MU_FULL;
+                mu_dt_l6     <= MU_FULL;
+                mu_dt_l5b    <= MU_FULL;
+                mu_dt_l5a    <= MU_FULL;
+                mu_dt_l4     <= MU_FULL;
+                mu_dt_l23    <= MU_FULL;
+                ca_threshold <= CA_THRESH_NORMAL;  // 0.5 - balanced
             end
         endcase
     end

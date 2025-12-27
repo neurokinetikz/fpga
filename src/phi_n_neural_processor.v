@@ -1,5 +1,13 @@
 //=============================================================================
-// Top-Level Module - v9.4 with VIP+ Disinhibition
+// Top-Level Module - v9.5 with Two-Compartment Dendritic Computation
+//
+// v9.5 CHANGES (Dendritic Compartment - Phase 6):
+// - Added ca_threshold output from config_controller (state-dependent)
+// - Wired ca_threshold to all cortical_column instances
+// - Cortical columns now use two-compartment dendritic model for L2/3, L5a, L5b
+// - BAC firing provides supralinear coincidence detection
+// - Lower ca_threshold in PSYCHEDELIC = more Ca2+ spikes (enhanced top-down)
+// - Higher ca_threshold in ANESTHESIA = fewer Ca2+ spikes (reduced integration)
 //
 // v9.4 CHANGES (VIP+ Disinhibition - Phase 5):
 // - Added attention_input port to cortical_column instantiations
@@ -222,6 +230,7 @@ sr_frequency_drift #(
 
 wire signed [WIDTH-1:0] mu_dt_theta;
 wire signed [WIDTH-1:0] mu_dt_l6, mu_dt_l5b, mu_dt_l5a, mu_dt_l4, mu_dt_l23;
+wire signed [WIDTH-1:0] ca_threshold;  // v9.5: state-dependent Ca2+ threshold
 
 config_controller #(.WIDTH(WIDTH), .FRAC(FRAC)) config_ctrl (
     .clk(clk),
@@ -233,7 +242,8 @@ config_controller #(.WIDTH(WIDTH), .FRAC(FRAC)) config_ctrl (
     .mu_dt_l5b(mu_dt_l5b),
     .mu_dt_l5a(mu_dt_l5a),
     .mu_dt_l4(mu_dt_l4),
-    .mu_dt_l23(mu_dt_l23)
+    .mu_dt_l23(mu_dt_l23),
+    .ca_threshold(ca_threshold)  // v9.5: state-dependent threshold
 );
 
 wire signed [WIDTH-1:0] thalamic_theta_output;
@@ -445,6 +455,11 @@ wire signed [WIDTH-1:0] assoc_feedback_2   = 18'sd0;        // No distant feedba
 wire signed [WIDTH-1:0] motor_feedback_1   = 18'sd0;        // Top of hierarchy
 wire signed [WIDTH-1:0] motor_feedback_2   = 18'sd0;        // Top of hierarchy
 
+// v9.5: Dendritic debug wires (optional, can be connected to top-level outputs)
+wire sensory_l23_ca_spike, sensory_l23_bac;
+wire sensory_l5a_ca_spike, sensory_l5a_bac;
+wire sensory_l5b_ca_spike, sensory_l5b_bac;
+
 cortical_column #(.WIDTH(WIDTH), .FRAC(FRAC)) col_sensory (
     .clk(clk),
     .rst(rst),
@@ -458,6 +473,7 @@ cortical_column #(.WIDTH(WIDTH), .FRAC(FRAC)) col_sensory (
     .phase_couple_l6(phase_couple_sensory_l6),
     .encoding_window(ca3_encoding_window),  // v8.1: gamma-theta nesting
     .attention_input(18'sd0),               // v9.4: no attention (default)
+    .ca_threshold(ca_threshold),            // v9.5: state-dependent threshold
     .mu_dt_l6(mu_dt_l6),
     .mu_dt_l5b(mu_dt_l5b),
     .mu_dt_l5a(mu_dt_l5a),
@@ -469,8 +485,18 @@ cortical_column #(.WIDTH(WIDTH), .FRAC(FRAC)) col_sensory (
     .l5a_x(sensory_l5a_x),
     .l6_x(sensory_l6_x),
     .l6_y(sensory_l6_y),
-    .l4_x(sensory_l4_x)
+    .l4_x(sensory_l4_x),
+    .l23_ca_spike(sensory_l23_ca_spike),    // v9.5: dendritic debug
+    .l23_bac(sensory_l23_bac),
+    .l5a_ca_spike(sensory_l5a_ca_spike),
+    .l5a_bac(sensory_l5a_bac),
+    .l5b_ca_spike(sensory_l5b_ca_spike),
+    .l5b_bac(sensory_l5b_bac)
 );
+
+wire assoc_l23_ca_spike, assoc_l23_bac;
+wire assoc_l5a_ca_spike, assoc_l5a_bac;
+wire assoc_l5b_ca_spike, assoc_l5b_bac;
 
 cortical_column #(.WIDTH(WIDTH), .FRAC(FRAC)) col_assoc (
     .clk(clk),
@@ -485,6 +511,7 @@ cortical_column #(.WIDTH(WIDTH), .FRAC(FRAC)) col_assoc (
     .phase_couple_l6(phase_couple_assoc_l6),
     .encoding_window(ca3_encoding_window),  // v8.1: gamma-theta nesting
     .attention_input(18'sd0),               // v9.4: no attention (default)
+    .ca_threshold(ca_threshold),            // v9.5: state-dependent threshold
     .mu_dt_l6(mu_dt_l6),
     .mu_dt_l5b(mu_dt_l5b),
     .mu_dt_l5a(mu_dt_l5a),
@@ -496,8 +523,18 @@ cortical_column #(.WIDTH(WIDTH), .FRAC(FRAC)) col_assoc (
     .l5a_x(assoc_l5a_x),
     .l6_x(assoc_l6_x),
     .l6_y(assoc_l6_y),
-    .l4_x(assoc_l4_x)
+    .l4_x(assoc_l4_x),
+    .l23_ca_spike(assoc_l23_ca_spike),      // v9.5: dendritic debug
+    .l23_bac(assoc_l23_bac),
+    .l5a_ca_spike(assoc_l5a_ca_spike),
+    .l5a_bac(assoc_l5a_bac),
+    .l5b_ca_spike(assoc_l5b_ca_spike),
+    .l5b_bac(assoc_l5b_bac)
 );
+
+wire motor_l23_ca_spike, motor_l23_bac;
+wire motor_l5a_ca_spike, motor_l5a_bac;
+wire motor_l5b_ca_spike, motor_l5b_bac;
 
 cortical_column #(.WIDTH(WIDTH), .FRAC(FRAC)) col_motor (
     .clk(clk),
@@ -512,6 +549,7 @@ cortical_column #(.WIDTH(WIDTH), .FRAC(FRAC)) col_motor (
     .phase_couple_l6(phase_couple_motor_l6),
     .encoding_window(ca3_encoding_window),  // v8.1: gamma-theta nesting
     .attention_input(18'sd0),               // v9.4: no attention (default)
+    .ca_threshold(ca_threshold),            // v9.5: state-dependent threshold
     .mu_dt_l6(mu_dt_l6),
     .mu_dt_l5b(mu_dt_l5b),
     .mu_dt_l5a(mu_dt_l5a),
@@ -523,7 +561,13 @@ cortical_column #(.WIDTH(WIDTH), .FRAC(FRAC)) col_motor (
     .l5a_x(motor_l5a_x),
     .l6_x(motor_l6_x),
     .l6_y(motor_l6_y),
-    .l4_x(motor_l4_x)
+    .l4_x(motor_l4_x),
+    .l23_ca_spike(motor_l23_ca_spike),      // v9.5: dendritic debug
+    .l23_bac(motor_l23_bac),
+    .l5a_ca_spike(motor_l5a_ca_spike),
+    .l5a_bac(motor_l5a_bac),
+    .l5b_ca_spike(motor_l5b_ca_spike),
+    .l5b_bac(motor_l5b_bac)
 );
 
 // v7.2: Connect forward declarations for beta amplitude computation

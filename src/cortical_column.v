@@ -1,5 +1,16 @@
 //=============================================================================
-// Cortical Column - v9.4 with VIP+ Disinhibition
+// Cortical Column - v9.5 with Two-Compartment Dendritic Computation
+//
+// v9.5 CHANGES (Dendritic Compartment - Phase 6):
+// - Added dendritic_compartment instances for L2/3, L5a, L5b pyramidal neurons
+// - Basal compartment: receives feedforward input (direct passthrough)
+// - Apical compartment: receives feedback input (Ca2+ spike dynamics)
+// - BAC firing: supralinear coincidence detection (1.5x boost)
+// - State-dependent ca_threshold from config_controller
+// - L2/3: basal = L4 feedforward - PV, apical = phase_couple_l23
+// - L5a: basal = L2/3 + L6 + L4_bypass, apical = feedback_input_2
+// - L5b: basal = L2/3 + inter-column FB, apical = feedback_input_1
+// - L4, L6: unchanged (dendrites don't reach L1)
 //
 // v9.4 CHANGES (VIP+ Disinhibition - Phase 5):
 // - Added attention_input port for VIP+ disinhibition in Layer 1
@@ -132,6 +143,9 @@ module cortical_column #(
     // Higher values create selective enhancement via SST+ suppression
     input  wire signed [WIDTH-1:0] attention_input,
 
+    // v9.5: State-dependent Ca2+ threshold for dendritic compartments
+    input  wire signed [WIDTH-1:0] ca_threshold,
+
     input  wire signed [WIDTH-1:0] mu_dt_l6,
     input  wire signed [WIDTH-1:0] mu_dt_l5b,
     input  wire signed [WIDTH-1:0] mu_dt_l5a,
@@ -144,7 +158,15 @@ module cortical_column #(
     output wire signed [WIDTH-1:0] l5a_x,
     output wire signed [WIDTH-1:0] l6_x,
     output wire signed [WIDTH-1:0] l6_y,
-    output wire signed [WIDTH-1:0] l4_x
+    output wire signed [WIDTH-1:0] l4_x,
+
+    // v9.5: Dendritic compartment debug outputs
+    output wire l23_ca_spike,   // L2/3 Ca2+ spike active
+    output wire l23_bac,        // L2/3 BAC coincidence
+    output wire l5a_ca_spike,   // L5a Ca2+ spike active
+    output wire l5a_bac,        // L5a BAC coincidence
+    output wire l5b_ca_spike,   // L5b Ca2+ spike active
+    output wire l5b_bac         // L5b BAC coincidence
 );
 
 // OMEGA_DT = 2*pi*f*dt, dt=0.00025 for 4 kHz update rate
@@ -263,15 +285,44 @@ assign l4_to_l5a_full = l4_x_int * K_L4_L5A;
 // L5a raw input: L2/3 + L6 feedback + L4 bypass
 assign l5a_input_raw = (l23_to_l5_full >>> FRAC) + (l6_to_l5a_full >>> FRAC) + (l4_to_l5a_full >>> FRAC);
 
-// Apply L1 apical gain to L5b input (PT neurons have thick-tufted dendrites in L1)
-wire signed [2*WIDTH-1:0] l5b_input_modulated;
-assign l5b_input_modulated = l5b_input_raw * l1_apical_gain;
-assign l5b_input = l5b_input_modulated >>> FRAC;
+// v9.5: L5b and L5a now use dendritic compartment model instead of simple gain
+// L5b Dendritic Compartment
+// - Basal: L2/3 feedforward + inter-column feedback (canonical pathway)
+// - Apical: feedback_input_1 from adjacent column (associative)
+dendritic_compartment #(
+    .WIDTH(WIDTH),
+    .FRAC(FRAC)
+) dend_l5b (
+    .clk(clk),
+    .rst(rst),
+    .clk_en(clk_en),
+    .basal_input(l5b_input_raw),
+    .apical_input(feedback_input_1),
+    .apical_gain(l1_apical_gain),
+    .ca_threshold(ca_threshold),
+    .dendritic_output(l5b_input),
+    .ca_spike_active(l5b_ca_spike),
+    .bac_active(l5b_bac)
+);
 
-// Apply L1 apical gain to L5a input
-wire signed [2*WIDTH-1:0] l5a_input_modulated;
-assign l5a_input_modulated = l5a_input_raw * l1_apical_gain;
-assign l5a_input = l5a_input_modulated >>> FRAC;
+// L5a Dendritic Compartment
+// - Basal: L2/3 + L6 feedback + L4 bypass (motor pathway)
+// - Apical: feedback_input_2 from distant column (motor context)
+dendritic_compartment #(
+    .WIDTH(WIDTH),
+    .FRAC(FRAC)
+) dend_l5a (
+    .clk(clk),
+    .rst(rst),
+    .clk_en(clk_en),
+    .basal_input(l5a_input_raw),
+    .apical_input(feedback_input_2),
+    .apical_gain(l1_apical_gain),
+    .ca_threshold(ca_threshold),
+    .dendritic_output(l5a_input),
+    .ca_spike_active(l5a_ca_spike),
+    .bac_active(l5a_bac)
+);
 
 // v8.6: L6 receives: intra-column L5b feedback + inter-column feedback + PHASE COUPLING
 // Implements corticothalamic pathway: L5 → L6 → Thalamus
@@ -370,14 +421,43 @@ assign pv_total_inhibition = pv_l23_inhibition +
                              (pv_l4_inhibition >>> 1) +
                              (pv_l5_inhibition >>> 2);
 
-// L2/3 input with combined PV+ inhibition subtracted (before L1 gain modulation)
+// L2/3 input with combined PV+ inhibition subtracted (before dendritic processing)
 wire signed [WIDTH-1:0] l23_input_with_pv;
 assign l23_input_with_pv = l23_input_raw - pv_total_inhibition;
 
-// v9.0: Apply L1 apical gain to L2/3 input (pyramidal neurons have apical tufts in L1)
-wire signed [2*WIDTH-1:0] l23_input_modulated;
-assign l23_input_modulated = l23_input_with_pv * l1_apical_gain;
-assign l23_input = l23_input_modulated >>> FRAC;
+//=============================================================================
+// v9.5: Two-Compartment Dendritic Computation
+//=============================================================================
+// Replace simple L1 gain modulation with dendritic compartment model.
+// Applies to L2/3, L5a, L5b (pyramidal neurons with apical tufts in L1).
+// NOT applied to L4, L6 (dendrites don't extend to L1).
+//
+// Each dendritic_compartment receives:
+// - basal_input: feedforward (direct passthrough)
+// - apical_input: feedback (Ca2+ spike dynamics)
+// - apical_gain: L1 SST+/VIP+ gain modulation
+// - ca_threshold: state-dependent (from config_controller)
+//
+// Output: (basal + Ca2+ contribution) × BAC boost
+
+// L2/3 Dendritic Compartment
+// - Basal: L4 feedforward + PAC - PV inhibition (bottom-up sensory)
+// - Apical: phase_couple_l23 from CA3 (top-down memory)
+dendritic_compartment #(
+    .WIDTH(WIDTH),
+    .FRAC(FRAC)
+) dend_l23 (
+    .clk(clk),
+    .rst(rst),
+    .clk_en(clk_en),
+    .basal_input(l23_input_with_pv),
+    .apical_input(phase_couple_l23),
+    .apical_gain(l1_apical_gain),
+    .ca_threshold(ca_threshold),
+    .dendritic_output(l23_input),
+    .ca_spike_active(l23_ca_spike),
+    .bac_active(l23_bac)
+);
 
 hopf_oscillator #(.WIDTH(WIDTH), .FRAC(FRAC)) osc_l6 (
     .clk(clk), .rst(rst), .clk_en(clk_en),

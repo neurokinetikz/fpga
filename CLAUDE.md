@@ -4,7 +4,7 @@
 
 This is an FPGA implementation of a biologically-realistic neural oscillator system based on the **φⁿ (golden ratio) frequency architecture** with Schumann Resonance coupling. The system implements 21 Hopf oscillators organized into a thalamo-cortical architecture for neural signal processing and consciousness state modeling.
 
-**Current Version:** v9.4 (VIP+ Disinhibition)
+**Current Version:** v9.5 (Two-Compartment Dendritic Computation)
 **Target Platform:** Digilent Zybo Z7-20 (Xilinx Zynq-7020)
 
 ## Quick Start
@@ -49,23 +49,24 @@ make clean             # Clean generated files
 
 ```
 fpga/
-├── src/                          # Verilog source modules (15 files)
-│   ├── phi_n_neural_processor.v  # Top-level (v8.8, 21 oscillators + L1 + L6)
+├── src/                          # Verilog source modules (16 files)
+│   ├── phi_n_neural_processor.v  # Top-level (v9.5, 21 oscillators + dendritic)
 │   ├── hopf_oscillator.v         # Core oscillator (v6.0, dx/dt = μx - ωy - r²x)
 │   ├── hopf_oscillator_stochastic.v # Stochastic variant with noise input
 │   ├── ca3_phase_memory.v        # Hebbian phase memory (v8.0, theta-gated)
 │   ├── thalamus.v                # Theta + SR + matrix + L6 inhibition (v8.8)
-│   ├── cortical_column.v         # 6-layer cortical model (v9.4, VIP+ disinhibition)
+│   ├── cortical_column.v         # 6-layer cortical model (v9.5, dendritic compartments)
+│   ├── dendritic_compartment.v   # v9.5: Two-compartment dendritic model
 │   ├── layer1_minimal.v          # Layer 1 with VIP+ disinhibition (v9.4)
 │   ├── pv_interneuron.v          # PV+ basket cell dynamics (v9.2)
 │   ├── sr_harmonic_bank.v        # 5-harmonic SR bank (v7.4, continuous gain)
 │   ├── sr_noise_generator.v      # Per-harmonic stochastic noise (5 LFSRs)
 │   ├── sr_frequency_drift.v      # v8.5: Realistic SR frequency drift
-│   ├── config_controller.v       # Consciousness states (v8.0, scaffold architecture)
+│   ├── config_controller.v       # Consciousness states (v9.5, state-dependent Ca²⁺)
 │   ├── clock_enable_generator.v  # FAST_SIM-aware 4kHz clock (v6.0)
 │   ├── pink_noise_generator.v    # 1/f noise (v5.5, Voss-McCartney)
 │   └── output_mixer.v            # DAC output mixing (v5.5)
-├── tb/                           # Testbenches (24 files)
+├── tb/                           # Testbenches (25 files)
 │   ├── tb_full_system_fast.v     # Full system integration (v6.5, 15 tests)
 │   ├── tb_theta_phase_multiplexing.v # Theta phase tests (19 tests)
 │   ├── tb_scaffold_architecture.v    # Scaffold layer tests (14 tests)
@@ -74,6 +75,7 @@ fpga/
 │   ├── tb_canonical_microcircuit.v   # v8.6: Canonical pathway tests (20 tests)
 │   ├── tb_layer1_minimal.v       # v8.7: Layer 1 gain modulation tests (10 tests)
 │   ├── tb_l6_connectivity.v      # v8.8: L6 output target tests (10 tests)
+│   ├── tb_dendritic_compartment.v # v9.5: Dendritic Ca²⁺/BAC tests (10 tests)
 │   ├── tb_learning_fast.v        # CA3 learning test (v2.1, 8 tests)
 │   ├── tb_hopf_oscillator.v      # Hopf oscillator unit test
 │   ├── tb_state_transitions.v    # State machine test (12 tests)
@@ -191,10 +193,19 @@ fpga/
 | K_INHIB | 4915 | 0.3 | PV+ inhibition output weight (v9.2) |
 | VIP_ALPHA | 82 | 0.005 | VIP+ slow dynamics filter coefficient (v9.4) |
 | K_VIP | 8192 | 0.5 | VIP+ attention input scaling (v9.4) |
+| APICAL_CABLE_ALPHA | 410 | 0.025 | Apical cable filter (tau=10ms) (v9.5) |
+| CA_DURATION_ALPHA | 137 | 0.00833 | Ca²⁺ spike duration (tau=30ms) (v9.5) |
+| K_APICAL | 4096 | 0.25 | Apical contribution weight (v9.5) |
+| K_BAC | 24576 | 1.5 | BAC supralinear boost factor (v9.5) |
+| CA_THRESH_NORMAL | 8192 | 0.5 | Ca²⁺ threshold in NORMAL state (v9.5) |
+| CA_THRESH_PSYCHEDELIC | 4096 | 0.25 | Ca²⁺ threshold in PSYCHEDELIC (v9.5) |
+| CA_THRESH_ANESTHESIA | 12288 | 0.75 | Ca²⁺ threshold in ANESTHESIA (v9.5) |
 
 ## Current Specification
 
-See [docs/SPEC_v9.4_UPDATE.md](docs/SPEC_v9.4_UPDATE.md) for the latest v9.4 architecture with:
+See [docs/SPEC_v9.5_UPDATE.md](docs/SPEC_v9.5_UPDATE.md) for the latest v9.5 architecture with:
+- **Two-Compartment Dendritic Model** (v9.5): Basal/apical separation with Ca²⁺ spike dynamics and BAC firing
+- **State-Dependent Ca²⁺ Threshold** (v9.5): Lower in PSYCHEDELIC (more Ca²⁺), higher in ANESTHESIA (fewer Ca²⁺)
 - **VIP+ Disinhibition** (v9.4): VIP+ cells receive attention input and inhibit SST+ for selective enhancement
 - **Cross-Layer PV+ Network** (v9.3): L4 PV+ (feedforward gating, 0.5×) + L5 PV+ (feedback inhibition, 0.25×)
 - **PV+ PING Network** (v9.2): Dynamic PV+ interneuron model creates proper E-I loop with phase lag
@@ -228,6 +239,7 @@ All testbenches should pass. Key tests (206+ total):
 - `tb_pv_feedback`: 8/8 tests - PV+ PING network dynamics (v9.2)
 - `tb_pv_crosslayer`: 8/8 tests - Cross-layer PV+ network (v9.3)
 - `tb_vip_disinhibition`: 8/8 tests - VIP+ disinhibition (v9.4)
+- `tb_dendritic_compartment`: 10/10 tests - Dendritic Ca²⁺/BAC (v9.5)
 - `tb_multi_harmonic_sr`: 17/17 tests - multi-harmonic SR
 - `tb_learning_fast`: 8/8 tests - CA3 Hebbian learning (v2.1)
 - `tb_sr_coupling`: 12/12 tests - SR coupling

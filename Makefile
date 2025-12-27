@@ -1,4 +1,4 @@
-# Makefile for Phi-N Neural Processor v8.8
+# Makefile for Phi-N Neural Processor v9.5
 # Supports both Icarus Verilog (iverilog) and Vivado simulations
 
 # Directories
@@ -11,7 +11,7 @@ SCRIPTS_DIR := scripts
 SRCS := $(wildcard $(SRC_DIR)/*.v)
 TBS := $(wildcard $(TB_DIR)/*.v)
 
-# Common source files for full system tests (v8.8)
+# Common source files for full system tests (v9.5)
 COMMON_SRCS := \
 	$(SRC_DIR)/clock_enable_generator.v \
 	$(SRC_DIR)/hopf_oscillator.v \
@@ -26,7 +26,9 @@ COMMON_SRCS := \
 	$(SRC_DIR)/sr_harmonic_bank.v \
 	$(SRC_DIR)/sr_noise_generator.v \
 	$(SRC_DIR)/sr_frequency_drift.v \
-	$(SRC_DIR)/layer1_minimal.v
+	$(SRC_DIR)/layer1_minimal.v \
+	$(SRC_DIR)/pv_interneuron.v \
+	$(SRC_DIR)/dendritic_compartment.v
 
 # Default target
 .PHONY: all
@@ -36,7 +38,7 @@ all: help
 .PHONY: help
 help:
 	@echo "========================================"
-	@echo "Phi-N Neural Processor v8.8 - Build System"
+	@echo "Phi-N Neural Processor v9.5 - Build System"
 	@echo "========================================"
 	@echo ""
 	@echo "Icarus Verilog targets:"
