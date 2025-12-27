@@ -4,7 +4,7 @@
 
 This is an FPGA implementation of a biologically-realistic neural oscillator system based on the **φⁿ (golden ratio) frequency architecture** with Schumann Resonance coupling. The system implements 21 Hopf oscillators organized into a thalamo-cortical architecture for neural signal processing and consciousness state modeling.
 
-**Current Version:** v9.5 (Two-Compartment Dendritic Computation)
+**Current Version:** v9.6 (Extended L6 Connectivity)
 **Target Platform:** Digilent Zybo Z7-20 (Xilinx Zynq-7020)
 
 ## Quick Start
@@ -55,9 +55,9 @@ fpga/
 │   ├── hopf_oscillator_stochastic.v # Stochastic variant with noise input
 │   ├── ca3_phase_memory.v        # Hebbian phase memory (v8.0, theta-gated)
 │   ├── thalamus.v                # Theta + SR + matrix + L6 inhibition (v8.8)
-│   ├── cortical_column.v         # 6-layer cortical model (v9.5, dendritic compartments)
+│   ├── cortical_column.v         # 6-layer cortical model (v9.6, extended L6)
 │   ├── dendritic_compartment.v   # v9.5: Two-compartment dendritic model
-│   ├── layer1_minimal.v          # Layer 1 with VIP+ disinhibition (v9.4)
+│   ├── layer1_minimal.v          # Layer 1 with L6 input (v9.6)
 │   ├── pv_interneuron.v          # PV+ basket cell dynamics (v9.2)
 │   ├── sr_harmonic_bank.v        # 5-harmonic SR bank (v7.4, continuous gain)
 │   ├── sr_noise_generator.v      # Per-harmonic stochastic noise (5 LFSRs)
@@ -75,6 +75,7 @@ fpga/
 │   ├── tb_canonical_microcircuit.v   # v8.6: Canonical pathway tests (20 tests)
 │   ├── tb_layer1_minimal.v       # v8.7: Layer 1 gain modulation tests (10 tests)
 │   ├── tb_l6_connectivity.v      # v8.8: L6 output target tests (10 tests)
+│   ├── tb_l6_extended.v          # v9.6: Extended L6 connectivity tests (10 tests)
 │   ├── tb_dendritic_compartment.v # v9.5: Dendritic Ca²⁺/BAC tests (10 tests)
 │   ├── tb_learning_fast.v        # CA3 learning test (v2.1, 8 tests)
 │   ├── tb_hopf_oscillator.v      # Hopf oscillator unit test
@@ -200,10 +201,14 @@ fpga/
 | CA_THRESH_NORMAL | 8192 | 0.5 | Ca²⁺ threshold in NORMAL state (v9.5) |
 | CA_THRESH_PSYCHEDELIC | 4096 | 0.25 | Ca²⁺ threshold in PSYCHEDELIC (v9.5) |
 | CA_THRESH_ANESTHESIA | 12288 | 0.75 | Ca²⁺ threshold in ANESTHESIA (v9.5) |
+| K_L6_L23 | 2458 | 0.15 | L6 → L2/3 alpha-gamma coupling (v9.6) |
+| K_L6_L5B | 1638 | 0.1 | L6 → L5b intra-column feedback (v9.6) |
+| K_L6_L1 | 1638 | 0.1 | L6 → L1 direct gain modulation (v9.6) |
 
 ## Current Specification
 
-See [docs/SPEC_v9.5_UPDATE.md](docs/SPEC_v9.5_UPDATE.md) for the latest v9.5 architecture with:
+See [docs/SPEC_v9.6_UPDATE.md](docs/SPEC_v9.6_UPDATE.md) for the latest v9.6 architecture with:
+- **Extended L6 Connectivity** (v9.6): L6→L2/3, L6→L5b, L6→L1 modulatory pathways (all basal compartment)
 - **Two-Compartment Dendritic Model** (v9.5): Basal/apical separation with Ca²⁺ spike dynamics and BAC firing
 - **State-Dependent Ca²⁺ Threshold** (v9.5): Lower in PSYCHEDELIC (more Ca²⁺), higher in ANESTHESIA (fewer Ca²⁺)
 - **VIP+ Disinhibition** (v9.4): VIP+ cells receive attention input and inhibit SST+ for selective enhancement
@@ -240,6 +245,7 @@ All testbenches should pass. Key tests (206+ total):
 - `tb_pv_crosslayer`: 8/8 tests - Cross-layer PV+ network (v9.3)
 - `tb_vip_disinhibition`: 8/8 tests - VIP+ disinhibition (v9.4)
 - `tb_dendritic_compartment`: 10/10 tests - Dendritic Ca²⁺/BAC (v9.5)
+- `tb_l6_extended`: 10/10 tests - Extended L6 connectivity (v9.6)
 - `tb_multi_harmonic_sr`: 17/17 tests - multi-harmonic SR
 - `tb_learning_fast`: 8/8 tests - CA3 Hebbian learning (v2.1)
 - `tb_sr_coupling`: 12/12 tests - SR coupling

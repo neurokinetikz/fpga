@@ -1,5 +1,13 @@
 //=============================================================================
-// Layer 1 with VIP+ Disinhibition - v9.4
+// Layer 1 with VIP+ Disinhibition - v9.6
+//
+// v9.6 CHANGES (L6 Direct Input - Phase 7):
+// - Added l6_direct_input port for intra-column L6 modulation
+// - L6 corticothalamic neurons project to L1 in addition to thalamus
+// - Weight: K_L6_L1 = 0.1 (smallest of all inputs, local modulation)
+// - Total scaling now: 0.15*matrix + 0.3*fb1 + 0.2*fb2 + 0.1*l6 = 0.75 max
+// - L6 contribution goes through SST+ dynamics (not direct to gain)
+// - Biological basis: L6 CT cells have local axon collaterals to L1
 //
 // v9.4 CHANGES (VIP+ Disinhibition - Phase 5):
 // - Added VIP+ (vasoactive intestinal peptide) interneuron model
@@ -71,6 +79,10 @@ module layer1_minimal #(
     // Higher values create "spotlight" effect by suppressing SST+
     input  wire signed [WIDTH-1:0] attention_input,
 
+    // v9.6: L6 direct input for intra-column gain modulation
+    // L6 corticothalamic neurons project to L1 in addition to thalamus
+    input  wire signed [WIDTH-1:0] l6_direct_input,
+
     // Output: multiplicative gain for L2/3 and L5 apical dendrites
     output wire signed [WIDTH-1:0] apical_gain,
 
@@ -119,6 +131,10 @@ localparam signed [WIDTH-1:0] SST_ALPHA = 18'sd164;  // 0.01 - IIR filter coeffi
 localparam signed [WIDTH-1:0] VIP_ALPHA = 18'sd82;   // 0.005 - slower than SST+
 localparam signed [WIDTH-1:0] K_VIP = 18'sd8192;     // 0.5 - attention scaling
 
+// v9.6: L6 direct pathway weight
+// L6 CT neurons project to L1, provides intra-column modulation
+localparam signed [WIDTH-1:0] K_L6_L1 = 18'sd1638;   // 0.1 - L6 direct to L1
+
 // v9.2: Matrix thalamic contribution
 wire signed [2*WIDTH-1:0] scaled_matrix;
 assign scaled_matrix = matrix_thalamic_input * K_MATRIX;
@@ -135,9 +151,15 @@ wire signed [WIDTH-1:0] fb1_contrib, fb2_contrib;
 assign fb1_contrib = scaled_fb1 >>> FRAC;
 assign fb2_contrib = scaled_fb2 >>> FRAC;
 
-// v9.2: Total gain offset: 0.15*matrix + 0.3*fb1 + 0.2*fb2
+// v9.6: L6 direct contribution (intra-column alpha feedback)
+wire signed [2*WIDTH-1:0] scaled_l6;
+assign scaled_l6 = l6_direct_input * K_L6_L1;
+wire signed [WIDTH-1:0] l6_contrib;
+assign l6_contrib = scaled_l6 >>> FRAC;
+
+// v9.6: Total gain offset: 0.15*matrix + 0.3*fb1 + 0.2*fb2 + 0.1*l6
 wire signed [WIDTH-1:0] gain_offset;
-assign gain_offset = matrix_contrib + fb1_contrib + fb2_contrib;
+assign gain_offset = matrix_contrib + fb1_contrib + fb2_contrib + l6_contrib;
 
 //=============================================================================
 // v9.1: SST+ Slow Dynamics (IIR Lowpass Filter)

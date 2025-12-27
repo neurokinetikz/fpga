@@ -1,5 +1,15 @@
 //=============================================================================
-// Cortical Column - v9.5 with Two-Compartment Dendritic Computation
+// Cortical Column - v9.6 with Extended L6 Connectivity
+//
+// v9.6 CHANGES (Extended L6 Connectivity - Phase 7):
+// - Added L6 → L2/3 alpha-gamma coupling (K_L6_L23 = 0.15)
+//   L6 alpha oscillator modulates L2/3 gamma, creating alpha-gamma PAC
+// - Added L6 → L5b intra-column feedback (K_L6_L5B = 0.1)
+//   L6 provides gain control feedback to L5b scaffold layer
+// - Added L6 → L1 direct pathway via layer1_minimal (K_L6_L1 = 0.1)
+//   L6 corticothalamic neurons project to L1 for apical gain modulation
+// - All three pathways go to basal compartment (consistent with L6 → L5a)
+// - Biological basis: L6 CT neurons provide modulatory feedback to all layers
 //
 // v9.5 CHANGES (Dendritic Compartment - Phase 6):
 // - Added dendritic_compartment instances for L2/3, L5a, L5b pyramidal neurons
@@ -198,6 +208,10 @@ localparam signed [WIDTH-1:0] K_FB_L5  = 18'sd3277;  // 0.2 - Inter-column feedb
 localparam signed [WIDTH-1:0] K_L6_L5A = 18'sd2458;  // 0.15 - L6 → L5a intra-column
 localparam signed [WIDTH-1:0] K_L4_L5A = 18'sd1638;  // 0.1 - L4 → L5a bypass (fast sensorimotor)
 
+// v9.6: Extended L6 output connectivity
+localparam signed [WIDTH-1:0] K_L6_L23 = 18'sd2458;  // 0.15 - L6 → L2/3 alpha-gamma coupling
+localparam signed [WIDTH-1:0] K_L6_L5B = 18'sd1638;  // 0.1 - L6 → L5b intra-column feedback
+
 // v9.2: PV+ interneuron now uses separate module with its own dynamics
 // K_PV, K_EXCITE, TAU_INV are inside pv_interneuron.v
 
@@ -218,6 +232,8 @@ wire signed [2*WIDTH-1:0] l23_to_l5_full, l4_to_l23_full, pac_full, fb_l5_full;
 wire signed [2*WIDTH-1:0] l5_to_l6_full;  // v8.6: Intra-column L5b → L6 feedback
 wire signed [2*WIDTH-1:0] l6_to_l5a_full;  // v8.8: L6 → L5a intra-column
 wire signed [2*WIDTH-1:0] l4_to_l5a_full;  // v8.8: L4 → L5a bypass
+wire signed [2*WIDTH-1:0] l6_to_l23_full;  // v9.6: L6 → L2/3 coupling
+wire signed [2*WIDTH-1:0] l6_to_l5b_full;  // v9.6: L6 → L5b feedback
 wire signed [WIDTH-1:0] pac_mod;
 
 //=============================================================================
@@ -244,6 +260,7 @@ layer1_minimal #(
     .feedback_input_1(feedback_input_1),
     .feedback_input_2(feedback_input_2),
     .attention_input(attention_input),              // v9.4: VIP+ disinhibition
+    .l6_direct_input(l6_x_int),                     // v9.6: L6 → L1 direct pathway
     .apical_gain(l1_apical_gain),
     .sst_activity_out(l1_sst_activity),             // v9.4: debug
     .vip_activity_out(l1_vip_activity),             // v9.4: debug
@@ -273,8 +290,11 @@ assign fb_l5_full = feedback_input_1 * K_FB_L5;
 // - L6 CT → L5a: Recent finding shows L6 projects to L5a, not L4
 // - L4 → L5a bypass: Fast sensorimotor pathway bypassing L2/3
 
-// L5b raw input (before L1 modulation) - unchanged
-assign l5b_input_raw = (l23_to_l5_full >>> FRAC) + (fb_l5_full >>> FRAC);
+// v9.6: L6 → L5b intra-column feedback
+assign l6_to_l5b_full = l6_x_int * K_L6_L5B;
+
+// v9.6: L5b receives L2/3 + inter-column feedback + L6 intra-column (basal compartment)
+assign l5b_input_raw = (l23_to_l5_full >>> FRAC) + (fb_l5_full >>> FRAC) + (l6_to_l5b_full >>> FRAC);
 
 // v8.8: L5a receives L6 intra-column feedback
 assign l6_to_l5a_full = l6_x_int * K_L6_L5A;
@@ -336,8 +356,11 @@ assign pac_mod = pac_full[FRAC +: WIDTH];
 // L2/3 receives: L4 feedforward + PAC modulation + PHASE COUPLING
 assign l4_to_l23_full = l4_x_int * K_L4_L23;
 
-// v9.0: L2/3 raw input (before L1 modulation)
-assign l23_input_raw = (l4_to_l23_full >>> FRAC) + pac_mod + phase_couple_l23;
+// v9.6: L6 → L2/3 alpha-gamma coupling
+assign l6_to_l23_full = l6_x_int * K_L6_L23;
+
+// v9.6: L2/3 receives L4 feedforward + L6 feedback + PAC + phase coupling (basal compartment)
+assign l23_input_raw = (l4_to_l23_full >>> FRAC) + (l6_to_l23_full >>> FRAC) + pac_mod + phase_couple_l23;
 
 //=============================================================================
 // v9.3: Cross-Layer PV+ Network (Phase 4 - Multi-Source Inhibition)
