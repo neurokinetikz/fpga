@@ -1,16 +1,21 @@
 //=============================================================================
-// Cortical Column - v9.2 with PV+ PING Network
+// Cortical Column - v9.3 with Cross-Layer PV+ Interneurons
+//
+// v9.3 CHANGES (Cross-Layer PV+ - Phase 4):
+// - Added L4 PV+ population: gates L4→L2/3 feedforward pathway (0.5× weight)
+// - Added L5 PV+ population: provides L5b→L2/3 feedback inhibition (0.25× weight)
+// - L2/3 now receives combined inhibition from three PV+ sources:
+//   • pv_l23: local PING (from L2/3 pyramids) - 1.0× weight
+//   • pv_l4: feedforward gating (from L4 pyramids) - 0.5× weight
+//   • pv_l5: feedback inhibition (from L5b pyramids) - 0.25× weight
+// - Biological basis: PV+ interneurons gate inter-layer communication
 //
 // v9.2 CHANGES (PV+ Interneuron - Phase 3 PING Network):
-// - PV+ interneuron now has its own dynamics (pv_interneuron module)
-// - Leaky integrator with tau = 5ms creates phase lag behind pyramids
+// - PV+ interneuron module with leaky integrator dynamics (tau = 5ms)
 // - Creates proper PING (Pyramidal-Interneuron Gamma Network) dynamics
-// - PV+ state oscillates at gamma frequency with ~90° phase lag
-// - More realistic E-I balance than Phase 1 amplitude-proportional model
-// - Biological basis: PV+ cells fire at gamma, creating E-I loop
 //
 // v9.0 CHANGES (PV+ Interneuron - Phase 1):
-// - [Superseded by v9.2] Amplitude-proportional inhibition replaced with dynamic model
+// - [Superseded by v9.2/v9.3] Amplitude-proportional inhibition replaced
 //
 // v8.8 CHANGES (L6 Output Targets):
 // - L5a now has SEPARATE input from L5b (was shared)
@@ -264,22 +269,33 @@ assign l4_to_l23_full = l4_x_int * K_L4_L23;
 assign l23_input_raw = (l4_to_l23_full >>> FRAC) + pac_mod + phase_couple_l23;
 
 //=============================================================================
-// v9.2: PV+ PING Network (Phase 3 - Dynamic Interneuron Model)
+// v9.3: Cross-Layer PV+ Network (Phase 4 - Multi-Source Inhibition)
 //=============================================================================
-// PV+ interneuron now has its own dynamics instead of just amplitude-proportional
-// inhibition. This creates a proper PING (Pyramidal-Interneuron Gamma Network):
+// Three PV+ populations provide inhibition to L2/3 from different sources:
 //
-// - PV+ receives excitation from L2/3 pyramidal output (l23_x_int)
-// - PV+ has leaky integrator dynamics with tau = 5ms
-// - PV+ output oscillates at gamma frequency
-// - ~90° phase lag behind pyramidal activity
-// - Creates more realistic E-I balance for gamma generation
+// 1. pv_l23 (local PING): Receives L2/3 pyramid output
+//    - Creates E-I balance for gamma oscillation
+//    - Weight: 1.0× (full inhibition)
 //
-// Key difference from Phase 1:
-// - Phase 1: pv_inhibition = K_PV × l23_amp (instantaneous, no dynamics)
-// - Phase 3: pv_inhibition = K_INHIB × pv_state (dynamic with temporal filtering)
-wire signed [WIDTH-1:0] pv_inhibition;
-wire signed [WIDTH-1:0] pv_state_debug;  // For testbench access
+// 2. pv_l4 (feedforward gating): Receives L4 pyramid output
+//    - Gates L4→L2/3 feedforward pathway
+//    - Provides surround suppression
+//    - Weight: 0.5× (half inhibition)
+//
+// 3. pv_l5 (feedback inhibition): Receives L5b pyramid output
+//    - Provides top-down feedback inhibition
+//    - Balances feedforward/feedback processing
+//    - Weight: 0.25× (quarter inhibition)
+//
+// Biological basis:
+// - PV+ basket cells in each layer gate information flow
+// - Creates canonical feedforward inhibition (L4→L2/3)
+// - Creates feedback inhibition (L5→L2/3)
+// - Combined effect: balanced E-I across the column
+
+// L2/3 local PV+ (PING network)
+wire signed [WIDTH-1:0] pv_l23_inhibition;
+wire signed [WIDTH-1:0] pv_l23_state;  // Debug
 
 pv_interneuron #(
     .WIDTH(WIDTH),
@@ -288,14 +304,55 @@ pv_interneuron #(
     .clk(clk),
     .rst(rst),
     .clk_en(clk_en),
-    .pyramid_input(l23_x_int),     // Excitation from L2/3 pyramidal oscillator
-    .inhibition(pv_inhibition),    // Inhibitory output to L2/3 input
-    .pv_state_out(pv_state_debug)  // Debug: internal PV+ state
+    .pyramid_input(l23_x_int),
+    .inhibition(pv_l23_inhibition),
+    .pv_state_out(pv_l23_state)
 );
 
-// L2/3 input with PV+ inhibition subtracted (before L1 gain modulation)
+// L4 PV+ (feedforward gating)
+wire signed [WIDTH-1:0] pv_l4_inhibition;
+wire signed [WIDTH-1:0] pv_l4_state;  // Debug
+
+pv_interneuron #(
+    .WIDTH(WIDTH),
+    .FRAC(FRAC)
+) pv_l4 (
+    .clk(clk),
+    .rst(rst),
+    .clk_en(clk_en),
+    .pyramid_input(l4_x_int),
+    .inhibition(pv_l4_inhibition),
+    .pv_state_out(pv_l4_state)
+);
+
+// L5 PV+ (feedback inhibition)
+wire signed [WIDTH-1:0] pv_l5_inhibition;
+wire signed [WIDTH-1:0] pv_l5_state;  // Debug
+
+pv_interneuron #(
+    .WIDTH(WIDTH),
+    .FRAC(FRAC)
+) pv_l5 (
+    .clk(clk),
+    .rst(rst),
+    .clk_en(clk_en),
+    .pyramid_input(l5b_x_int),
+    .inhibition(pv_l5_inhibition),
+    .pv_state_out(pv_l5_state)
+);
+
+// Combined inhibition to L2/3:
+// - pv_l23: 1.0× (local PING)
+// - pv_l4: 0.5× (feedforward gating) = >>> 1
+// - pv_l5: 0.25× (feedback) = >>> 2
+wire signed [WIDTH-1:0] pv_total_inhibition;
+assign pv_total_inhibition = pv_l23_inhibition +
+                             (pv_l4_inhibition >>> 1) +
+                             (pv_l5_inhibition >>> 2);
+
+// L2/3 input with combined PV+ inhibition subtracted (before L1 gain modulation)
 wire signed [WIDTH-1:0] l23_input_with_pv;
-assign l23_input_with_pv = l23_input_raw - pv_inhibition;
+assign l23_input_with_pv = l23_input_raw - pv_total_inhibition;
 
 // v9.0: Apply L1 apical gain to L2/3 input (pyramidal neurons have apical tufts in L1)
 wire signed [2*WIDTH-1:0] l23_input_modulated;

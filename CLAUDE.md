@@ -4,7 +4,7 @@
 
 This is an FPGA implementation of a biologically-realistic neural oscillator system based on the **φⁿ (golden ratio) frequency architecture** with Schumann Resonance coupling. The system implements 21 Hopf oscillators organized into a thalamo-cortical architecture for neural signal processing and consciousness state modeling.
 
-**Current Version:** v9.2 (PV+ PING Network)
+**Current Version:** v9.3 (Cross-Layer PV+ Interneurons)
 **Target Platform:** Digilent Zybo Z7-20 (Xilinx Zynq-7020)
 
 ## Quick Start
@@ -55,7 +55,7 @@ fpga/
 │   ├── hopf_oscillator_stochastic.v # Stochastic variant with noise input
 │   ├── ca3_phase_memory.v        # Hebbian phase memory (v8.0, theta-gated)
 │   ├── thalamus.v                # Theta + SR + matrix + L6 inhibition (v8.8)
-│   ├── cortical_column.v         # 6-layer cortical model (v9.2, PV+ PING)
+│   ├── cortical_column.v         # 6-layer cortical model (v9.3, cross-layer PV+)
 │   ├── layer1_minimal.v          # Layer 1 apical gain modulation (v9.1)
 │   ├── pv_interneuron.v          # PV+ basket cell dynamics (v9.2)
 │   ├── sr_harmonic_bank.v        # 5-harmonic SR bank (v7.4, continuous gain)
@@ -192,7 +192,8 @@ fpga/
 
 ## Current Specification
 
-See [docs/SPEC_v9.2_UPDATE.md](docs/SPEC_v9.2_UPDATE.md) for the latest v9.2 architecture with:
+See [docs/SPEC_v9.3_UPDATE.md](docs/SPEC_v9.3_UPDATE.md) for the latest v9.3 architecture with:
+- **Cross-Layer PV+ Network** (v9.3): L4 PV+ (feedforward gating, 0.5×) + L5 PV+ (feedback inhibition, 0.25×)
 - **PV+ PING Network** (v9.2): Dynamic PV+ interneuron model creates proper E-I loop with phase lag
 - **SST+ Slow Dynamics** (v9.1): IIR lowpass filter models GABA-B kinetics (~25ms time constant)
 - **L6 Output Connectivity** (v8.8): L6→L5a, L4→L5a bypass, L6→Thalamus+TRN inhibition
@@ -210,7 +211,7 @@ Base specification: [docs/FPGA_SPECIFICATION_V8.md](docs/FPGA_SPECIFICATION_V8.m
 
 ## Testing
 
-All testbenches should pass. Key tests (190+ total):
+All testbenches should pass. Key tests (198+ total):
 - `tb_full_system_fast`: 15/15 tests - full integration (v6.5)
 - `tb_theta_phase_multiplexing`: 19/19 tests - theta phase (v8.3)
 - `tb_scaffold_architecture`: 14/14 tests - scaffold layers (v8.0)
@@ -222,6 +223,7 @@ All testbenches should pass. Key tests (190+ total):
 - `tb_pv_minimal`: 6/6 tests - PV+ basket cell inhibition (v9.0)
 - `tb_sst_dynamics`: 8/8 tests - SST+ slow dynamics (v9.1)
 - `tb_pv_feedback`: 8/8 tests - PV+ PING network dynamics (v9.2)
+- `tb_pv_crosslayer`: 8/8 tests - Cross-layer PV+ network (v9.3)
 - `tb_multi_harmonic_sr`: 17/17 tests - multi-harmonic SR
 - `tb_learning_fast`: 8/8 tests - CA3 Hebbian learning (v2.1)
 - `tb_sr_coupling`: 12/12 tests - SR coupling

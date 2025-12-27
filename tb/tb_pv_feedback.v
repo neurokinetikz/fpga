@@ -57,10 +57,11 @@ assign abs_y = (l23_y < 0) ? -l23_y : l23_y;
 assign l23_amp = (abs_x > abs_y) ? abs_x + (abs_y >>> 1) : abs_y + (abs_x >>> 1);
 
 // Access internal PV+ state via hierarchical path
+// v9.3: Signal renamed from pv_inhibition to pv_l23_inhibition
 wire signed [WIDTH-1:0] pv_state;
 wire signed [WIDTH-1:0] pv_inhibition;
 assign pv_state = dut.pv_l23.pv_state;
-assign pv_inhibition = dut.pv_inhibition;
+assign pv_inhibition = dut.pv_l23_inhibition;
 
 // Phase detection registers
 reg signed [WIDTH-1:0] prev_l23_x;
