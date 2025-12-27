@@ -182,8 +182,8 @@ fpga/
 | K_MATRIX | 2458 | 0.15 | Matrix thalamus → L1 weight |
 | K_FB1 | 4915 | 0.3 | Adjacent column feedback weight |
 | K_FB2 | 3277 | 0.2 | Distant column feedback weight |
-| GAIN_MIN | 8192 | 0.5 | L1 minimum apical gain |
-| GAIN_MAX | 24576 | 1.5 | L1 maximum apical gain |
+| GAIN_MIN | 4096 | 0.25 | L1 minimum apical gain (v9.6: was 0.5) |
+| GAIN_MAX | 32768 | 2.0 | L1 maximum apical gain (v9.6: was 1.5) |
 | K_L6_L5A | 2458 | 0.15 | L6 → L5a intra-column (v8.8) |
 | K_L4_L5A | 1638 | 0.1 | L4 → L5a bypass (v8.8) |
 | K_L6_THAL | 1638 | 0.1 | L6 → Thalamus direct inhibition (v8.8) |

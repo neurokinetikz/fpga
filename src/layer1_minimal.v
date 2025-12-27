@@ -102,9 +102,11 @@ localparam signed [WIDTH-1:0] K_MATRIX = 18'sd2458;  // 0.15 - matrix thalamus w
 localparam signed [WIDTH-1:0] K_FB1 = 18'sd4915;   // 0.3 - adjacent column weight
 localparam signed [WIDTH-1:0] K_FB2 = 18'sd3277;   // 0.2 - distant column weight
 
-// Gain limits to prevent instability
-localparam signed [WIDTH-1:0] GAIN_MIN = 18'sd8192;   // 0.5 minimum
-localparam signed [WIDTH-1:0] GAIN_MAX = 18'sd24576;  // 1.5 maximum
+// Gain limits - expanded range for more dynamic modulation (v9.6)
+// Literature: attention can increase gain 2-4×, anesthesia reduces to near zero
+// With BAC firing (1.5× boost), effective range becomes [0.375, 3.0]
+localparam signed [WIDTH-1:0] GAIN_MIN = 18'sd4096;   // 0.25 minimum (was 0.5)
+localparam signed [WIDTH-1:0] GAIN_MAX = 18'sd32768;  // 2.0 maximum (was 1.5)
 
 //=============================================================================
 // v9.1: SST+ Slow Dynamics Constants
