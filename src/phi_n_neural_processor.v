@@ -1,5 +1,11 @@
 //=============================================================================
-// Top-Level Module - v8.8 with L6 Output Connectivity
+// Top-Level Module - v9.4 with VIP+ Disinhibition
+//
+// v9.4 CHANGES (VIP+ Disinhibition - Phase 5):
+// - Added attention_input port to cortical_column instantiations
+// - Default: attention_input = 0 (no attention modulation)
+// - Future: attention can be controlled externally or state-derived
+// - VIP+ cells in L1 disinhibit SST+ for selective enhancement
 //
 // v8.8 CHANGES (L6 Output Targets):
 // - L6 → Thalamus inhibitory modulation (10:1 ratio + TRN amplification)
@@ -451,6 +457,7 @@ cortical_column #(.WIDTH(WIDTH), .FRAC(FRAC)) col_sensory (
     .phase_couple_l23(phase_couple_sensory_l23),
     .phase_couple_l6(phase_couple_sensory_l6),
     .encoding_window(ca3_encoding_window),  // v8.1: gamma-theta nesting
+    .attention_input(18'sd0),               // v9.4: no attention (default)
     .mu_dt_l6(mu_dt_l6),
     .mu_dt_l5b(mu_dt_l5b),
     .mu_dt_l5a(mu_dt_l5a),
@@ -477,6 +484,7 @@ cortical_column #(.WIDTH(WIDTH), .FRAC(FRAC)) col_assoc (
     .phase_couple_l23(phase_couple_assoc_l23),
     .phase_couple_l6(phase_couple_assoc_l6),
     .encoding_window(ca3_encoding_window),  // v8.1: gamma-theta nesting
+    .attention_input(18'sd0),               // v9.4: no attention (default)
     .mu_dt_l6(mu_dt_l6),
     .mu_dt_l5b(mu_dt_l5b),
     .mu_dt_l5a(mu_dt_l5a),
@@ -503,6 +511,7 @@ cortical_column #(.WIDTH(WIDTH), .FRAC(FRAC)) col_motor (
     .phase_couple_l23(phase_couple_motor_l23),
     .phase_couple_l6(phase_couple_motor_l6),
     .encoding_window(ca3_encoding_window),  // v8.1: gamma-theta nesting
+    .attention_input(18'sd0),               // v9.4: no attention (default)
     .mu_dt_l6(mu_dt_l6),
     .mu_dt_l5b(mu_dt_l5b),
     .mu_dt_l5a(mu_dt_l5a),

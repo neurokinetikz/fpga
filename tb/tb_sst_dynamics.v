@@ -63,6 +63,11 @@ always @(posedge clk) begin
 end
 
 // DUT instantiation
+// v9.4: Debug outputs for visibility
+wire signed [WIDTH-1:0] sst_activity;
+wire signed [WIDTH-1:0] vip_activity;
+wire signed [WIDTH-1:0] sst_effective;
+
 layer1_minimal #(
     .WIDTH(WIDTH),
     .FRAC(FRAC)
@@ -73,7 +78,11 @@ layer1_minimal #(
     .matrix_thalamic_input(matrix_thalamic_input),
     .feedback_input_1(feedback_input_1),
     .feedback_input_2(feedback_input_2),
-    .apical_gain(apical_gain)
+    .attention_input(18'sd0),        // v9.4: No attention for SST+ tests
+    .apical_gain(apical_gain),
+    .sst_activity_out(sst_activity),
+    .vip_activity_out(vip_activity),
+    .sst_effective_out(sst_effective)
 );
 
 // Helper task: wait for N clk_en cycles

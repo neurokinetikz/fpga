@@ -1,5 +1,12 @@
 //=============================================================================
-// Cortical Column - v9.3 with Cross-Layer PV+ Interneurons
+// Cortical Column - v9.4 with VIP+ Disinhibition
+//
+// v9.4 CHANGES (VIP+ Disinhibition - Phase 5):
+// - Added attention_input port for VIP+ disinhibition in Layer 1
+// - VIP+ cells receive attention signals and inhibit SST+ cells
+// - Creates "spotlight" effect: high attention → less SST+ → higher gain
+// - Passes attention_input to layer1_minimal module
+// - Biological basis: VIP+ cells target SST+ for selective enhancement
 //
 // v9.3 CHANGES (Cross-Layer PV+ - Phase 4):
 // - Added L4 PV+ population: gates L4→L2/3 feedforward pathway (0.5× weight)
@@ -121,6 +128,10 @@ module cortical_column #(
     // v8.1: Theta phase window for gamma nesting
     input  wire encoding_window,  // From CA3: 1=encoding (fast gamma), 0=retrieval (slow gamma)
 
+    // v9.4: Attention input for VIP+ disinhibition in Layer 1
+    // Higher values create selective enhancement via SST+ suppression
+    input  wire signed [WIDTH-1:0] attention_input,
+
     input  wire signed [WIDTH-1:0] mu_dt_l6,
     input  wire signed [WIDTH-1:0] mu_dt_l5b,
     input  wire signed [WIDTH-1:0] mu_dt_l5a,
@@ -195,6 +206,11 @@ wire signed [WIDTH-1:0] pac_mod;
 // - matrix_thalamic_input: diffuse projection from POm/Pulvinar (global attention)
 // - feedback_input_1: adjacent column (e.g., association → sensory)
 // - feedback_input_2: distant column (e.g., motor → sensory)
+// v9.4: Debug signals for Layer 1 VIP+ disinhibition
+wire signed [WIDTH-1:0] l1_sst_activity;
+wire signed [WIDTH-1:0] l1_vip_activity;
+wire signed [WIDTH-1:0] l1_sst_effective;
+
 layer1_minimal #(
     .WIDTH(WIDTH),
     .FRAC(FRAC)
@@ -205,7 +221,11 @@ layer1_minimal #(
     .matrix_thalamic_input(matrix_thalamic_input),  // v9.2: diffuse thalamic
     .feedback_input_1(feedback_input_1),
     .feedback_input_2(feedback_input_2),
-    .apical_gain(l1_apical_gain)
+    .attention_input(attention_input),              // v9.4: VIP+ disinhibition
+    .apical_gain(l1_apical_gain),
+    .sst_activity_out(l1_sst_activity),             // v9.4: debug
+    .vip_activity_out(l1_vip_activity),             // v9.4: debug
+    .sst_effective_out(l1_sst_effective)            // v9.4: debug
 );
 
 //=============================================================================

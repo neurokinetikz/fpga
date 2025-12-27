@@ -1,5 +1,12 @@
 //=============================================================================
-// Layer 1 with SST+ Slow Dynamics - v9.1
+// Layer 1 with VIP+ Disinhibition - v9.4
+//
+// v9.4 CHANGES (VIP+ Disinhibition - Phase 5):
+// - Added VIP+ (vasoactive intestinal peptide) interneuron model
+// - VIP+ cells receive attention_input and INHIBIT SST+ cells
+// - Creates disinhibition: high attention → less SST+ → higher gain
+// - Implements attention spotlight for selective enhancement
+// - Biological basis: VIP+ cells target other interneurons (SST+/PV+)
 //
 // v9.1 CHANGES (SST+ Slow Dynamics):
 // - Added SST+ (somatostatin-positive) Martinotti cell dynamics
@@ -24,19 +31,21 @@
 // BIOLOGICAL BASIS:
 // - L1 contains only GABAergic interneurons (no excitatory neurons)
 // - SST+ Martinotti cells: slow GABA-B kinetics, target distal dendrites
+// - VIP+ cells: disinhibitory circuit, receive attention/arousal signals
 // - Receives: matrix thalamic input, cortico-cortical feedback, neuromodulators
 // - Outputs: modulation to L2/3 and L5 apical dendrites
 // - Function: top-down attention gating, contextual integration
 //
-// SST+ GAIN MODEL (v9.1):
+// VIP+ DISINHIBITION MODEL (v9.4):
 // 1. combined = 0.15 * matrix + 0.3 * feedback_1 + 0.2 * feedback_2
 // 2. sst_activity = lowpass(combined, tau=25ms)  // SST+ slow dynamics
-// 3. apical_gain = clamp(1.0 + sst_activity, 0.5, 1.5)
-// - Slow rise/fall creates realistic inhibition dynamics
-// - Time constant ~25ms matches GABA-B kinetics
+// 3. vip_activity = lowpass(attention_input * K_VIP, tau=50ms)  // VIP+ slower
+// 4. sst_effective = max(0, sst_activity - vip_activity)  // Disinhibition
+// 5. apical_gain = clamp(1.0 + sst_effective, 0.5, 1.5)
+// - VIP+ suppresses SST+ → increases gain when attention is high
+// - Time constant ~50ms reflects slower VIP+ kinetics
 //
 // FUTURE ENHANCEMENTS:
-// v9.4: VIP+ disinhibition of SST+
 // v9.5: ACh neuromodulator input
 //=============================================================================
 `timescale 1ns / 1ps
@@ -58,8 +67,17 @@ module layer1_minimal #(
     // Feedback input 2: distant column (e.g., motor for sensory)
     input  wire signed [WIDTH-1:0] feedback_input_2,
 
+    // v9.4: Attention input for VIP+ disinhibition
+    // Higher values create "spotlight" effect by suppressing SST+
+    input  wire signed [WIDTH-1:0] attention_input,
+
     // Output: multiplicative gain for L2/3 and L5 apical dendrites
-    output wire signed [WIDTH-1:0] apical_gain
+    output wire signed [WIDTH-1:0] apical_gain,
+
+    // v9.4: Debug outputs for testbench access
+    output wire signed [WIDTH-1:0] sst_activity_out,
+    output wire signed [WIDTH-1:0] vip_activity_out,
+    output wire signed [WIDTH-1:0] sst_effective_out
 );
 
 // Constants in Q4.14 format
@@ -84,6 +102,22 @@ localparam signed [WIDTH-1:0] GAIN_MAX = 18'sd24576;  // 1.5 maximum
 // IIR filter: y[n] = y[n-1] + alpha * (x[n] - y[n-1])
 // For tau = 25ms at dt = 0.25ms: alpha = dt/tau = 0.25/25 = 0.01
 localparam signed [WIDTH-1:0] SST_ALPHA = 18'sd164;  // 0.01 - IIR filter coefficient
+
+//=============================================================================
+// v9.4: VIP+ Disinhibition Constants
+//=============================================================================
+// VIP+ (vasoactive intestinal peptide) interneurons:
+// - Receive attention/arousal signals from higher cortical areas
+// - Inhibit SST+ cells (disinhibition of pyramidal dendrites)
+// - Have slower dynamics than SST+ (~50ms time constant)
+// - Create "spotlight" effect for selective attention
+//
+// VIP+ inhibits SST+, which inhibits pyramidal dendrites
+// Net effect: VIP+ activation → increased gain (disinhibition)
+//
+// Time constant ~50ms at 4 kHz: alpha = 0.25/50 = 0.005
+localparam signed [WIDTH-1:0] VIP_ALPHA = 18'sd82;   // 0.005 - slower than SST+
+localparam signed [WIDTH-1:0] K_VIP = 18'sd8192;     // 0.5 - attention scaling
 
 // v9.2: Matrix thalamic contribution
 wire signed [2*WIDTH-1:0] scaled_matrix;
@@ -134,9 +168,55 @@ always @(posedge clk) begin
     end
 end
 
-// Compute raw gain using FILTERED SST+ activity (not instantaneous)
+//=============================================================================
+// v9.4: VIP+ Disinhibition Dynamics
+//=============================================================================
+// VIP+ cells receive attention input and inhibit SST+ cells
+// This creates a disinhibitory pathway:
+//   High attention → High VIP+ → Low SST+ effective → Higher gain
+//
+// VIP+ uses slower dynamics (tau=50ms) than SST+ (tau=25ms)
+// This reflects the slower buildup/decay of attention effects
+
+// Scale attention input by VIP+ gain
+wire signed [2*WIDTH-1:0] vip_scaled_full;
+wire signed [WIDTH-1:0] vip_scaled;
+assign vip_scaled_full = attention_input * K_VIP;
+assign vip_scaled = vip_scaled_full >>> FRAC;
+
+// VIP+ state variable with IIR lowpass filter
+reg signed [WIDTH-1:0] vip_activity;
+
+wire signed [WIDTH-1:0] vip_error;
+wire signed [2*WIDTH-1:0] vip_delta_full;
+wire signed [WIDTH-1:0] vip_delta;
+
+assign vip_error = vip_scaled - vip_activity;
+assign vip_delta_full = vip_error * VIP_ALPHA;
+assign vip_delta = vip_delta_full >>> FRAC;
+
+always @(posedge clk) begin
+    if (rst) begin
+        vip_activity <= 0;
+    end else if (clk_en) begin
+        // IIR lowpass: vip_activity += alpha * (vip_scaled - vip_activity)
+        vip_activity <= vip_activity + vip_delta;
+    end
+end
+
+// Compute effective SST+ activity after VIP+ disinhibition
+// VIP+ can only reduce positive SST+, not push negative SST+ further down
+// - If sst_activity >= 0 and VIP+ would push it negative: clamp at 0
+// - If sst_activity < 0 (negative feedback): pass through unchanged
+wire signed [WIDTH-1:0] sst_minus_vip;
+wire signed [WIDTH-1:0] sst_effective;
+assign sst_minus_vip = sst_activity - vip_activity;
+// Clamp at 0 only if SST+ was positive and VIP+ would make it negative
+assign sst_effective = (sst_activity >= 0 && sst_minus_vip < 0) ? 0 : sst_minus_vip;
+
+// Compute raw gain using EFFECTIVE SST+ activity (after VIP+ disinhibition)
 wire signed [WIDTH-1:0] gain_raw;
-assign gain_raw = GAIN_BASE + sst_activity;
+assign gain_raw = GAIN_BASE + sst_effective;
 
 // Clamp gain to valid range [0.5, 1.5]
 wire signed [WIDTH-1:0] gain_clamped;
@@ -146,5 +226,10 @@ assign gain_clamped = (gain_raw < GAIN_MIN) ? GAIN_MIN :
 
 // Output the clamped gain
 assign apical_gain = gain_clamped;
+
+// v9.4: Debug outputs
+assign sst_activity_out = sst_activity;
+assign vip_activity_out = vip_activity;
+assign sst_effective_out = sst_effective;
 
 endmodule

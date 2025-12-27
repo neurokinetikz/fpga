@@ -105,6 +105,7 @@ cortical_column #(
     .phase_couple_l23(phase_couple_l23),
     .phase_couple_l6(phase_couple_l6),
     .encoding_window(encoding_window),
+    .attention_input(18'sd0),  // v9.4: No attention for PING tests
     .mu_dt_l6(mu_dt_l6),
     .mu_dt_l5b(mu_dt_l5b),
     .mu_dt_l5a(mu_dt_l5a),
