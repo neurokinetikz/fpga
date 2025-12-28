@@ -1,12 +1,20 @@
 //=============================================================================
-// Top-Level Module - v10.4 with φⁿ Geophysical SR Integration
+// Top-Level Module - v10.5 with Quarter-Integer φⁿ Theory
+//
+// v10.5 CHANGES (Quarter-Integer φⁿ Theory):
+// - RESOLVED: f₁ "bridging mode mystery" - f₁ is φ^1.25 quarter-integer fallback
+// - Energy landscape: E_total = E_φ(n) + E_h(n) with 2:1 harmonic catastrophe
+// - φ^1.5 = 2.058 is unstable (too close to 2:1 harmonic at ratio 2.0)
+// - f₁ retreats to geometric mean: n = (1.0 + 1.5)/2 = 1.25
+// - φ^1.25 × 7.6 Hz = 13.84 Hz (observed 13.75 Hz, 0.65% error)
+// - Quarter-integer has highest SIE response (3.0×) due to lower energy barrier
+// - See docs/SPEC_v10.5_UPDATE.md for full derivation and Tomsk 27-yr validation
 //
 // v10.4 CHANGES (φⁿ Geophysical SR Integration):
 // - Q-factor modeling: f₂ (20 Hz) is anchor with highest Q=15.5
 // - Amplitude hierarchy: φ^(-n) power decay across harmonics
 // - Mode-selective SIE: f₀/f₁ respond 2.7-3×, f₂/f₃/f₄ only 1.2×
 // - Based on Dec 2025 geophysical Schumann Resonance data analysis
-// - f₁ (13.75 Hz) documented as "non-φⁿ bridging mode"
 //
 // v10.2 CHANGES (Spectral Broadening):
 // - Added fast cycle-by-cycle frequency jitter (±0.15 Hz per sample)

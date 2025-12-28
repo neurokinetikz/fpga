@@ -1,5 +1,12 @@
 //=============================================================================
-// Thalamus Module - v10.4 with φⁿ Mode-Selective SR Enhancement
+// Thalamus Module - v10.5 with Quarter-Integer φⁿ Theory
+//
+// v10.5 CHANGES (Quarter-Integer φⁿ Theory):
+// - f₁ "bridging mode mystery" RESOLVED: f₁ is φ^1.25 (quarter-integer fallback)
+// - 2:1 Harmonic Catastrophe makes φ^1.5 = 2.058 unstable (too close to 2.0)
+// - f₁'s highest SIE enhancement (3.0×) explained by quarter-integer instability
+// - Quarter-integer modes have lower energy barriers → higher perturbation response
+// - See docs/SPEC_v10.5_UPDATE.md for full theoretical derivation
 //
 // v10.4 CHANGES (φⁿ Geophysical SR Integration):
 // - Mode-selective SIE enhancement: f₀/f₁ respond 2.7-3×, f₂/f₃/f₄ only 1.2×

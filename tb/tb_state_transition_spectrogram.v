@@ -19,9 +19,10 @@
 // - mu_l4:    4 → 2 (halved)
 // - mu_l23:   4 → 2 (halved)
 //
-// Output: state_transition_dac.csv
-//   - time_ms, phase, mu_l5b, dac_output
-//   - 100,000 samples at 1 kHz
+// Output files:
+//   state_transition_eeg.csv - Full oscillator data (27 columns)
+//   state_transition_dac.csv - DAC output only (time_ms, phase, mu_l5b, dac_output)
+//   Both have 100,000 samples at 1 kHz
 //
 // Usage:
 //   iverilog -o tb_state_transition_spectrogram.vvp -s tb_state_transition_spectrogram \
@@ -270,6 +271,7 @@ end
 // CSV export logic
 //=============================================================================
 integer csv_file;
+integer dac_file;  // Second file for state_transition_dac.csv
 integer sample_count;
 integer update_count;
 
@@ -287,6 +289,9 @@ initial begin
     // Open CSV file (same format as oscillator_eeg_export.csv for dac_spectrogram.py)
     csv_file = $fopen("state_transition_eeg.csv", "w");
 
+    // Open second CSV file for state_transition_spectrogram.py
+    dac_file = $fopen("state_transition_dac.csv", "w");
+
     // Write header (27 columns - same as tb_eeg_export.v)
     $fwrite(csv_file, "time_ms,state,theta_phase,");
     $fwrite(csv_file, "theta_x,theta_y,");
@@ -295,6 +300,9 @@ initial begin
     $fwrite(csv_file, "assoc_l6_x,assoc_l5a_x,assoc_l5b_x,assoc_l4_x,assoc_l23_x,");
     $fwrite(csv_file, "motor_l6_x,motor_l5a_x,motor_l5b_x,motor_l4_x,motor_l23_x,");
     $fwrite(csv_file, "beta_quiet,sr_amplification\n");
+
+    // Write header for DAC file (4 columns for state_transition_spectrogram.py)
+    $fwrite(dac_file, "time_ms,phase,mu_l5b,dac_output\n");
 
     $display("=============================================================================");
     $display("State Transition Spectrogram Testbench");
@@ -374,6 +382,13 @@ initial begin
                     beta_quiet,
                     sr_amplification);
 
+                // Write to DAC file (4 columns for state_transition_spectrogram.py)
+                $fwrite(dac_file, "%0d,%0d,%0d,%0d\n",
+                    sample_count,
+                    current_phase,
+                    $signed(mu_l5b_interp),
+                    dac_output);
+
                 sample_count = sample_count + 1;
 
                 // Progress every 10 seconds (10,000 samples)
@@ -386,11 +401,15 @@ initial begin
     end
 
     $fclose(csv_file);
+    $fclose(dac_file);
     $display("=============================================================================");
-    $display("Export complete: state_transition_eeg.csv");
+    $display("Export complete:");
+    $display("  state_transition_eeg.csv (27 columns, all oscillators)");
+    $display("  state_transition_dac.csv (4 columns, DAC output only)");
     $display("Total samples: %0d (100 seconds at 1 kHz)", sample_count);
     $display("");
-    $display("Generate spectrogram with dac_spectrogram.py:");
+    $display("Generate spectrograms:");
+    $display("  python3 scripts/state_transition_spectrogram.py");
     $display("  python3 scripts/dac_spectrogram.py state_transition_eeg.csv");
     $display("=============================================================================");
     $finish;

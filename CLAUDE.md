@@ -4,7 +4,7 @@
 
 This is an FPGA implementation of a biologically-realistic neural oscillator system based on the **φⁿ (golden ratio) frequency architecture** with Schumann Resonance coupling. The system implements 21 Hopf oscillators organized into a thalamo-cortical architecture for neural signal processing and consciousness state modeling.
 
-**Current Version:** v10.4 (φⁿ Geophysical SR Integration)
+**Current Version:** v10.5 (Quarter-Integer φⁿ Theory)
 **Target Platform:** Digilent Zybo Z7-20 (Xilinx Zynq-7020)
 
 ## Quick Start
@@ -50,16 +50,16 @@ make clean             # Clean generated files
 ```
 fpga/
 ├── src/                          # Verilog source modules (19 files)
-│   ├── phi_n_neural_processor.v  # Top-level (v10.2, 21 oscillators + EEG realism)
+│   ├── phi_n_neural_processor.v  # Top-level (v10.5, 21 oscillators + quarter-integer φⁿ)
 │   ├── hopf_oscillator.v         # Core oscillator (v6.0, dx/dt = μx - ωy - r²x)
 │   ├── hopf_oscillator_stochastic.v # Stochastic variant with noise input
 │   ├── ca3_phase_memory.v        # Hebbian phase memory (v8.0, theta-gated)
-│   ├── thalamus.v                # Theta + SR + matrix + L6 inhibition (v8.8)
+│   ├── thalamus.v                # Theta + SR + matrix + L6 inhibition (v10.5)
 │   ├── cortical_column.v         # 6-layer cortical model (v10.0, freq drift)
 │   ├── dendritic_compartment.v   # v9.5: Two-compartment dendritic model
 │   ├── layer1_minimal.v          # Layer 1 with L6 input (v9.6)
 │   ├── pv_interneuron.v          # PV+ basket cell dynamics (v9.2)
-│   ├── sr_harmonic_bank.v        # 5-harmonic SR bank (v7.4, continuous gain)
+│   ├── sr_harmonic_bank.v        # 5-harmonic SR bank (v7.6, quarter-integer φⁿ)
 │   ├── sr_noise_generator.v      # Per-harmonic stochastic noise (5 LFSRs)
 │   ├── sr_frequency_drift.v      # v8.5: Realistic SR frequency drift
 │   ├── sr_ignition_controller.v  # v10.0: Six-phase SIE state machine
@@ -95,7 +95,8 @@ fpga/
 │   └── run_vivado_*.tcl          # Vivado TCL scripts
 ├── docs/                         # Specifications
 │   ├── FPGA_SPECIFICATION_V8.md  # Base architecture spec (v8.0)
-│   ├── SPEC_v10.2_UPDATE.md      # Current version (v10.2 EEG Realism)
+│   ├── SPEC_v10.5_UPDATE.md      # Current version (v10.5 Quarter-Integer φⁿ)
+│   ├── SPEC_v10.4_UPDATE.md      # φⁿ Geophysical SR Integration
 │   ├── SPEC_v9.6_UPDATE.md       # Extended L6 connectivity (v9.6)
 │   └── SYSTEM_DESCRIPTION.md     # Comprehensive system description
 └── Makefile
@@ -240,10 +241,21 @@ fpga/
 | SIE_ENHANCE_F2 | 20480 | 1.25× | SIE mode-selective enhancement f₂ (v10.4) |
 | SIE_ENHANCE_F3 | 19661 | 1.2× | SIE mode-selective enhancement f₃ (v10.4) |
 | SIE_ENHANCE_F4 | 19661 | 1.2× | SIE mode-selective enhancement f₄ (v10.4) |
+| PHI_Q14 | 26510 | 1.618 | φ^1.0 golden ratio base (v10.5) |
+| PHI_0_25 | 18474 | 1.1276 | φ^0.25 quarter power (v10.5) |
+| PHI_0_5 | 20833 | 1.272 | φ^0.5 half power (v10.5) |
+| PHI_0_75 | 20935 | 1.2785 | φ^0.75 three-quarter power (v10.5) |
+| PHI_1_25 | 29899 | 1.8249 | φ^1.25 f₁ fallback ratio (v10.5) |
+| PHI_1_5 | 33718 | 2.058 | φ^1.5 UNSTABLE - 2:1 catastrophe (v10.5) |
+| PHI_2_0 | 42891 | 2.618 | φ^2.0 (v10.5) |
+| PHI_2_5 | 54569 | 3.330 | φ^2.5 (v10.5) |
+| HARMONIC_2_1 | 32768 | 2.0 | 2:1 harmonic ratio (v10.5) |
+| OMEGA_DT_F1_THEORY | 356 | 13.84 Hz | Theoretical f₁ at φ^1.25 × f₀ (v10.5) |
 
 ## Current Specification
 
-See [docs/SPEC_v10.4_UPDATE.md](docs/SPEC_v10.4_UPDATE.md) for the latest v10.4 architecture with:
+See [docs/SPEC_v10.5_UPDATE.md](docs/SPEC_v10.5_UPDATE.md) for the latest v10.5 architecture with:
+- **Quarter-Integer φⁿ Theory** (v10.5): f₁ explained as φ^1.25 fallback due to 2:1 Harmonic Catastrophe
 - **φⁿ Geophysical SR Integration** (v10.4): Q-factor modeling, amplitude hierarchy, mode-selective SIE
 - **1/f^φ Spectral Slope** (v10.3): √Fibonacci-weighted pink noise (v7.2) achieves golden ratio exponent
 - **Spectral Broadening** (v10.2): Fast frequency jitter (±0.5 Hz/sample) for ~1-2 Hz wide peaks
@@ -293,6 +305,7 @@ All testbenches should pass. Key tests (226+ total):
 - `tb_amplitude_envelope`: 8/8 tests - O-U envelope dynamics (v10.0)
 - `tb_sr_ignition_phases`: 10/10 tests - SIE phase evolution (v10.0)
 - `tb_phi_n_sr_relationships`: 10/10 tests - φⁿ Q-factor and amplitude hierarchy (v10.4)
+- `tb_quarter_integer_theory`: 12/12 tests - Quarter-integer fallback validation (v10.5)
 - `tb_multi_harmonic_sr`: 17/17 tests - multi-harmonic SR
 - `tb_learning_fast`: 8/8 tests - CA3 Hebbian learning (v2.1)
 - `tb_sr_coupling`: 12/12 tests - SR coupling
