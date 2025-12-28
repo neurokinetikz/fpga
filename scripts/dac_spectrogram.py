@@ -398,15 +398,19 @@ def main():
     output_dir = Path('eeg_analysis')
     output_dir.mkdir(exist_ok=True)
 
+    # Derive output prefix from input filename
+    input_stem = Path(csv_path).stem  # e.g., "state_transition_eeg" or "oscillator_eeg_export"
+    output_prefix = input_stem if input_stem != 'oscillator_eeg_export' else 'dac'
+
     # Generate visualizations
-    print("\nGenerating DAC spectrogram...")
-    create_dac_spectrogram(mixed, output_dir / 'dac_spectrogram.png')
+    print(f"\nGenerating DAC spectrogram (prefix: {output_prefix})...")
+    create_dac_spectrogram(mixed, output_dir / f'{output_prefix}_spectrogram.png')
 
     print("Analyzing frequency content...")
-    peak_freqs, peak_powers = analyze_frequency_content(mixed, output_dir / 'dac_frequency_analysis.png')
+    peak_freqs, peak_powers = analyze_frequency_content(mixed, output_dir / f'{output_prefix}_frequency_analysis.png')
 
     print("Creating 3D spectrogram...")
-    create_3d_spectrogram(mixed, output_dir / 'dac_3d_spectrogram.png')
+    create_3d_spectrogram(mixed, output_dir / f'{output_prefix}_3d_spectrogram.png')
 
     # Print summary
     print("\n" + "=" * 60)
@@ -422,6 +426,9 @@ def main():
 
     print("\n" + "=" * 60)
     print(f"Visualizations saved to {output_dir}/")
+    print(f"  {output_prefix}_spectrogram.png")
+    print(f"  {output_prefix}_frequency_analysis.png")
+    print(f"  {output_prefix}_3d_spectrogram.png")
 
 if __name__ == '__main__':
     main()
