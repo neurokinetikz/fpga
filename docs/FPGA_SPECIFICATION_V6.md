@@ -603,6 +603,8 @@ endmodule
 
 *[Pink Noise Generator unchanged - see v5.5 specification]*
 
+> **Note (v10.3):** As of v10.3, `pink_noise_generator.v` (v7.2) uses √Fibonacci-weighted row summation with 12 octave bands to achieve 1/f^φ spectral slope. See [SPEC_v10.3_UPDATE.md](SPEC_v10.3_UPDATE.md).
+
 ## 4.7 Output Mixer (Unchanged from v5.5)
 
 *[Output Mixer unchanged - see v5.5 specification]*

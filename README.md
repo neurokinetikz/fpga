@@ -2,7 +2,7 @@
 
 A biologically-realistic neural oscillator system implemented in Verilog for FPGA, featuring golden ratio (φ) frequency architecture, complete interneuron microcircuits, and Schumann Resonance coupling.
 
-**Current Version:** v9.6 (Extended L6 Connectivity)
+**Current Version:** v10.3 (1/f^φ Spectral Slope)
 **Target Platform:** Digilent Zybo Z7-20 (Xilinx Zynq-7020)
 
 ---
@@ -298,7 +298,7 @@ fpga/
 │   ├── sr_frequency_drift.v          # Realistic SR frequency drift (v8.5)
 │   ├── config_controller.v           # Consciousness states (v9.5, state-dependent Ca²⁺)
 │   ├── clock_enable_generator.v      # FAST_SIM-aware 4kHz clock
-│   ├── pink_noise_generator.v        # 1/f noise (Voss-McCartney)
+│   ├── pink_noise_generator.v        # 1/f^φ noise (v7.2, √Fibonacci-weighted)
 │   └── output_mixer.v                # DAC output mixing
 │
 ├── tb/                               # Testbenches (33 files, 230+ tests)
@@ -384,7 +384,11 @@ fpga/
 
 | Version | Date | Key Features |
 |---------|------|--------------|
-| **v9.6** | 2025-12-27 | Extended L6 connectivity (L6→L2/3, L6→L5b, L6→L1) |
+| **v10.3** | 2025-12-27 | 1/f^φ Spectral Slope: √Fibonacci-weighted pink noise (v7.2) |
+| v10.2 | 2025-12-27 | Spectral broadening: ±0.5 Hz fast jitter for ~1-2 Hz wide peaks |
+| v10.1 | 2025-12-27 | Envelope integration: per-band envelopes wired to output mixer |
+| v10.0 | 2025-12-27 | EEG Realism: amplitude envelopes, slow drift, SIE controller |
+| v9.6 | 2025-12-27 | Extended L6 connectivity (L6→L2/3, L6→L5b, L6→L1) |
 | v9.5 | 2025-12-27 | Two-compartment dendritic model, Ca²⁺ spikes, BAC firing |
 | v9.4 | 2025-12-27 | VIP+ disinhibition for attention gating |
 | v9.3 | 2025-12-27 | Cross-layer PV+ network (L4, L5 populations) |

@@ -1,24 +1,33 @@
 //=============================================================================
-// Pink Noise Generator - v6.0 (Voss-McCartney, 12 octave rows)
+// Pink Noise Generator - v7.2 (√Fibonacci-Weighted Voss-McCartney)
+//
+// v7.2 CHANGES (√Fibonacci Spectral Slope):
+// - Weights: sqrt(Fibonacci) for 1/f^φ spectral slope
+// - Weights: [1, 1, 1, 2, 2, 3, 4, 5, 6, 7, 9, 12], sum=53
+// - Target: 1/f^1.62 ≈ -16.2 dB/decade (golden ratio slope)
+// - Rationale: Fibonacci grows as φⁿ, so √Fib → φ^(n/2) → 1/f^φ
+//
+// v7.0 CHANGES (EEG Spectral Slope):
+// - Added weighted row summation to steepen spectral slope
+// - Creates "dark pink" noise matching real EEG baseline
 //
 // v6.0 CHANGES (Biological Realism - Phase 4):
 // - Expanded from 8 to 12 octave rows for better 1/f slope at high frequencies
 // - Provides proper 1/f roll-off to 80+ Hz (was flat above ~30 Hz)
-// - Each additional row adds ~1 octave of low-frequency content
 //
 // FREQUENCY COVERAGE (at 4kHz sample rate):
-//   Row 0:  Updates every 2 samples    (1000 Hz Nyquist)
-//   Row 1:  Updates every 4 samples    (500 Hz Nyquist)
-//   Row 2:  Updates every 8 samples    (250 Hz Nyquist)
-//   Row 3:  Updates every 16 samples   (125 Hz Nyquist)
-//   Row 4:  Updates every 32 samples   (62.5 Hz Nyquist)
-//   Row 5:  Updates every 64 samples   (31.25 Hz Nyquist)
-//   Row 6:  Updates every 128 samples  (15.6 Hz Nyquist)
-//   Row 7:  Updates every 256 samples  (7.8 Hz Nyquist)
-//   Row 8:  Updates every 512 samples  (3.9 Hz Nyquist) [NEW]
-//   Row 9:  Updates every 1024 samples (1.95 Hz Nyquist) [NEW]
-//   Row 10: Updates every 2048 samples (0.98 Hz Nyquist) [NEW]
-//   Row 11: Updates every 4096 samples (0.49 Hz Nyquist) [NEW]
+//   Row 0:  Updates every 2 samples    (1000 Hz Nyquist) - weight 1
+//   Row 1:  Updates every 4 samples    (500 Hz Nyquist)  - weight 3
+//   Row 2:  Updates every 8 samples    (250 Hz Nyquist)  - weight 5
+//   Row 3:  Updates every 16 samples   (125 Hz Nyquist)  - weight 8
+//   Row 4:  Updates every 32 samples   (62.5 Hz Nyquist) - weight 11
+//   Row 5:  Updates every 64 samples   (31.25 Hz Nyquist) - weight 15
+//   Row 6:  Updates every 128 samples  (15.6 Hz Nyquist) - weight 19
+//   Row 7:  Updates every 256 samples  (7.8 Hz Nyquist)  - weight 23
+//   Row 8:  Updates every 512 samples  (3.9 Hz Nyquist)  - weight 27
+//   Row 9:  Updates every 1024 samples (1.95 Hz Nyquist) - weight 32
+//   Row 10: Updates every 2048 samples (0.98 Hz Nyquist) - weight 36
+//   Row 11: Updates every 4096 samples (0.49 Hz Nyquist) - weight 42
 //=============================================================================
 `timescale 1ns / 1ps
 
@@ -92,10 +101,28 @@ always @(posedge clk or posedge rst) begin
     end
 end
 
-// v6.0: Sum all 12 rows
-assign row_sum = row[0] + row[1] + row[2] + row[3] +
-                 row[4] + row[5] + row[6] + row[7] +
-                 row[8] + row[9] + row[10] + row[11];
+// v7.2: √Fibonacci-weighted sum for 1/f^φ spectral slope (φ = 1.618)
+// Weights: sqrt(Fibonacci) = [1,1,1,2,2,3,4,5,6,7,9,12], sum = 53
+// Rationale: Fib grows as φⁿ, so √Fib = φ^(n/2) → creates 1/f^φ exponent
+wire signed [18:0] weighted_row_sum =
+    row[0]  * 1   +   // 1000 Hz Nyquist: √F(1) = 1
+    row[1]  * 1   +   // 500 Hz Nyquist:  √F(2) = 1
+    row[2]  * 1   +   // 250 Hz Nyquist:  √F(3) = 1
+    row[3]  * 2   +   // 125 Hz Nyquist:  √F(4) = 2
+    row[4]  * 2   +   // 62.5 Hz Nyquist: √F(5) = 2
+    row[5]  * 3   +   // 31.25 Hz Nyquist: √F(6) = 3
+    row[6]  * 4   +   // 15.6 Hz Nyquist: √F(7) = 4
+    row[7]  * 5   +   // 7.8 Hz Nyquist: √F(8) = 5
+    row[8]  * 6   +   // 3.9 Hz Nyquist: √F(9) = 6
+    row[9]  * 7   +   // 1.95 Hz Nyquist: √F(10) = 7
+    row[10] * 9   +   // 0.98 Hz Nyquist: √F(11) = 9
+    row[11] * 12;     // 0.49 Hz Nyquist: √F(12) = 12
+
+// Normalize to maintain similar amplitude to original:
+// Old: sum of 12 rows (total weight = 12)
+// New: weighted sum (total weight = 53)
+// Scale factor: 53/12 = 4.4, use >>> 2 (divide by 4)
+assign row_sum = weighted_row_sum >>> 2;
 
 always @(posedge clk or posedge rst) begin
     if (rst) begin

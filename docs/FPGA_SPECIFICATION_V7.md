@@ -473,6 +473,8 @@ Generates 1/f (pink) noise using the Voss-McCartney algorithm.
 - Sum of rows produces pink spectrum
 - Output scaled to 18-bit signed format
 
+> **Note (v10.3):** As of v10.3, `pink_noise_generator.v` (v7.2) uses √Fibonacci-weighted row summation with 12 octave bands to achieve 1/f^φ spectral slope. See [SPEC_v10.3_UPDATE.md](SPEC_v10.3_UPDATE.md).
+
 ## 4.8 Output Mixer
 
 ### Function

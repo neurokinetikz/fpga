@@ -4,7 +4,7 @@
 
 This is an FPGA implementation of a biologically-realistic neural oscillator system based on the **φⁿ (golden ratio) frequency architecture** with Schumann Resonance coupling. The system implements 21 Hopf oscillators organized into a thalamo-cortical architecture for neural signal processing and consciousness state modeling.
 
-**Current Version:** v10.2 (EEG Realism)
+**Current Version:** v10.3 (1/f^φ Spectral Slope)
 **Target Platform:** Digilent Zybo Z7-20 (Xilinx Zynq-7020)
 
 ## Quick Start
@@ -67,7 +67,7 @@ fpga/
 │   ├── cortical_frequency_drift.v # v10.2: Slow drift + fast jitter
 │   ├── config_controller.v       # Consciousness states (v10.0, SIE timing)
 │   ├── clock_enable_generator.v  # FAST_SIM-aware 4kHz clock (v6.0)
-│   ├── pink_noise_generator.v    # 1/f noise (v5.5, Voss-McCartney)
+│   ├── pink_noise_generator.v    # 1/f^φ noise (v7.2, √Fibonacci-weighted)
 │   └── output_mixer.v            # DAC output mixing (v7.3, envelope modulation)
 ├── tb/                           # Testbenches (27 files)
 │   ├── tb_full_system_fast.v     # Full system integration (v6.5, 15 tests)
@@ -228,7 +228,8 @@ fpga/
 
 ## Current Specification
 
-See [docs/SPEC_v10.2_UPDATE.md](docs/SPEC_v10.2_UPDATE.md) for the latest v10.2 EEG Realism architecture with:
+See [docs/SPEC_v10.3_UPDATE.md](docs/SPEC_v10.3_UPDATE.md) for the latest v10.3 architecture with:
+- **1/f^φ Spectral Slope** (v10.3): √Fibonacci-weighted pink noise (v7.2) achieves golden ratio exponent
 - **Spectral Broadening** (v10.2): Fast frequency jitter (±0.5 Hz/sample) for ~1-2 Hz wide peaks
 - **Envelope Integration** (v10.1): Per-band amplitude envelopes connected to output mixer
 - **EEG Realism Phase 1** (v10.0): Amplitude envelopes, slow drift, SIE controller

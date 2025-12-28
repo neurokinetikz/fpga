@@ -424,6 +424,8 @@ L2/3 (40.36 Hz) ← L4 (K=0.4) + PAC + phase_couple_l23
 - 8 rows updated at different rates (Voss-McCartney algorithm)
 - Sum produces pink (1/f) spectrum
 
+> **Note (v10.3):** This section describes the v5.5 baseline. As of v10.3, `pink_noise_generator.v` (v7.2) uses √Fibonacci-weighted row summation with 12 octave bands to achieve 1/f^φ spectral slope. See [SPEC_v10.3_UPDATE.md](SPEC_v10.3_UPDATE.md) for details.
+
 ## 4.7 Output Mixer
 
 ### Mix Weights

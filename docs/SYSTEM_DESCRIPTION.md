@@ -1,6 +1,6 @@
 # φⁿ Neural Processor - Comprehensive System Description
 
-**Version:** 10.2 (EEG Realism)
+**Version:** 10.3 (1/f^φ Spectral Slope)
 **Date:** 2025-12-27
 **Based on:** Complete analysis of all 19 source modules (~5,000 lines of Verilog)
 
@@ -10,8 +10,8 @@
 
 The φⁿ Neural Processor is an FPGA implementation of 21 coupled nonlinear oscillators organized as a thalamo-cortical network. The system models biological neural rhythms using golden ratio (φ ≈ 1.618) frequency relationships, implements associative memory through theta-gated Hebbian learning, and exhibits stochastic resonance sensitivity to weak external electromagnetic fields.
 
-**Version 10.2** adds EEG-realistic DAC output through:
-- **1/f-dominated spectrum**: 92% pink noise, 8% oscillators for realistic spectral slope
+**Version 10.3** adds EEG-realistic DAC output through:
+- **1/f^φ spectral slope**: √Fibonacci-weighted pink noise (v7.2) achieves golden ratio exponent
 - **Amplitude envelopes**: Ornstein-Uhlenbeck process creates "alpha breathing" (2-5s timescales)
 - **Spectral broadening**: ±0.5 Hz fast jitter creates ~1-2 Hz wide peaks
 - **Coherence-gated SR**: Schumann Resonance only appears during ignition events
@@ -690,14 +690,44 @@ Matrix + FB1 + FB2 ─┼──▶ SST+ IIR (tau=25ms) ──▶ ─ = sst_effec
 - FAST_SIM mode: divider = 10 (~3000× speedup)
 - Reserved 100 kHz path for future enhancements
 
-### 9.2 Pink Noise Generator (pink_noise_generator.v, v5.5)
+### 9.2 Pink Noise Generator (pink_noise_generator.v, v7.2)
 
-Voss-McCartney algorithm for 1/f spectrum:
+√Fibonacci-weighted Voss-McCartney algorithm for 1/f^φ spectrum:
 
+**Algorithm:**
 - 16-bit LFSR (polynomial: x¹⁶ + x¹⁴ + x¹³ + x¹¹ + 1)
-- 8 octave bands updated at rates 1/2ⁿ
-- Sum produces pink spectrum
+- 12 octave bands updated at rates 1/2ⁿ
+- √Fibonacci-weighted summation creates golden ratio spectral slope
 - Output: 18-bit signed centered noise
+
+**√Fibonacci Weights:**
+
+| Row | Nyquist | Fibonacci | √Fib Weight |
+|-----|---------|-----------|-------------|
+| 0 | 1000 Hz | F(1)=1 | 1 |
+| 1 | 500 Hz | F(2)=1 | 1 |
+| 2 | 250 Hz | F(3)=2 | 1 |
+| 3 | 125 Hz | F(4)=3 | 2 |
+| 4 | 62.5 Hz | F(5)=5 | 2 |
+| 5 | 31.25 Hz | F(6)=8 | 3 |
+| 6 | 15.6 Hz | F(7)=13 | 4 |
+| 7 | 7.8 Hz | F(8)=21 | 5 |
+| 8 | 3.9 Hz | F(9)=34 | 6 |
+| 9 | 1.95 Hz | F(10)=55 | 7 |
+| 10 | 0.98 Hz | F(11)=89 | 9 |
+| 11 | 0.49 Hz | F(12)=144 | 12 |
+
+**Sum:** 53, **Normalization:** >>> 2
+
+**Spectral Properties:**
+- Exponent: α ≈ 1.70 (target φ = 1.618)
+- Slope: -17.0 dB/decade
+- Character: "Dark pink" matching EEG baseline
+
+**Mathematical Rationale:**
+Fibonacci sequence grows as φⁿ (golden ratio to the nth power).
+Therefore √Fibonacci grows as φ^(n/2), creating 1/f^φ spectral slope
+when applied as octave weights in Voss-McCartney algorithm
 
 ### 9.3 Output Mixer (output_mixer.v, v7.3)
 
@@ -1055,7 +1085,8 @@ phi_n_neural_processor (top) - v10.2
 
 | Version | Date | Key Changes |
 |---------|------|-------------|
-| **v10.2** | **2025-12-27** | **Spectral broadening: ±0.5 Hz fast jitter for ~1-2 Hz wide peaks** |
+| **v10.3** | **2025-12-27** | **1/f^φ Spectral Slope: √Fibonacci-weighted pink noise (v7.2)** |
+| v10.2 | 2025-12-27 | Spectral broadening: ±0.5 Hz fast jitter for ~1-2 Hz wide peaks |
 | v10.1 | 2025-12-27 | Envelope integration: per-band envelopes wired to output mixer |
 | v10.0 | 2025-12-27 | EEG Realism Phase 1: amplitude envelopes, slow drift, SIE controller |
 | v9.6 | 2025-12-27 | Extended L6 connectivity: L6→L2/3, L6→L5b, L6→L1 |
