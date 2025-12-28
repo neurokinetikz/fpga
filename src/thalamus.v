@@ -1,5 +1,17 @@
 //=============================================================================
-// Thalamus Module - v8.8 with L6 CT Inhibitory Modulation
+// Thalamus Module - v10.2 with Gain-Only SR Modulation
+//
+// v10.2 CHANGES (No Direct Signal Coupling):
+// - K_ENTRAIN_BASELINE = 0 AND K_ENTRAIN_BOOST = 0
+// - SR influence is ONLY through gain modulation, not signal injection
+// - Prevents SR frequencies from appearing in DAC output spectrum
+// - SR coherence still affects dynamic_gain for amplitude modulation
+//
+// v10.0 CHANGES (Biologically-Accurate SIE Model):
+// - Gain envelope from sr_ignition_controller modulates amplification
+// - Replaces binary beta_quiet gating with envelope-based coupling
+// - Matches empirical 10-15× amplification during ignition events
+// - Coherence-first signature: coupling increases smoothly
 //
 // v8.8 CHANGES (L6 → Thalamus + TRN-like Inhibition):
 // - L6 CT neurons now modulate theta_gate (10:1 ratio, K_L6_THAL = 0.1)
@@ -98,6 +110,9 @@ module thalamus #(
     input  wire signed [WIDTH-1:0] beta_high_x, beta_high_y, // L5b ~25 Hz
     input  wire signed [WIDTH-1:0] gamma_x, gamma_y,        // L4 ~32 Hz
 
+    // v10.0: SIE gain envelope from ignition controller (0-1 in Q14)
+    input  wire signed [WIDTH-1:0] gain_envelope,
+
     // Theta outputs
     output wire signed [WIDTH-1:0] theta_gated_output,
     output wire signed [WIDTH-1:0] theta_x,
@@ -146,19 +161,24 @@ localparam signed [WIDTH-1:0] HALF = 18'sd8192;
 localparam signed [WIDTH-1:0] GAIN_BASELINE = 18'sd16384;
 localparam signed [WIDTH-1:0] ALPHA_COUPLING = 18'sd4915;
 
-// Entrainment coupling strength: f₀ → θ (0.125 in Q14)
-localparam signed [WIDTH-1:0] K_ENTRAIN = 18'sd2048;
+// v10.2: NO direct f0→theta signal coupling (only gain modulation)
+// SR influence on brain is through GAIN modulation, not signal injection
+// This prevents SR frequencies from appearing in DAC output spectrum
+localparam signed [WIDTH-1:0] K_ENTRAIN_BASELINE = 18'sd0;     // 0 - NO baseline coupling
+localparam signed [WIDTH-1:0] K_ENTRAIN_BOOST = 18'sd0;        // 0 - NO boost coupling (was 0.125)
+// Legacy constant kept for compatibility
+localparam signed [WIDTH-1:0] K_ENTRAIN = 18'sd410;   // 0.025 - minimal SR entrainment for frequency separation
 
 // Amplification gain: 1.5× in Q14 (models SIE 4-5× power boost, conservative)
 localparam signed [WIDTH-1:0] AMPLIFICATION_GAIN = 18'sd24576;
 // Baseline gain: 1.0× in Q14
 localparam signed [WIDTH-1:0] SR_BASELINE_GAIN = 18'sd16384;
 
-// v8.8: L6 CT → Thalamus inhibitory modulation constants
+// v8.8: L6 CT → Thalamus inhibitory modulation constants (MINIMAL for frequency separation)
 // L6 projects to thalamus with 10:1 convergence ratio (weak individual effect)
-localparam signed [WIDTH-1:0] K_L6_THAL = 18'sd1638;  // 0.1 - direct L6 inhibition
+localparam signed [WIDTH-1:0] K_L6_THAL = 18'sd164;   // 0.01 - minimal L6 inhibition
 // TRN (Thalamic Reticular Nucleus) amplifies L6 inhibitory effect
-localparam signed [WIDTH-1:0] K_TRN = 18'sd3277;      // 0.2 - TRN amplification
+localparam signed [WIDTH-1:0] K_TRN = 18'sd164;       // 0.01 - minimal TRN amplification
 
 //-----------------------------------------------------------------------------
 // v7.3: Build SR field input - use packed if non-zero, else replicate single
@@ -239,33 +259,67 @@ sr_harmonic_bank #(
 );
 
 //-----------------------------------------------------------------------------
-// Entrainment Coupling (f₀ → Theta when beta quiet)
+// Entrainment Coupling (f₀ → Theta) - v10.0 Continuous Baseline + Boost
 //-----------------------------------------------------------------------------
-// Beta-gated coupling: f₀ can entrain theta only when beta is quiet.
-// This implements the stochastic resonance mechanism where optimal
-// "noise" (quiet beta) enables detection of weak periodic signals.
+// v10.0: Replaces binary beta_quiet gating with continuous modulation.
+//
+// The gain_envelope (from sr_ignition_controller) shapes the coupling:
+// - Baseline phase: gain_envelope ~0.1, coupling = baseline (tonic presence)
+// - Ignition phase: gain_envelope ramps to 1.0, coupling = baseline + boost
+//
+// This matches empirical observation: SR frequencies always present at
+// low level, with transient 10-15× amplification during ignition events.
+//
+// Dynamic coupling = K_ENTRAIN_BASELINE + (gain_envelope × K_ENTRAIN_BOOST)
 
-wire signed [WIDTH-1:0] entrain_coupling;
-assign entrain_coupling = beta_is_quiet ? K_ENTRAIN : 18'sd0;
-
-// Compute entrainment signal: K × f₀_x (when beta quiet)
+wire signed [2*WIDTH-1:0] boost_term;
+wire signed [WIDTH-1:0] k_entrain_dynamic;
 wire signed [2*WIDTH-1:0] entrain_product;
 wire signed [WIDTH-1:0] theta_entrain_input;
-assign entrain_product = entrain_coupling * f0_x_int;
+
+// Compute dynamic entrainment strength: baseline + (envelope × boost)
+assign boost_term = gain_envelope * K_ENTRAIN_BOOST;
+assign k_entrain_dynamic = K_ENTRAIN_BASELINE + (boost_term >>> FRAC);
+
+// Compute entrainment signal: K_dynamic × f₀_x
+// Applied continuously (no binary gating)
+assign entrain_product = k_entrain_dynamic * f0_x_int;
 assign theta_entrain_input = entrain_product >>> FRAC;
 
 //-----------------------------------------------------------------------------
 // Theta Oscillator (5.89 Hz - hippocampal timing)
-// Receives entrainment input from f₀ when beta is quiet
+// v10.0: Receives continuous entrainment from f₀ modulated by gain_envelope
+// v10.1: Theta amplitude envelope for biological variability
 //-----------------------------------------------------------------------------
 
 wire signed [WIDTH-1:0] theta_x_int, theta_y_int, theta_amp_int;
+
+// v10.1: Amplitude envelope for theta (slow stochastic modulation)
+wire signed [WIDTH-1:0] theta_envelope;
+wire signed [2*WIDTH-1:0] mu_theta_mod_full;
+wire signed [WIDTH-1:0] mu_theta_mod;
+
+amplitude_envelope_generator #(
+    .WIDTH(WIDTH),
+    .FRAC(FRAC)
+) env_theta (
+    .clk(clk),
+    .rst(rst),
+    .clk_en(clk_en),
+    .seed(16'hF0A5),  // Unique seed for theta
+    .tau_inv(18'sd1),  // 3 second time constant
+    .envelope(theta_envelope)
+);
+
+// Modulate theta MU: mu_effective = (mu_dt * envelope) >>> FRAC
+assign mu_theta_mod_full = mu_dt * theta_envelope;
+assign mu_theta_mod = mu_theta_mod_full >>> FRAC;
 
 hopf_oscillator #(.WIDTH(WIDTH), .FRAC(FRAC)) theta_relay (
     .clk(clk),
     .rst(rst),
     .clk_en(clk_en),
-    .mu_dt(mu_dt),
+    .mu_dt(mu_theta_mod),  // v10.1: modulated MU for biological variability
     .omega_dt(OMEGA_DT_THETA),
     .input_x(theta_entrain_input),  // Entrained by f₀ when beta quiet
     .x(theta_x_int),

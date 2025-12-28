@@ -78,8 +78,15 @@ wire signed [WIDTH-1:0] sensory_l23_y = dut.sensory_l23_y;
 wire signed [WIDTH-1:0] assoc_l23_x = dut.assoc_l23_x;
 wire signed [WIDTH-1:0] motor_l23_x = dut.motor_l23_x;
 
-// Access to omega_dt_l23_active through cortical column (use motor column to match motor_l23_x)
-wire signed [WIDTH-1:0] omega_dt_active = dut.col_motor.omega_dt_l23_active;
+// Access to omega_eff_l23 through cortical column (v10.0: renamed from omega_dt_l23_active)
+wire signed [WIDTH-1:0] omega_dt_active = dut.col_motor.omega_eff_l23;
+
+// v10.0: Base OMEGA_DT values and drift tolerance
+// Fast gamma: 1681 (65.3 Hz), Slow gamma: 1039 (40.36 Hz)
+// Drift can be ±0.5 Hz ≈ ±15 OMEGA_DT units
+localparam signed [WIDTH-1:0] OMEGA_FAST = 18'sd1681;
+localparam signed [WIDTH-1:0] OMEGA_SLOW = 18'sd1039;
+localparam signed [WIDTH-1:0] OMEGA_DRIFT_TOL = 18'sd20;  // ±0.5 Hz tolerance
 
 // Fast clock: 10ns period (100 MHz)
 initial begin
@@ -181,18 +188,23 @@ initial begin
             #1;
             if (clk_4khz_en) begin
                 local_updates = local_updates + 1;
-                if (encoding_window && omega_dt_active == 18'sd1681) begin
+                // v10.0: Check with drift tolerance instead of exact match
+                if (encoding_window &&
+                    omega_dt_active >= (OMEGA_FAST - OMEGA_DRIFT_TOL) &&
+                    omega_dt_active <= (OMEGA_FAST + OMEGA_DRIFT_TOL)) begin
                     encoding_omega_seen = 1;
                 end
-                if (!encoding_window && omega_dt_active == 18'sd1039) begin
+                if (!encoding_window &&
+                    omega_dt_active >= (OMEGA_SLOW - OMEGA_DRIFT_TOL) &&
+                    omega_dt_active <= (OMEGA_SLOW + OMEGA_DRIFT_TOL)) begin
                     retrieval_omega_seen = 1;
                 end
             end
         end
 
-        $display("         Fast gamma OMEGA_DT (1681) during encoding: %s",
+        $display("         Fast gamma OMEGA_DT (~1681±20) during encoding: %s",
                  encoding_omega_seen ? "YES" : "NO");
-        $display("         Slow gamma OMEGA_DT (1039) during retrieval: %s",
+        $display("         Slow gamma OMEGA_DT (~1039±20) during retrieval: %s",
                  retrieval_omega_seen ? "YES" : "NO");
 
         if (encoding_omega_seen && retrieval_omega_seen) begin
@@ -233,8 +245,9 @@ initial begin
                 local_updates = local_updates + 1;
                 cycle_updates = cycle_updates + 1;
 
-                // Track fast omega (1681) during this cycle
-                if (omega_dt_active == 18'sd1681) begin
+                // Track fast omega (~1681) during this cycle (v10.0: with drift tolerance)
+                if (omega_dt_active >= (OMEGA_FAST - OMEGA_DRIFT_TOL) &&
+                    omega_dt_active <= (OMEGA_FAST + OMEGA_DRIFT_TOL)) begin
                     fast_omega_count = fast_omega_count + 1;
                     debug_fast_total = debug_fast_total + 1;
                 end else begin
@@ -319,9 +332,14 @@ initial begin
             #1;
             if (clk_4khz_en) begin
                 local_updates = local_updates + 1;
-                if (encoding_window && omega_dt_active == 18'sd1681) begin
+                // v10.0: Use ranges instead of exact values due to frequency drift
+                if (encoding_window &&
+                    omega_dt_active >= (OMEGA_FAST - OMEGA_DRIFT_TOL) &&
+                    omega_dt_active <= (OMEGA_FAST + OMEGA_DRIFT_TOL)) begin
                     synced_fast = synced_fast + 1;
-                end else if (!encoding_window && omega_dt_active == 18'sd1039) begin
+                end else if (!encoding_window &&
+                    omega_dt_active >= (OMEGA_SLOW - OMEGA_DRIFT_TOL) &&
+                    omega_dt_active <= (OMEGA_SLOW + OMEGA_DRIFT_TOL)) begin
                     synced_slow = synced_slow + 1;
                 end else begin
                     mismatched = mismatched + 1;
@@ -329,15 +347,13 @@ initial begin
             end
         end
 
-        $display("         Synced fast (enc=1, omega=1681): %0d", synced_fast);
-        $display("         Synced slow (enc=0, omega=1039): %0d", synced_slow);
+        $display("         Synced fast (enc=1, omega~1681): %0d", synced_fast);
+        $display("         Synced slow (enc=0, omega~1039): %0d", synced_slow);
         $display("         Mismatched: %0d", mismatched);
 
-        if (synced_fast > 1000 && synced_slow > 1000 && mismatched == 0) begin
-            $display("         PASS - Encoding window and OMEGA_DT perfectly synchronized");
-            test_pass = test_pass + 1;
-        end else if (synced_fast > 1000 && synced_slow > 1000) begin
-            $display("         PASS - Encoding window and OMEGA_DT mostly synchronized");
+        // v10.0: Accept some mismatches due to drift variation
+        if (synced_fast > 1000 && synced_slow > 1000) begin
+            $display("         PASS - Encoding window and OMEGA_DT synchronized (with drift)");
             test_pass = test_pass + 1;
         end else begin
             $display("         FAIL - Synchronization issue");
@@ -425,10 +441,13 @@ initial begin
                 local_updates = local_updates + 1;
                 if (encoding_window) begin
                     state_test_encoding_cycles = state_test_encoding_cycles + 1;
-                    if (omega_dt_active == 18'sd1681) omega_during_encoding = 1;
+                    // v10.0: Use range for frequency drift
+                    if (omega_dt_active >= (OMEGA_FAST - OMEGA_DRIFT_TOL) &&
+                        omega_dt_active <= (OMEGA_FAST + OMEGA_DRIFT_TOL)) omega_during_encoding = 1;
                 end else begin
                     state_test_retrieval_cycles = state_test_retrieval_cycles + 1;
-                    if (omega_dt_active == 18'sd1039) omega_during_retrieval = 1;
+                    if (omega_dt_active >= (OMEGA_SLOW - OMEGA_DRIFT_TOL) &&
+                        omega_dt_active <= (OMEGA_SLOW + OMEGA_DRIFT_TOL)) omega_during_retrieval = 1;
                 end
             end
         end
@@ -470,10 +489,13 @@ initial begin
                 local_updates = local_updates + 1;
                 if (encoding_window) begin
                     state_test_encoding_cycles = state_test_encoding_cycles + 1;
-                    if (omega_dt_active == 18'sd1681) omega_during_encoding = 1;
+                    // v10.0: Use range for frequency drift
+                    if (omega_dt_active >= (OMEGA_FAST - OMEGA_DRIFT_TOL) &&
+                        omega_dt_active <= (OMEGA_FAST + OMEGA_DRIFT_TOL)) omega_during_encoding = 1;
                 end else begin
                     state_test_retrieval_cycles = state_test_retrieval_cycles + 1;
-                    if (omega_dt_active == 18'sd1039) omega_during_retrieval = 1;
+                    if (omega_dt_active >= (OMEGA_SLOW - OMEGA_DRIFT_TOL) &&
+                        omega_dt_active <= (OMEGA_SLOW + OMEGA_DRIFT_TOL)) omega_during_retrieval = 1;
                 end
             end
         end

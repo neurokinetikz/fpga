@@ -94,7 +94,13 @@ wire encoding_window = dut.ca3_encoding_window;
 wire retrieval_window = dut.ca3_retrieval_window;
 
 // v6.5: Integration test signals - gamma-theta nesting
-wire signed [WIDTH-1:0] omega_dt_active = dut.col_sensory.omega_dt_l23_active;
+// v10.1: omega_eff_l23 includes base frequency + drift for EEG realism
+wire signed [WIDTH-1:0] omega_dt_active = dut.col_sensory.omega_eff_l23;
+
+// v10.1: Base OMEGA_DT values and drift tolerance for frequency verification
+localparam signed [WIDTH-1:0] OMEGA_FAST = 18'sd1681;       // 65.3 Hz encoding gamma
+localparam signed [WIDTH-1:0] OMEGA_SLOW = 18'sd1039;       // 40.36 Hz retrieval gamma
+localparam signed [WIDTH-1:0] OMEGA_DRIFT_TOL = 18'sd20;    // ±0.5 Hz drift tolerance
 
 // v6.5: Integration test signals - scaffold/plastic layer access
 wire signed [WIDTH-1:0] sensory_l4_x = dut.col_sensory.l4_x;
@@ -481,19 +487,25 @@ initial begin
 
     begin : test11_block
         integer local_updates;
+        reg is_fast_gamma, is_slow_gamma;
         local_updates = 0;
         while (local_updates < 3000) begin
             @(posedge clk);
             #1;
             if (clk_4khz_en) begin
                 local_updates = local_updates + 1;
+                // v10.1: Use range check for frequency drift tolerance
+                is_fast_gamma = (omega_dt_active >= OMEGA_FAST - OMEGA_DRIFT_TOL) &&
+                                (omega_dt_active <= OMEGA_FAST + OMEGA_DRIFT_TOL);
+                is_slow_gamma = (omega_dt_active >= OMEGA_SLOW - OMEGA_DRIFT_TOL) &&
+                                (omega_dt_active <= OMEGA_SLOW + OMEGA_DRIFT_TOL);
                 // Track omega_dt values
-                if (omega_dt_active == 18'sd1681) fast_gamma_count = fast_gamma_count + 1;
-                if (omega_dt_active == 18'sd1039) slow_gamma_count = slow_gamma_count + 1;
+                if (is_fast_gamma) fast_gamma_count = fast_gamma_count + 1;
+                if (is_slow_gamma) slow_gamma_count = slow_gamma_count + 1;
                 // Track synchronization
-                if (encoding_window && omega_dt_active == 18'sd1681)
+                if (encoding_window && is_fast_gamma)
                     omega_sync_encoding = omega_sync_encoding + 1;
-                else if (!encoding_window && omega_dt_active == 18'sd1039)
+                else if (!encoding_window && is_slow_gamma)
                     omega_sync_retrieval = omega_sync_retrieval + 1;
                 else
                     omega_mismatch = omega_mismatch + 1;
@@ -501,7 +513,8 @@ initial begin
         end
     end
 
-    $display("         Fast gamma (1681): %0d, Slow gamma (1039): %0d", fast_gamma_count, slow_gamma_count);
+    $display("         Fast gamma (~1681±%0d): %0d, Slow gamma (~1039±%0d): %0d",
+             OMEGA_DRIFT_TOL, fast_gamma_count, OMEGA_DRIFT_TOL, slow_gamma_count);
     $display("         Sync encoding: %0d, Sync retrieval: %0d, Mismatch: %0d",
              omega_sync_encoding, omega_sync_retrieval, omega_mismatch);
 
@@ -643,12 +656,16 @@ initial begin
 
     begin : test14_encoding
         integer m;
+        reg is_fast_gamma_t14;
         // 10000 clk cycles = 1000 clk_en @ divider=10 = ~1.5 theta cycles
         for (m = 0; m < 10000; m = m + 1) begin
             @(posedge clk);
             #1;
             if (clk_4khz_en) begin
-                if (encoding_window && omega_dt_active == 18'sd1681)
+                // v10.1: Use range check for frequency drift tolerance
+                is_fast_gamma_t14 = (omega_dt_active >= OMEGA_FAST - OMEGA_DRIFT_TOL) &&
+                                    (omega_dt_active <= OMEGA_FAST + OMEGA_DRIFT_TOL);
+                if (encoding_window && is_fast_gamma_t14)
                     chain_encoding_gamma_ok = 1;
                 if (ca3_learning)
                     chain_learning_ok = 1;
@@ -666,12 +683,16 @@ initial begin
 
     begin : test14_retrieval
         integer m;
+        reg is_slow_gamma_t14;
         // 10000 clk cycles = 1000 clk_en @ divider=10 = ~1.5 theta cycles
         for (m = 0; m < 10000; m = m + 1) begin
             @(posedge clk);
             #1;
             if (clk_4khz_en) begin
-                if (!encoding_window && omega_dt_active == 18'sd1039)
+                // v10.1: Use range check for frequency drift tolerance
+                is_slow_gamma_t14 = (omega_dt_active >= OMEGA_SLOW - OMEGA_DRIFT_TOL) &&
+                                    (omega_dt_active <= OMEGA_SLOW + OMEGA_DRIFT_TOL);
+                if (!encoding_window && is_slow_gamma_t14)
                     chain_retrieval_gamma_ok = 1;
             end
         end
@@ -722,14 +743,20 @@ initial begin
 
             begin : state_loop
                 integer m;
+                reg is_fast_gamma_t15, is_slow_gamma_t15;
                 // 8000 cycles = 800 clk_4khz_en events = ~1.2 theta cycles
                 for (m = 0; m < 8000; m = m + 1) begin
                     @(posedge clk);
                     #1;
                     if (clk_4khz_en) begin
+                        // v10.1: Use range check for frequency drift tolerance
+                        is_fast_gamma_t15 = (omega_dt_active >= OMEGA_FAST - OMEGA_DRIFT_TOL) &&
+                                            (omega_dt_active <= OMEGA_FAST + OMEGA_DRIFT_TOL);
+                        is_slow_gamma_t15 = (omega_dt_active >= OMEGA_SLOW - OMEGA_DRIFT_TOL) &&
+                                            (omega_dt_active <= OMEGA_SLOW + OMEGA_DRIFT_TOL);
                         // Check gamma switching
-                        if ((encoding_window && omega_dt_active == 18'sd1681) ||
-                            (!encoding_window && omega_dt_active == 18'sd1039))
+                        if ((encoding_window && is_fast_gamma_t15) ||
+                            (!encoding_window && is_slow_gamma_t15))
                             state_gamma_ok = 1;
                         // Check theta cycling
                         if (theta_phase != 0)

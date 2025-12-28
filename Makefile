@@ -60,6 +60,9 @@ help:
 	@echo "  make iverilog-layer1     - Layer 1 minimal (10 tests)"
 	@echo "  make iverilog-l6         - L6 connectivity (10 tests)"
 	@echo ""
+	@echo "  Data export:"
+	@echo "  make iverilog-eeg        - Export all oscillators for EEG comparison"
+	@echo ""
 	@echo "  make iverilog-all        - Run all tests (~168 tests)"
 	@echo ""
 	@echo "Vivado targets:"
@@ -234,6 +237,21 @@ $(SIM_DIR)/tb_l6_connectivity.vvp: $(SRCS) $(TB_DIR)/tb_l6_connectivity.v
 	iverilog -o $@ -s tb_l6_connectivity \
 		$(COMMON_SRCS) \
 		$(TB_DIR)/tb_l6_connectivity.v
+
+# EEG Export: Generate oscillator data for spectral/PAC analysis
+.PHONY: iverilog-eeg
+iverilog-eeg: $(SIM_DIR)/tb_eeg_export.vvp
+	@echo "Running EEG export (60 seconds of oscillator data)..."
+	@echo "This may take a few minutes..."
+	cd $(SIM_DIR) && vvp tb_eeg_export.vvp
+	@echo ""
+	@echo "Analyze with: python3 scripts/analyze_eeg_comparison.py $(SIM_DIR)/oscillator_eeg_export.csv"
+
+$(SIM_DIR)/tb_eeg_export.vvp: $(SRCS) $(TB_DIR)/tb_eeg_export.v
+	@mkdir -p $(SIM_DIR)
+	iverilog -o $@ -s tb_eeg_export \
+		$(COMMON_SRCS) \
+		$(TB_DIR)/tb_eeg_export.v
 
 # Run all iverilog tests
 .PHONY: iverilog-all

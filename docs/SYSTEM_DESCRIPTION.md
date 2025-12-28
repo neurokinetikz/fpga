@@ -1,8 +1,8 @@
 # φⁿ Neural Processor - Comprehensive System Description
 
-**Version:** 9.4 (VIP+ Disinhibition)
+**Version:** 10.2 (EEG Realism)
 **Date:** 2025-12-27
-**Based on:** Complete analysis of all 15 source modules (~4,200 lines of Verilog)
+**Based on:** Complete analysis of all 19 source modules (~5,000 lines of Verilog)
 
 ---
 
@@ -10,7 +10,13 @@
 
 The φⁿ Neural Processor is an FPGA implementation of 21 coupled nonlinear oscillators organized as a thalamo-cortical network. The system models biological neural rhythms using golden ratio (φ ≈ 1.618) frequency relationships, implements associative memory through theta-gated Hebbian learning, and exhibits stochastic resonance sensitivity to weak external electromagnetic fields.
 
-**Version 9.4** completes the five-phase interneuron implementation plan with a biologically realistic cortical microcircuit featuring:
+**Version 10.2** adds EEG-realistic DAC output through:
+- **1/f-dominated spectrum**: 92% pink noise, 8% oscillators for realistic spectral slope
+- **Amplitude envelopes**: Ornstein-Uhlenbeck process creates "alpha breathing" (2-5s timescales)
+- **Spectral broadening**: ±0.5 Hz fast jitter creates ~1-2 Hz wide peaks
+- **Coherence-gated SR**: Schumann Resonance only appears during ignition events
+
+Previous versions (v9.x) implemented the complete interneuron microcircuit:
 - **PV+ basket cells**: Fast perisomatic inhibition (τ=5ms) with PING gamma dynamics
 - **SST+ Martinotti cells**: Slow dendritic inhibition (τ=25ms) via GABA-B kinetics
 - **VIP+ interneurons**: Disinhibitory attention gating (τ=50ms) that suppresses SST+
@@ -693,20 +699,193 @@ Voss-McCartney algorithm for 1/f spectrum:
 - Sum produces pink spectrum
 - Output: 18-bit signed centered noise
 
-### 9.3 Output Mixer (output_mixer.v, v5.5)
+### 9.3 Output Mixer (output_mixer.v, v7.3)
 
-Weighted combination for DAC output:
+EEG-realistic weighted combination with envelope modulation (v10.2):
+
+**Per-Band Envelope Modulation:**
+```
+mod_signal = signal × envelope >>> FRAC
+```
+Where envelope ∈ [0.5, 1.5], mean 1.0.
+
+**Mixing Weights (v7.3 - 8% oscillators, 92% pink noise):**
+
+| Band | Weight | Q14 Value | Notes |
+|------|--------|-----------|-------|
+| Theta | 0.02 | 328 | Thalamic theta |
+| Alpha | 0.03 | 492 | L6 alpha (strongest) |
+| Beta | 0.02 | 328 | L5a low beta |
+| Gamma | 0.01 | 164 | L2/3 gamma |
+| Pink Noise | 0.92 | 15073 | 1/f background |
+
+**Rationale:**
+- Real EEG shows 1/f-dominated spectrum with subtle oscillator bumps (~1-3 dB above floor)
+- Previous weights (65% oscillators) produced unrealistically prominent peaks
+- Alpha slightly stronger than other bands matches scalp EEG characteristics
 
 ```
-mixed = 0.4 × motor_L2/3_x + 0.3 × motor_L5a_x + 0.2 × pink_noise
+mixed = 0.02×theta + 0.03×alpha + 0.02×beta + 0.01×gamma + 0.92×pink_noise
 dac_output = (mixed + 1.0) × 2048  // 12-bit, 0-4095
 ```
 
 ---
 
-## 10. Top-Level Integration (phi_n_neural_processor.v, v9.4)
+## 10. EEG-Realistic Output (v10.x Series)
 
-### 10.1 Complete Signal Flow
+The v10.x series transforms the DAC output from sharp spectral peaks to biologically-realistic EEG-like signals.
+
+### 10.1 Amplitude Envelope Generator (amplitude_envelope_generator.v, v1.0)
+
+Implements Ornstein-Uhlenbeck stochastic process for slow amplitude modulation:
+
+**O-U Process (discrete approximation):**
+```
+x[n+1] = x[n] + alpha×(mu - x[n]) + sigma×noise
+```
+
+Where:
+- `alpha = dt/tau` (mean-reversion rate)
+- `mu = 1.0` (equilibrium = no modulation)
+- `sigma` = noise amplitude
+- `noise` = pseudo-random from 16-bit LFSR
+
+**Parameters (Q14):**
+
+| Parameter | Value | Decimal | Purpose |
+|-----------|-------|---------|---------|
+| ENVELOPE_MEAN | 16384 | 1.0 | Equilibrium |
+| ENVELOPE_MIN | 8192 | 0.5 | Lower bound |
+| ENVELOPE_MAX | 24576 | 1.5 | Upper bound |
+| NOISE_AMPLITUDE | 100-150 | ~0.01 | Variation |
+
+**Biological Basis:**
+- Real EEG alpha power waxes and wanes over 2-5 second timescales
+- Observed in resting-state recordings as "alpha breathing"
+- Creates temporal variation in spectral power
+
+### 10.2 Cortical Frequency Drift (cortical_frequency_drift.v, v2.1)
+
+Dual-component frequency modulation for spectral broadening:
+
+**1. Slow Drift (bounded random walk):**
+- Range: ±0.5 Hz
+- Update rate: 0.2s
+- Per-layer independent LFSRs
+- Reflecting boundaries
+
+**2. Fast Jitter (cycle-by-cycle noise):**
+- Range: ±0.5 Hz (v2.1, increased from ±0.15 Hz)
+- Update rate: every 4 kHz sample
+- 5-bit triangular distribution
+- Creates significant spectral broadening
+
+**Jitter Computation (v2.1):**
+```
+// 5-bit triangular distribution: range [-15, +14], clamped to ±13
+jitter = (bit4 ? +8 : -8) + (bit3 ? +4 : -4) +
+         (bit2 ? +2 : -2) + (bit1 ? +1 : -1) + (bit0 ? +1 : 0)
+```
+
+**Effect:**
+- Sharp spectral lines → ~1-2 Hz wide peaks
+- Matches natural EEG peak widths
+- Independent per-layer variation
+
+### 10.3 SR Ignition Controller (sr_ignition_controller.v, v1.1)
+
+Six-phase Schumann Ignition Event (SIE) state machine:
+
+**Key Signature: "Coherence-First"**
+PLV rises 3-4 seconds before amplitude surge, distinguishing external SR forcing from internal oscillation.
+
+**v1.1 Change:** `GAIN_BASELINE = 0` (no tonic SR presence)
+
+**Six-Phase Evolution:**
+
+```
+    ┌─────────────────────────────────────────────────────────────┐
+    │                                                             │
+    │    PLV ════════════════════════╗                           │
+    │         ↗                       ╚══════════════════╗       │
+    │        ↗                                            ╚═══   │
+    │       ↗                                                    │
+    │ 0.45 ┼─────╱                                         ───── │
+    │                                                             │
+    │    GAIN                ╔════════╗                          │
+    │                       ╱          ╲                         │
+    │                      ╱            ╲                        │
+    │                     ╱              ╲════════╲              │
+    │ 0.00 ┼════════════╱                          ╲═════════   │
+    │                                                             │
+    │      BASELINE  COHERENCE  IGNITION  PLATEAU  PROP  DECAY   │
+    │         0         1          2        3       4      5     │
+    └─────────────────────────────────────────────────────────────┘
+```
+
+**Phase Timing (at 4 kHz):**
+
+| Phase | Duration | Gain | PLV |
+|-------|----------|------|-----|
+| COHERENCE | ~3.5s | 0→0.20 | 0.45→0.80 |
+| IGNITION | ~2.5s | 0.20→1.0 | 0.80 |
+| PLATEAU | ~2.5s | 1.0 | 0.80 |
+| PROPAGATION | ~9s | 1.0→0.60 | 0.80→0.55 |
+| DECAY | ~4s | 0.60→0 | 0.55→0.45 |
+| REFRACTORY | ~10s | 0 | 0.45 |
+
+### 10.4 Complete EEG Realism Signal Flow
+
+```
+CORTICAL COLUMNS (5 layers × 3 columns)
+         │
+         ▼
+┌─────────────────────────────────────────┐
+│     CORTICAL FREQUENCY DRIFT (v2.1)     │
+│                                         │
+│  SLOW DRIFT (0.2s, ±0.5 Hz)            │
+│  + FAST JITTER (per-sample, ±0.5 Hz)   │
+│                                         │
+│  omega_eff = OMEGA_DT + drift + jitter  │
+└─────────────────────────────────────────┘
+         │ Broadened spectral peaks
+         ▼
+┌─────────────────────────────────────────┐
+│    AMPLITUDE ENVELOPE GENERATOR ×4      │
+│    (theta, alpha, beta, gamma)          │
+│                                         │
+│  O-U process: envelope ∈ [0.5, 1.5]    │
+│  Timescale: 2-5 seconds ("breathing")   │
+└─────────────────────────────────────────┘
+         │ Modulated amplitudes
+         ▼
+┌─────────────────────────────────────────┐
+│         OUTPUT MIXER (v7.3)             │
+│                                         │
+│  mod_signal = signal × envelope         │
+│                                         │
+│  8% oscillators + 92% pink noise        │
+│  → 1/f-dominated spectrum               │
+└─────────────────────────────────────────┘
+         │
+         ▼
+      12-bit DAC
+         │
+         ▼
+   EEG-realistic output
+
+Features:
+- 1/f spectral slope
+- ~1-2 Hz wide peaks
+- Subtle oscillator bumps (~1-3 dB)
+- Natural temporal variation
+```
+
+---
+
+## 11. Top-Level Integration (phi_n_neural_processor.v, v10.2)
+
+### 11.1 Complete Signal Flow
 
 ```
                          SR Frequency Drift (v8.5)
@@ -761,14 +940,17 @@ dac_output = (mixed + 1.0) × 2048  // 12-bit, 0-4095
                            Output Mixer ──▶ 12-bit DAC
 ```
 
-### 10.2 Module Hierarchy
+### 11.2 Module Hierarchy
 
 ```
-phi_n_neural_processor (top) - v9.4
+phi_n_neural_processor (top) - v10.2
 ├── clock_enable_generator
 ├── sr_noise_generator
 ├── sr_frequency_drift (v8.5)
-├── config_controller (v8.0)
+├── cortical_frequency_drift (v2.1) - NEW: slow drift + fast jitter
+├── amplitude_envelope_generator ×4 (v1.0) - NEW: theta, alpha, beta, gamma
+├── sr_ignition_controller (v1.1) - NEW: 6-phase SIE
+├── config_controller (v10.0)
 ├── thalamus (v8.8)
 │   ├── hopf_oscillator (theta 5.89 Hz)
 │   ├── sr_harmonic_bank (v7.4)
@@ -776,36 +958,40 @@ phi_n_neural_processor (top) - v9.4
 │   ├── matrix thalamic computation
 │   └── L6 CT inhibition computation
 ├── ca3_phase_memory (v8.0)
-├── cortical_column (sensory) - v9.4
-│   ├── layer1_minimal (v9.4) - SST+, VIP+
+├── cortical_column (sensory) - v10.0
+│   ├── layer1_minimal (v9.6) - SST+, VIP+
 │   ├── pv_interneuron ×3 (v9.2) - L2/3, L4, L5
-│   └── hopf_oscillator ×5
-├── cortical_column (association) - v9.4
-│   ├── layer1_minimal (v9.4)
+│   ├── amplitude_envelope_generator ×5 - per-layer envelopes
+│   └── hopf_oscillator ×5 (with omega_drift)
+├── cortical_column (association) - v10.0
+│   ├── layer1_minimal (v9.6)
 │   ├── pv_interneuron ×3
+│   ├── amplitude_envelope_generator ×5
 │   └── hopf_oscillator ×5
-├── cortical_column (motor) - v9.4
-│   ├── layer1_minimal (v9.4)
+├── cortical_column (motor) - v10.0
+│   ├── layer1_minimal (v9.6)
 │   ├── pv_interneuron ×3
+│   ├── amplitude_envelope_generator ×5
 │   └── hopf_oscillator ×5
 ├── pink_noise_generator
-└── output_mixer
+└── output_mixer (v7.3) - envelope-modulated, 8% osc + 92% pink
 ```
 
-### 10.3 Resource Summary
+### 11.3 Resource Summary
 
 | Component | Count | Notes |
 |-----------|-------|-------|
 | Hopf oscillators | 21 | 16 deterministic + 5 stochastic |
 | PV+ interneurons | 9 | 3 per column (L2/3, L4, L5) |
 | SST+/VIP+ circuits | 3 | 1 per column (in L1) |
+| Amplitude envelopes | 19 | 4 output + 15 per-layer |
 | Hebbian weights | 36 | 8-bit signed, 288 bits total |
-| LFSRs | 11 | 5 SR noise + 5 SR drift + 1 pink |
+| LFSRs | 31 | 5 SR noise + 5 SR drift + 1 pink + 10 cortical drift + 10 jitter |
 | Consciousness states | 5 | Via state_select[2:0] |
 
 ---
 
-## 11. Key Innovations
+## 12. Key Innovations
 
 1. **φⁿ Frequency Architecture**: All cortical frequencies related by golden ratio, creating natural harmonic relationships without integer resonance artifacts
 
@@ -831,17 +1017,23 @@ phi_n_neural_processor (top) - v9.4
 
 12. **Corticothalamic Inhibition**: L6 CT neurons modulate thalamic relay with TRN amplification
 
+13. **EEG-Realistic Output (v10.x)**: 1/f-dominated spectrum with amplitude envelopes, frequency jitter, and coherence-gated SR
+
 ---
 
-## 12. Test Coverage Summary
+## 13. Test Coverage Summary
 
-220+ automated tests across 17+ testbenches, all passing as of v9.4.
+226+ automated tests across 19+ testbenches, all passing as of v10.2.
 
 ### Key Testbenches
 
 | Testbench | Tests | Version | Coverage |
 |-----------|-------|---------|----------|
 | tb_full_system_fast | 15 | v6.5 | Full integration, all features |
+| tb_amplitude_envelope | 8 | v10.0 | O-U envelope dynamics |
+| tb_sr_ignition_phases | 10 | v10.0 | SIE phase evolution |
+| tb_l6_extended | 10 | v9.6 | Extended L6 connectivity |
+| tb_dendritic_compartment | 10 | v9.5 | Dendritic Ca²⁺/BAC |
 | tb_vip_disinhibition | 8 | v9.4 | VIP+ attention gating |
 | tb_pv_crosslayer | 8 | v9.3 | Cross-layer PV+ network |
 | tb_pv_feedback | 8 | v9.2 | PING network dynamics |
@@ -856,16 +1048,19 @@ phi_n_neural_processor (top) - v9.4
 | tb_scaffold_architecture | 14 | v8.0 | Scaffold/plastic differentiation |
 | tb_multi_harmonic_sr | 17 | v7.3 | Per-harmonic coherence |
 | tb_learning_fast | 8 | v2.1 | CA3 Hebbian learning |
-| tb_sr_coupling | 12 | v7.2 | SR coupling tests |
-| tb_v55_fast | 6 | v5.5 | Fast integration tests |
 
 ---
 
-## 13. Version History
+## 14. Version History
 
 | Version | Date | Key Changes |
 |---------|------|-------------|
-| **v9.4** | **2025-12-27** | **VIP+ disinhibition for attention gating (Phase 5 complete)** |
+| **v10.2** | **2025-12-27** | **Spectral broadening: ±0.5 Hz fast jitter for ~1-2 Hz wide peaks** |
+| v10.1 | 2025-12-27 | Envelope integration: per-band envelopes wired to output mixer |
+| v10.0 | 2025-12-27 | EEG Realism Phase 1: amplitude envelopes, slow drift, SIE controller |
+| v9.6 | 2025-12-27 | Extended L6 connectivity: L6→L2/3, L6→L5b, L6→L1 |
+| v9.5 | 2025-12-27 | Two-compartment dendritic model with Ca²⁺ spikes and BAC firing |
+| v9.4 | 2025-12-27 | VIP+ disinhibition for attention gating (Phase 5 complete) |
 | v9.3 | 2025-12-27 | Cross-layer PV+ network (L4, L5 populations) |
 | v9.2 | 2025-12-27 | PV+ PING network with dynamic E-I loop |
 | v9.1 | 2025-12-27 | SST+ explicit slow dynamics (IIR filter) |
@@ -884,14 +1079,17 @@ phi_n_neural_processor (top) - v9.4
 
 ---
 
-## 14. Future Roadmap
+## 15. Future Roadmap
 
 | Phase | Version | Feature | Status |
 |-------|---------|---------|--------|
 | 5 | v9.4 | VIP+ Disinhibition | ✅ Complete |
-| 10 | v9.5+ | ACh Neuromodulation | Planned |
-| 11 | v9.6+ | NE Neuromodulation | Planned |
-| 12 | v9.8+ | Slow Oscillations (<1 Hz) | Planned |
-| 13 | v9.10+ | Sleep Spindles (11-16 Hz) | Planned |
-| 14 | v9.11+ | Multiple Gamma Sub-bands | Planned |
-| 15 | v9.12+ | Lognormal Synaptic Weights | Planned |
+| 6 | v9.5 | Two-Compartment Dendritic Model | ✅ Complete |
+| 7 | v9.6 | Extended L6 Connectivity | ✅ Complete |
+| 8 | v10.x | EEG Realism (envelopes, jitter, SIE) | ✅ Complete |
+| 9 | v10.3+ | ACh Neuromodulation | Planned |
+| 10 | v10.4+ | NE Neuromodulation | Planned |
+| 11 | v10.5+ | Slow Oscillations (<1 Hz) | Planned |
+| 12 | v10.6+ | Sleep Spindles (11-16 Hz) | Planned |
+| 13 | v10.7+ | Multiple Gamma Sub-bands | Planned |
+| 14 | v10.8+ | Lognormal Synaptic Weights | Planned |

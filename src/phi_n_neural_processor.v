@@ -1,5 +1,27 @@
 //=============================================================================
-// Top-Level Module - v9.5 with Two-Compartment Dendritic Computation
+// Top-Level Module - v10.2 with Fast Frequency Jitter for EEG-Like Spectral Broadening
+//
+// v10.2 CHANGES (Spectral Broadening):
+// - Added fast cycle-by-cycle frequency jitter (±0.15 Hz per sample)
+// - Combined with slow drift (±0.5 Hz over seconds) for realistic spectral peaks
+// - Oscillator peaks now ~0.5-1 Hz wide instead of sharp lines
+// - Matches natural EEG where bands are diffuse, not discrete frequencies
+//
+// v10.1 CHANGES (EEG Realism - Phase 8):
+// - Added cortical_frequency_drift for ±0.5 Hz bounded random walk on cortical oscillators
+// - Spreads sharp spectral peaks into broader bands (~1 Hz width)
+// - Added amplitude_envelope_generator instances for output mixer modulation
+// - Creates biological "breathing" effect (2-5 second amplitude cycles)
+// - Combined with cortical column internal envelopes for maximum realism
+// - DAC output now resembles natural human EEG spectrogram
+//
+// v10.0 CHANGES (Biologically-Accurate SIE Model):
+// - Added sr_ignition_controller for six-phase SIE state machine
+// - Continuous baseline SR coupling (tonic presence, z ~1-2)
+// - Transient amplification during ignition events (z ~20-25, 10-15×)
+// - Coherence-first signature: PLV rises before amplitude (~3-4s lead)
+// - State-dependent SIE timing via config_controller
+// - Matches empirical EEG observations from meditation research
 //
 // v9.5 CHANGES (Dendritic Compartment - Phase 6):
 // - Added ca_threshold output from config_controller (state-dependent)
@@ -177,7 +199,7 @@ module phi_n_neural_processor #(
 );
 
 localparam signed [WIDTH-1:0] ONE_THIRD = 18'sd5461;
-localparam signed [WIDTH-1:0] K_PHASE = 18'sd4096;  // 0.25 - phase coupling (validated stable at 4 kHz)
+localparam signed [WIDTH-1:0] K_PHASE = 18'sd328;   // 0.02 - phase coupling (minimal for frequency separation)
 
 wire clk_4khz_en, clk_100khz_en;
 
@@ -228,9 +250,90 @@ sr_frequency_drift #(
     .drift_offset_packed(sr_drift_offset_packed)
 );
 
+//-----------------------------------------------------------------------------
+// v10.2: Cortical Frequency Drift + Jitter Generator
+// Two components for EEG-like spectral broadening:
+// 1. Slow drift: ±0.5 Hz bounded random walk (updates every ~0.2s)
+// 2. Fast jitter: ±0.15 Hz cycle-by-cycle noise (updates every sample)
+// Combined effect spreads sharp spectral lines into ~0.5-1 Hz wide peaks.
+//-----------------------------------------------------------------------------
+wire signed [WIDTH-1:0] cortical_drift_l6, cortical_drift_l5a, cortical_drift_l5b;
+wire signed [WIDTH-1:0] cortical_drift_l4, cortical_drift_l23;
+wire signed [WIDTH-1:0] cortical_jitter_l6, cortical_jitter_l5a, cortical_jitter_l5b;
+wire signed [WIDTH-1:0] cortical_jitter_l4, cortical_jitter_l23;
+
+cortical_frequency_drift #(
+    .WIDTH(WIDTH),
+    .FRAC(FRAC),
+    .FAST_SIM(FAST_SIM)
+) cortical_drift_gen (
+    .clk(clk),
+    .rst(rst),
+    .clk_en(clk_4khz_en),
+    // Slow drift outputs
+    .drift_l6(cortical_drift_l6),
+    .drift_l5a(cortical_drift_l5a),
+    .drift_l5b(cortical_drift_l5b),
+    .drift_l4(cortical_drift_l4),
+    .drift_l23(cortical_drift_l23),
+    // Fast jitter outputs (v10.2)
+    .jitter_l6(cortical_jitter_l6),
+    .jitter_l5a(cortical_jitter_l5a),
+    .jitter_l5b(cortical_jitter_l5b),
+    .jitter_l4(cortical_jitter_l4),
+    .jitter_l23(cortical_jitter_l23)
+);
+
+// v10.2: Combined frequency offset = slow drift + fast jitter
+wire signed [WIDTH-1:0] omega_offset_l6  = cortical_drift_l6  + cortical_jitter_l6;
+wire signed [WIDTH-1:0] omega_offset_l5a = cortical_drift_l5a + cortical_jitter_l5a;
+wire signed [WIDTH-1:0] omega_offset_l5b = cortical_drift_l5b + cortical_jitter_l5b;
+wire signed [WIDTH-1:0] omega_offset_l4  = cortical_drift_l4  + cortical_jitter_l4;
+wire signed [WIDTH-1:0] omega_offset_l23 = cortical_drift_l23 + cortical_jitter_l23;
+
+//-----------------------------------------------------------------------------
+// v10.1: Amplitude Envelope Generators for Output Mixer
+// Creates biological "alpha breathing" effect where band power waxes and wanes.
+// These are separate from cortical column internal envelopes (which modulate MU).
+// Mixer envelopes modulate the signal amplitude directly before mixing.
+//-----------------------------------------------------------------------------
+wire signed [WIDTH-1:0] mixer_env_theta, mixer_env_alpha, mixer_env_beta, mixer_env_gamma;
+
+// Theta envelope (slowest: tau=5s)
+amplitude_envelope_generator #(.WIDTH(WIDTH), .FRAC(FRAC)) env_mixer_theta (
+    .clk(clk), .rst(rst), .clk_en(clk_4khz_en),
+    .seed(16'hF1A2), .tau_inv(18'sd1),  // tau ~3-5s
+    .envelope(mixer_env_theta)
+);
+
+// Alpha envelope (medium-slow: tau=3s)
+amplitude_envelope_generator #(.WIDTH(WIDTH), .FRAC(FRAC)) env_mixer_alpha (
+    .clk(clk), .rst(rst), .clk_en(clk_4khz_en),
+    .seed(16'hD3B4), .tau_inv(18'sd1),  // tau ~3s
+    .envelope(mixer_env_alpha)
+);
+
+// Beta envelope (medium: tau=2s)
+amplitude_envelope_generator #(.WIDTH(WIDTH), .FRAC(FRAC)) env_mixer_beta (
+    .clk(clk), .rst(rst), .clk_en(clk_4khz_en),
+    .seed(16'hC5E6), .tau_inv(18'sd2),  // tau ~1.5s (faster variation)
+    .envelope(mixer_env_beta)
+);
+
+// Gamma envelope (fastest: tau=1s)
+amplitude_envelope_generator #(.WIDTH(WIDTH), .FRAC(FRAC)) env_mixer_gamma (
+    .clk(clk), .rst(rst), .clk_en(clk_4khz_en),
+    .seed(16'hA7F8), .tau_inv(18'sd3),  // tau ~1s (fastest variation)
+    .envelope(mixer_env_gamma)
+);
+
 wire signed [WIDTH-1:0] mu_dt_theta;
 wire signed [WIDTH-1:0] mu_dt_l6, mu_dt_l5b, mu_dt_l5a, mu_dt_l4, mu_dt_l23;
 wire signed [WIDTH-1:0] ca_threshold;  // v9.5: state-dependent Ca2+ threshold
+
+// v10.0: SIE timing outputs from config controller
+wire [15:0] sie_phase2_dur, sie_phase3_dur, sie_phase4_dur;
+wire [15:0] sie_phase5_dur, sie_phase6_dur, sie_refractory;
 
 config_controller #(.WIDTH(WIDTH), .FRAC(FRAC)) config_ctrl (
     .clk(clk),
@@ -243,7 +346,14 @@ config_controller #(.WIDTH(WIDTH), .FRAC(FRAC)) config_ctrl (
     .mu_dt_l5a(mu_dt_l5a),
     .mu_dt_l4(mu_dt_l4),
     .mu_dt_l23(mu_dt_l23),
-    .ca_threshold(ca_threshold)  // v9.5: state-dependent threshold
+    .ca_threshold(ca_threshold),  // v9.5: state-dependent threshold
+    // v10.0: SIE timing outputs
+    .sie_phase2_dur(sie_phase2_dur),
+    .sie_phase3_dur(sie_phase3_dur),
+    .sie_phase4_dur(sie_phase4_dur),
+    .sie_phase5_dur(sie_phase5_dur),
+    .sie_phase6_dur(sie_phase6_dur),
+    .sie_refractory(sie_refractory)
 );
 
 wire signed [WIDTH-1:0] thalamic_theta_output;
@@ -286,6 +396,53 @@ assign beta_amplitude_avg = beta_amplitude_sum >>> 1;
 wire signed [NUM_HARMONICS*WIDTH-1:0] sr_f_y_packed_int;
 wire signed [NUM_HARMONICS*WIDTH-1:0] sr_amplitude_packed_int;
 
+//=============================================================================
+// v10.0: SIE IGNITION CONTROLLER (Six-Phase State Machine)
+// Generates gain_envelope for SR→theta entrainment coupling.
+// Implements biologically-accurate ignition events:
+// - Continuous baseline (z ~1-2)
+// - Transient amplification (z ~20-25, 10-15×) lasting ~18-25s
+// - Coherence-first signature: PLV rises before amplitude
+// - Refractory period prevents rapid re-ignition
+//=============================================================================
+wire signed [WIDTH-1:0] sie_gain_envelope;
+wire signed [WIDTH-1:0] sie_plv_envelope;
+wire [2:0] sie_ignition_phase;
+wire sie_ignition_active;
+
+// Use f0 coherence from thalamus for ignition triggering
+// Note: beta_quiet_int is a forward declaration resolved after thalamus
+wire beta_quiet_int;
+
+sr_ignition_controller #(
+    .WIDTH(WIDTH),
+    .FRAC(FRAC)
+) ignition_ctrl (
+    .clk(clk),
+    .rst(rst),
+    .clk_en(clk_4khz_en),
+
+    // Coherence input (from thalamus SR bank)
+    .coherence_in(sr_coherence),
+
+    // Beta quiet input (from thalamus SR bank)
+    .beta_quiet(beta_quiet_int),
+
+    // Phase timing (from config_controller)
+    .phase2_dur(sie_phase2_dur),
+    .phase3_dur(sie_phase3_dur),
+    .phase4_dur(sie_phase4_dur),
+    .phase5_dur(sie_phase5_dur),
+    .phase6_dur(sie_phase6_dur),
+    .refractory(sie_refractory),
+
+    // Outputs
+    .ignition_phase(sie_ignition_phase),
+    .gain_envelope(sie_gain_envelope),
+    .plv_envelope(sie_plv_envelope),
+    .ignition_active(sie_ignition_active)
+);
+
 thalamus #(
     .WIDTH(WIDTH),
     .FRAC(FRAC),
@@ -324,6 +481,9 @@ thalamus #(
     .gamma_x(sensory_l4_x),
     .gamma_y(18'sd0),  // L4 doesn't expose y directly
 
+    // v10.0: SIE gain envelope from ignition controller
+    .gain_envelope(sie_gain_envelope),
+
     // Theta outputs
     .theta_gated_output(thalamic_theta_output),
     .theta_x(thalamic_theta_x),
@@ -346,12 +506,19 @@ thalamus #(
 
     // SR Coupling indicators
     .sr_coherence(sr_coherence),
-    .sr_amplification(sr_amplification),
-    .beta_quiet(beta_quiet),
+    .sr_amplification(),  // v10.0: Not used - ignition controller provides sr_amplification
+    .beta_quiet(beta_quiet_int),  // v10.0: route through beta_quiet_int for ignition controller
 
     // v9.2: Matrix thalamic output (broadcast to all columns' L1)
     .matrix_output(thalamic_matrix_output)
 );
+
+// v10.0: Connect beta_quiet_int to output port
+assign beta_quiet = beta_quiet_int;
+
+// v10.0: Connect sr_amplification to ignition controller (not thalamus old logic)
+// This provides proper six-phase SIE events instead of rapid coherence-based toggling
+assign sr_amplification = sie_ignition_active;
 
 //=============================================================================
 // CORTICAL PATTERN DERIVATION (v6.2 pure closed-loop)
@@ -460,7 +627,7 @@ wire sensory_l23_ca_spike, sensory_l23_bac;
 wire sensory_l5a_ca_spike, sensory_l5a_bac;
 wire sensory_l5b_ca_spike, sensory_l5b_bac;
 
-cortical_column #(.WIDTH(WIDTH), .FRAC(FRAC)) col_sensory (
+cortical_column #(.WIDTH(WIDTH), .FRAC(FRAC), .COLUMN_ID(0)) col_sensory (
     .clk(clk),
     .rst(rst),
     .clk_en(clk_4khz_en),
@@ -474,6 +641,12 @@ cortical_column #(.WIDTH(WIDTH), .FRAC(FRAC)) col_sensory (
     .encoding_window(ca3_encoding_window),  // v8.1: gamma-theta nesting
     .attention_input(18'sd0),               // v9.4: no attention (default)
     .ca_threshold(ca_threshold),            // v9.5: state-dependent threshold
+    // v10.1: Frequency drift for EEG-realistic spectral spreading
+    .omega_drift_l6(omega_offset_l6),      // v10.2: drift + jitter combined
+    .omega_drift_l5a(omega_offset_l5a),
+    .omega_drift_l5b(omega_offset_l5b),
+    .omega_drift_l4(omega_offset_l4),
+    .omega_drift_l23(omega_offset_l23),
     .mu_dt_l6(mu_dt_l6),
     .mu_dt_l5b(mu_dt_l5b),
     .mu_dt_l5a(mu_dt_l5a),
@@ -498,7 +671,7 @@ wire assoc_l23_ca_spike, assoc_l23_bac;
 wire assoc_l5a_ca_spike, assoc_l5a_bac;
 wire assoc_l5b_ca_spike, assoc_l5b_bac;
 
-cortical_column #(.WIDTH(WIDTH), .FRAC(FRAC)) col_assoc (
+cortical_column #(.WIDTH(WIDTH), .FRAC(FRAC), .COLUMN_ID(1)) col_assoc (
     .clk(clk),
     .rst(rst),
     .clk_en(clk_4khz_en),
@@ -512,6 +685,12 @@ cortical_column #(.WIDTH(WIDTH), .FRAC(FRAC)) col_assoc (
     .encoding_window(ca3_encoding_window),  // v8.1: gamma-theta nesting
     .attention_input(18'sd0),               // v9.4: no attention (default)
     .ca_threshold(ca_threshold),            // v9.5: state-dependent threshold
+    // v10.1: Frequency drift for EEG-realistic spectral spreading
+    .omega_drift_l6(omega_offset_l6),      // v10.2: drift + jitter combined
+    .omega_drift_l5a(omega_offset_l5a),
+    .omega_drift_l5b(omega_offset_l5b),
+    .omega_drift_l4(omega_offset_l4),
+    .omega_drift_l23(omega_offset_l23),
     .mu_dt_l6(mu_dt_l6),
     .mu_dt_l5b(mu_dt_l5b),
     .mu_dt_l5a(mu_dt_l5a),
@@ -536,7 +715,7 @@ wire motor_l23_ca_spike, motor_l23_bac;
 wire motor_l5a_ca_spike, motor_l5a_bac;
 wire motor_l5b_ca_spike, motor_l5b_bac;
 
-cortical_column #(.WIDTH(WIDTH), .FRAC(FRAC)) col_motor (
+cortical_column #(.WIDTH(WIDTH), .FRAC(FRAC), .COLUMN_ID(2)) col_motor (
     .clk(clk),
     .rst(rst),
     .clk_en(clk_4khz_en),
@@ -550,6 +729,12 @@ cortical_column #(.WIDTH(WIDTH), .FRAC(FRAC)) col_motor (
     .encoding_window(ca3_encoding_window),  // v8.1: gamma-theta nesting
     .attention_input(18'sd0),               // v9.4: no attention (default)
     .ca_threshold(ca_threshold),            // v9.5: state-dependent threshold
+    // v10.1: Frequency drift for EEG-realistic spectral spreading
+    .omega_drift_l6(omega_offset_l6),      // v10.2: drift + jitter combined
+    .omega_drift_l5a(omega_offset_l5a),
+    .omega_drift_l5b(omega_offset_l5b),
+    .omega_drift_l4(omega_offset_l4),
+    .omega_drift_l23(omega_offset_l23),
     .mu_dt_l6(mu_dt_l6),
     .mu_dt_l5b(mu_dt_l5b),
     .mu_dt_l5a(mu_dt_l5a),
@@ -586,13 +771,21 @@ pink_noise_generator #(.WIDTH(WIDTH), .FRAC(FRAC)) pink_gen (
 
 wire signed [WIDTH-1:0] mixed_output;
 
+// v10.1: Expanded 5-channel mixer with per-band amplitude envelopes
 output_mixer #(.WIDTH(WIDTH), .FRAC(FRAC)) mixer (
     .clk(clk),
     .rst(rst),
     .clk_en(clk_4khz_en),
-    .motor_l23_x(motor_l23_x),
-    .motor_l5a_x(motor_l5a_x),
-    .pink_noise(pink_noise_out),
+    .theta_x(thalamic_theta_x),    // 5.89 Hz - thalamic theta
+    .motor_l6_x(motor_l6_x),       // 9.53 Hz - alpha (L6)
+    .motor_l5a_x(motor_l5a_x),     // 15.42 Hz - low beta
+    .motor_l23_x(motor_l23_x),     // 40.36 Hz - gamma
+    .pink_noise(pink_noise_out),   // 1/f broadband
+    // v10.1: Per-band amplitude envelopes for "alpha breathing" effect
+    .env_theta(mixer_env_theta),   // Theta band envelope
+    .env_alpha(mixer_env_alpha),   // Alpha band envelope
+    .env_beta(mixer_env_beta),     // Beta band envelope
+    .env_gamma(mixer_env_gamma),   // Gamma band envelope
     .mixed_output(mixed_output),
     .dac_output(dac_output)
 );

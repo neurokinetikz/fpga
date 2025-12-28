@@ -1,21 +1,27 @@
 //=============================================================================
-// SR Frequency Drift Generator - v1.0
+// SR Frequency Drift Generator - v2.0
+//
+// v2.0 CHANGES (Biological Realism - Phase 4):
+// - Faster UPDATE_PERIOD: 1500 → 400 cycles (~0.1s per step in FAST_SIM)
+// - Larger DRIFT_MAX bounds: 1.5× wider for visible spectrogram wobble
+// - Variable step sizes (1-4): Lévy flight-like for biological variability
+// - Creates visible ±1-2 Hz frequency wobble at seconds timescale
 //
 // Models realistic Schumann Resonance frequency drift based on observed data.
 // Each harmonic performs a bounded random walk within its natural variation range.
 //
 // OBSERVED SR FREQUENCIES (from real-time monitoring):
-//   f₀ = 7.6 Hz  ± 0.6 Hz   (range: 7.0-8.2 Hz)
-//   f₁ = 13.75 Hz ± 0.75 Hz (range: 13.0-14.5 Hz)
-//   f₂ = 20 Hz   ± 1 Hz     (range: 19-21 Hz)
-//   f₃ = 25 Hz   ± 1.5 Hz   (range: 23.5-26.5 Hz)
-//   f₄ = 32 Hz   ± 2 Hz     (range: 30-34 Hz)
+//   f₀ = 7.6 Hz  ± 0.9 Hz   (range: 6.7-8.5 Hz)  v2.0: expanded from ±0.6
+//   f₁ = 13.75 Hz ± 1.1 Hz  (range: 12.6-14.9 Hz) v2.0: expanded from ±0.75
+//   f₂ = 20 Hz   ± 1.5 Hz   (range: 18.5-21.5 Hz) v2.0: expanded from ±1
+//   f₃ = 25 Hz   ± 2.25 Hz  (range: 22.75-27.25 Hz) v2.0: expanded from ±1.5
+//   f₄ = 32 Hz   ± 3.0 Hz   (range: 29-35 Hz)     v2.0: expanded from ±2
 //
 // DRIFT MODEL:
 // - Bounded random walk with reflecting boundaries
-// - Update rate: ~2 minutes real-time (scaled for FAST_SIM)
-// - Step size: 1 OMEGA_DT unit per update
-// - Produces realistic hours-scale drift patterns
+// - Update rate: ~0.1s (visible in spectrogram)
+// - Step size: 1-4 OMEGA_DT units per update (variable, Lévy flight-like)
+// - Produces visible seconds-scale wobble matching biological EEG
 //=============================================================================
 `timescale 1ns / 1ps
 
@@ -47,27 +53,27 @@ localparam signed [WIDTH-1:0] OMEGA_CENTER_F3 = 18'sd643;   // 25 Hz
 localparam signed [WIDTH-1:0] OMEGA_CENTER_F4 = 18'sd823;   // 32 Hz
 
 //-----------------------------------------------------------------------------
-// Drift Ranges (±OMEGA_DT units)
+// Drift Ranges (±OMEGA_DT units) - v2.0: Expanded 1.5× for visible wobble
 // Converted from Hz: DRIFT_MAX = round(2π × Δf × dt × 2^14)
 //-----------------------------------------------------------------------------
-localparam signed [WIDTH-1:0] DRIFT_MAX_F0 = 18'sd15;   // ±0.6 Hz → ±15
-localparam signed [WIDTH-1:0] DRIFT_MAX_F1 = 18'sd19;   // ±0.75 Hz → ±19
-localparam signed [WIDTH-1:0] DRIFT_MAX_F2 = 18'sd26;   // ±1 Hz → ±26
-localparam signed [WIDTH-1:0] DRIFT_MAX_F3 = 18'sd39;   // ±1.5 Hz → ±39
-localparam signed [WIDTH-1:0] DRIFT_MAX_F4 = 18'sd51;   // ±2 Hz → ±51
+localparam signed [WIDTH-1:0] DRIFT_MAX_F0 = 18'sd23;   // ±0.9 Hz → ±23 (was ±15)
+localparam signed [WIDTH-1:0] DRIFT_MAX_F1 = 18'sd28;   // ±1.1 Hz → ±28 (was ±19)
+localparam signed [WIDTH-1:0] DRIFT_MAX_F2 = 18'sd39;   // ±1.5 Hz → ±39 (was ±26)
+localparam signed [WIDTH-1:0] DRIFT_MAX_F3 = 18'sd58;   // ±2.25 Hz → ±58 (was ±39)
+localparam signed [WIDTH-1:0] DRIFT_MAX_F4 = 18'sd77;   // ±3.0 Hz → ±77 (was ±51)
 
 //-----------------------------------------------------------------------------
-// Random Walk Update Period
-// Tuned to match observed SR drift rates (~0.05-0.1 Hz/hour from monitoring data)
-// Real-time: 15 minutes = 3,600,000 clk_en @ 4kHz
-//   - 4 steps/hour max = ~0.16 Hz/hour max drift
-//   - Random walk σ ≈ 0.08 Hz/hour (matches observed)
-// FAST_SIM: 1500 clk_en (same 2400× speedup ratio)
+// Random Walk Update Period - v2.0: Faster for visible spectrogram wobble
+// Previous: 15 minutes (3.6M cycles) - too slow for visible variation
+// v2.0: ~0.1s updates - creates seconds-scale visible frequency wobble
+//
+// FAST_SIM: 400 clk_en = 0.1s at 4kHz (was 1500 = 0.375s)
+// Real-time: 960000 clk_en = 4 minutes (was 3.6M = 15 minutes)
 //-----------------------------------------------------------------------------
 `ifdef FAST_SIM
-    localparam [21:0] UPDATE_PERIOD = 22'd1500;
+    localparam [21:0] UPDATE_PERIOD = 22'd400;      // v2.0: 0.1s updates (was 1500)
 `else
-    localparam [21:0] UPDATE_PERIOD = (FAST_SIM != 0) ? 22'd1500 : 22'd3600000;
+    localparam [21:0] UPDATE_PERIOD = (FAST_SIM != 0) ? 22'd400 : 22'd960000;
 `endif
 
 //-----------------------------------------------------------------------------
@@ -120,7 +126,25 @@ wire dir_3 = lfsr_3[0];
 wire dir_4 = lfsr_4[0];
 
 //-----------------------------------------------------------------------------
-// Random Walk Update Logic - Harmonic 0
+// v2.0: Variable Step Sizes (1-4) for Lévy flight-like behavior
+// Use LFSR bits [3:2] to determine step magnitude (1-4 units)
+// Creates occasional large jumps like biological frequency variability
+//-----------------------------------------------------------------------------
+wire [1:0] step_bits_0 = lfsr_0[3:2];
+wire [1:0] step_bits_1 = lfsr_1[3:2];
+wire [1:0] step_bits_2 = lfsr_2[3:2];
+wire [1:0] step_bits_3 = lfsr_3[3:2];
+wire [1:0] step_bits_4 = lfsr_4[3:2];
+
+// Step size: 1 + step_bits gives range 1-4
+wire signed [WIDTH-1:0] step_0 = {{(WIDTH-3){1'b0}}, step_bits_0, 1'b0} + 18'sd1;  // 1, 2, 3, or 4
+wire signed [WIDTH-1:0] step_1 = {{(WIDTH-3){1'b0}}, step_bits_1, 1'b0} + 18'sd1;
+wire signed [WIDTH-1:0] step_2 = {{(WIDTH-3){1'b0}}, step_bits_2, 1'b0} + 18'sd1;
+wire signed [WIDTH-1:0] step_3 = {{(WIDTH-3){1'b0}}, step_bits_3, 1'b0} + 18'sd1;
+wire signed [WIDTH-1:0] step_4 = {{(WIDTH-3){1'b0}}, step_bits_4, 1'b0} + 18'sd1;
+
+//-----------------------------------------------------------------------------
+// Random Walk Update Logic - Harmonic 0 (v2.0: variable step size)
 //-----------------------------------------------------------------------------
 always @(posedge clk or posedge rst) begin
     if (rst) begin
@@ -129,21 +153,21 @@ always @(posedge clk or posedge rst) begin
     end else if (clk_en && update_tick) begin
         lfsr_0 <= {lfsr_0[14:0], fb_0};
         if (dir_0) begin
-            if (drift_0 < DRIFT_MAX_F0)
-                drift_0 <= drift_0 + 1;
+            if (drift_0 + step_0 <= DRIFT_MAX_F0)
+                drift_0 <= drift_0 + step_0;
             else
-                drift_0 <= drift_0 - 1;
+                drift_0 <= drift_0 - step_0;  // Reflect at boundary
         end else begin
-            if (drift_0 > -DRIFT_MAX_F0)
-                drift_0 <= drift_0 - 1;
+            if (drift_0 - step_0 >= -DRIFT_MAX_F0)
+                drift_0 <= drift_0 - step_0;
             else
-                drift_0 <= drift_0 + 1;
+                drift_0 <= drift_0 + step_0;  // Reflect at boundary
         end
     end
 end
 
 //-----------------------------------------------------------------------------
-// Random Walk Update Logic - Harmonic 1
+// Random Walk Update Logic - Harmonic 1 (v2.0: variable step size)
 //-----------------------------------------------------------------------------
 always @(posedge clk or posedge rst) begin
     if (rst) begin
@@ -152,21 +176,21 @@ always @(posedge clk or posedge rst) begin
     end else if (clk_en && update_tick) begin
         lfsr_1 <= {lfsr_1[14:0], fb_1};
         if (dir_1) begin
-            if (drift_1 < DRIFT_MAX_F1)
-                drift_1 <= drift_1 + 1;
+            if (drift_1 + step_1 <= DRIFT_MAX_F1)
+                drift_1 <= drift_1 + step_1;
             else
-                drift_1 <= drift_1 - 1;
+                drift_1 <= drift_1 - step_1;  // Reflect at boundary
         end else begin
-            if (drift_1 > -DRIFT_MAX_F1)
-                drift_1 <= drift_1 - 1;
+            if (drift_1 - step_1 >= -DRIFT_MAX_F1)
+                drift_1 <= drift_1 - step_1;
             else
-                drift_1 <= drift_1 + 1;
+                drift_1 <= drift_1 + step_1;  // Reflect at boundary
         end
     end
 end
 
 //-----------------------------------------------------------------------------
-// Random Walk Update Logic - Harmonic 2
+// Random Walk Update Logic - Harmonic 2 (v2.0: variable step size)
 //-----------------------------------------------------------------------------
 always @(posedge clk or posedge rst) begin
     if (rst) begin
@@ -175,21 +199,21 @@ always @(posedge clk or posedge rst) begin
     end else if (clk_en && update_tick) begin
         lfsr_2 <= {lfsr_2[14:0], fb_2};
         if (dir_2) begin
-            if (drift_2 < DRIFT_MAX_F2)
-                drift_2 <= drift_2 + 1;
+            if (drift_2 + step_2 <= DRIFT_MAX_F2)
+                drift_2 <= drift_2 + step_2;
             else
-                drift_2 <= drift_2 - 1;
+                drift_2 <= drift_2 - step_2;  // Reflect at boundary
         end else begin
-            if (drift_2 > -DRIFT_MAX_F2)
-                drift_2 <= drift_2 - 1;
+            if (drift_2 - step_2 >= -DRIFT_MAX_F2)
+                drift_2 <= drift_2 - step_2;
             else
-                drift_2 <= drift_2 + 1;
+                drift_2 <= drift_2 + step_2;  // Reflect at boundary
         end
     end
 end
 
 //-----------------------------------------------------------------------------
-// Random Walk Update Logic - Harmonic 3
+// Random Walk Update Logic - Harmonic 3 (v2.0: variable step size)
 //-----------------------------------------------------------------------------
 always @(posedge clk or posedge rst) begin
     if (rst) begin
@@ -198,21 +222,21 @@ always @(posedge clk or posedge rst) begin
     end else if (clk_en && update_tick) begin
         lfsr_3 <= {lfsr_3[14:0], fb_3};
         if (dir_3) begin
-            if (drift_3 < DRIFT_MAX_F3)
-                drift_3 <= drift_3 + 1;
+            if (drift_3 + step_3 <= DRIFT_MAX_F3)
+                drift_3 <= drift_3 + step_3;
             else
-                drift_3 <= drift_3 - 1;
+                drift_3 <= drift_3 - step_3;  // Reflect at boundary
         end else begin
-            if (drift_3 > -DRIFT_MAX_F3)
-                drift_3 <= drift_3 - 1;
+            if (drift_3 - step_3 >= -DRIFT_MAX_F3)
+                drift_3 <= drift_3 - step_3;
             else
-                drift_3 <= drift_3 + 1;
+                drift_3 <= drift_3 + step_3;  // Reflect at boundary
         end
     end
 end
 
 //-----------------------------------------------------------------------------
-// Random Walk Update Logic - Harmonic 4
+// Random Walk Update Logic - Harmonic 4 (v2.0: variable step size)
 //-----------------------------------------------------------------------------
 always @(posedge clk or posedge rst) begin
     if (rst) begin
@@ -221,15 +245,15 @@ always @(posedge clk or posedge rst) begin
     end else if (clk_en && update_tick) begin
         lfsr_4 <= {lfsr_4[14:0], fb_4};
         if (dir_4) begin
-            if (drift_4 < DRIFT_MAX_F4)
-                drift_4 <= drift_4 + 1;
+            if (drift_4 + step_4 <= DRIFT_MAX_F4)
+                drift_4 <= drift_4 + step_4;
             else
-                drift_4 <= drift_4 - 1;
+                drift_4 <= drift_4 - step_4;  // Reflect at boundary
         end else begin
-            if (drift_4 > -DRIFT_MAX_F4)
-                drift_4 <= drift_4 - 1;
+            if (drift_4 - step_4 >= -DRIFT_MAX_F4)
+                drift_4 <= drift_4 - step_4;
             else
-                drift_4 <= drift_4 + 1;
+                drift_4 <= drift_4 + step_4;  // Reflect at boundary
         end
     end
 end

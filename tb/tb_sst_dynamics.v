@@ -39,6 +39,8 @@ integer fail_count;
 localparam signed [WIDTH-1:0] ONE = 18'sd16384;     // 1.0
 localparam signed [WIDTH-1:0] HALF = 18'sd8192;     // 0.5
 localparam signed [WIDTH-1:0] GAIN_1_5 = 18'sd24576; // 1.5
+localparam signed [WIDTH-1:0] GAIN_2_0 = 18'sd32768; // 2.0 (v9.6 upper bound)
+localparam signed [WIDTH-1:0] GAIN_0_25 = 18'sd4096; // 0.25 (v9.6 lower bound)
 
 // Tracking for time constant measurement
 reg signed [WIDTH-1:0] gain_at_step;
@@ -79,6 +81,7 @@ layer1_minimal #(
     .feedback_input_1(feedback_input_1),
     .feedback_input_2(feedback_input_2),
     .attention_input(18'sd0),        // v9.4: No attention for SST+ tests
+    .l6_direct_input(18'sd0),        // v9.6: No L6 direct input for SST+ tests
     .apical_gain(apical_gain),
     .sst_activity_out(sst_activity),
     .vip_activity_out(vip_activity),
@@ -276,10 +279,10 @@ initial begin
     end
 
     //=========================================================================
-    // Test 7: Clamping at upper bound (1.5)
+    // Test 7: Clamping at upper bound (2.0) - v9.6 changed from 1.5
     //=========================================================================
     test_num = 7;
-    $display("\nTest %0d: Upper bound clamping (1.5)", test_num);
+    $display("\nTest %0d: Upper bound clamping (2.0) - v9.6", test_num);
 
     rst = 1;
     repeat(10) @(posedge clk);
@@ -293,9 +296,9 @@ initial begin
 
     wait_cycles(600);  // Let it settle
 
-    $display("  Gain with large input: %0d (expected 24576 = 1.5)", apical_gain);
+    $display("  Gain with large input: %0d (expected 32768 = 2.0)", apical_gain);
 
-    if (apical_gain == GAIN_1_5) begin
+    if (apical_gain == GAIN_2_0) begin
         $display("  PASS: Clamped at upper bound");
         pass_count = pass_count + 1;
     end else begin
@@ -304,10 +307,10 @@ initial begin
     end
 
     //=========================================================================
-    // Test 8: Clamping at lower bound (0.5)
+    // Test 8: Clamping at lower bound (0.25) - v9.6 changed from 0.5
     //=========================================================================
     test_num = 8;
-    $display("\nTest %0d: Lower bound clamping (0.5)", test_num);
+    $display("\nTest %0d: Lower bound clamping (0.25) - v9.6", test_num);
 
     rst = 1;
     repeat(10) @(posedge clk);
@@ -321,9 +324,9 @@ initial begin
 
     wait_cycles(600);  // Let it settle
 
-    $display("  Gain with large negative input: %0d (expected 8192 = 0.5)", apical_gain);
+    $display("  Gain with large negative input: %0d (expected 4096 = 0.25)", apical_gain);
 
-    if (apical_gain == HALF) begin
+    if (apical_gain == GAIN_0_25) begin
         $display("  PASS: Clamped at lower bound");
         pass_count = pass_count + 1;
     end else begin

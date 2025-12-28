@@ -50,7 +50,17 @@ module config_controller #(
     output wire scaffold_l4,        // L4 is scaffold layer
     output wire scaffold_l5b,       // L5b is scaffold layer
     output wire plastic_l23,        // L2/3 is plastic layer
-    output wire plastic_l6          // L6 is plastic layer
+    output wire plastic_l6,         // L6 is plastic layer
+
+    // v10.0: SIE (Schumann Ignition Event) phase timing outputs
+    // Values in 4kHz cycles (250us per cycle)
+    // Based on empirical EEG data: 3-4s, 2-3s, 2-3s, 8-10s, 3-5s event + 10s refractory
+    output reg [15:0] sie_phase2_dur,   // Coherence-first phase duration
+    output reg [15:0] sie_phase3_dur,   // Ignition phase duration
+    output reg [15:0] sie_phase4_dur,   // Plateau phase duration
+    output reg [15:0] sie_phase5_dur,   // Propagation phase duration
+    output reg [15:0] sie_phase6_dur,   // Decay phase duration
+    output reg [15:0] sie_refractory    // Refractory period (no re-ignition)
 );
 
 localparam [2:0] STATE_NORMAL     = 3'd0;
@@ -90,6 +100,13 @@ always @(posedge clk or posedge rst) begin
         mu_dt_l4    <= MU_FULL;
         mu_dt_l23   <= MU_FULL;
         ca_threshold <= CA_THRESH_NORMAL;
+        // v10.0: SIE timing reset (NORMAL state defaults)
+        sie_phase2_dur <= 16'd14000;  // 3.5s coherence-first
+        sie_phase3_dur <= 16'd10000;  // 2.5s ignition
+        sie_phase4_dur <= 16'd10000;  // 2.5s plateau
+        sie_phase5_dur <= 16'd36000;  // 9s propagation (PAC window)
+        sie_phase6_dur <= 16'd16000;  // 4s decay
+        sie_refractory <= 16'd40000;  // 10s refractory
     end else if (clk_en) begin
         case (state_select)
             STATE_NORMAL: begin
@@ -100,6 +117,13 @@ always @(posedge clk or posedge rst) begin
                 mu_dt_l4     <= MU_FULL;
                 mu_dt_l23    <= MU_FULL;
                 ca_threshold <= CA_THRESH_NORMAL;  // 0.5 - balanced
+                // SIE timing: ~21.5s event + 10s refractory
+                sie_phase2_dur <= 16'd14000;  // 3.5s coherence-first
+                sie_phase3_dur <= 16'd10000;  // 2.5s ignition
+                sie_phase4_dur <= 16'd10000;  // 2.5s plateau
+                sie_phase5_dur <= 16'd36000;  // 9s propagation
+                sie_phase6_dur <= 16'd16000;  // 4s decay
+                sie_refractory <= 16'd40000;  // 10s refractory
             end
             STATE_ANESTHESIA: begin
                 mu_dt_theta  <= MU_HALF;
@@ -109,6 +133,13 @@ always @(posedge clk or posedge rst) begin
                 mu_dt_l4     <= MU_WEAK;
                 mu_dt_l23    <= MU_WEAK;
                 ca_threshold <= CA_THRESH_ANESTHESIA;  // 0.75 - fewer Ca2+ spikes
+                // SIE timing: reduced/suppressed events (longer refractory)
+                sie_phase2_dur <= 16'd20000;  // 5s coherence (sluggish)
+                sie_phase3_dur <= 16'd8000;   // 2s ignition (weak)
+                sie_phase4_dur <= 16'd8000;   // 2s plateau
+                sie_phase5_dur <= 16'd24000;  // 6s propagation (reduced)
+                sie_phase6_dur <= 16'd20000;  // 5s decay (prolonged)
+                sie_refractory <= 16'd60000;  // 15s refractory (suppressed)
             end
             STATE_PSYCHEDELIC: begin
                 mu_dt_theta  <= MU_FULL;
@@ -118,6 +149,13 @@ always @(posedge clk or posedge rst) begin
                 mu_dt_l4     <= MU_ENHANCED;
                 mu_dt_l23    <= MU_ENHANCED;
                 ca_threshold <= CA_THRESH_PSYCHEDELIC;  // 0.25 - more Ca2+ spikes
+                // SIE timing: ~28s event + 6s refractory (extended propagation, short gap)
+                sie_phase2_dur <= 16'd16000;  // 4s coherence
+                sie_phase3_dur <= 16'd12000;  // 3s ignition (intense)
+                sie_phase4_dur <= 16'd16000;  // 4s plateau (sustained peak)
+                sie_phase5_dur <= 16'd48000;  // 12s propagation (extended PAC)
+                sie_phase6_dur <= 16'd20000;  // 5s decay
+                sie_refractory <= 16'd24000;  // 6s refractory (frequent events)
             end
             STATE_FLOW: begin
                 mu_dt_theta  <= MU_FULL;
@@ -127,6 +165,13 @@ always @(posedge clk or posedge rst) begin
                 mu_dt_l4     <= MU_FULL;
                 mu_dt_l23    <= MU_FULL;
                 ca_threshold <= CA_THRESH_FLOW;  // 0.5 - balanced
+                // SIE timing: ~18s event + 12s refractory (shorter events, longer gaps)
+                sie_phase2_dur <= 16'd12000;  // 3s coherence (quick)
+                sie_phase3_dur <= 16'd8000;   // 2s ignition
+                sie_phase4_dur <= 16'd8000;   // 2s plateau
+                sie_phase5_dur <= 16'd32000;  // 8s propagation
+                sie_phase6_dur <= 16'd12000;  // 3s decay
+                sie_refractory <= 16'd48000;  // 12s refractory (task focus)
             end
             STATE_MEDITATION: begin
                 // Reduced MU values for frequency stability (high MU destabilizes)
@@ -138,6 +183,13 @@ always @(posedge clk or posedge rst) begin
                 mu_dt_l4     <= MU_HALF;     // 2 - sensory withdrawal
                 mu_dt_l23    <= MU_HALF;     // 2 - reduced gamma (internal focus)
                 ca_threshold <= CA_THRESH_MEDITATION;  // 0.375 - enhanced top-down
+                // SIE timing: ~25s event + 8s refractory (enhanced, prominent events)
+                sie_phase2_dur <= 16'd16000;  // 4s coherence (extended awareness)
+                sie_phase3_dur <= 16'd12000;  // 3s ignition
+                sie_phase4_dur <= 16'd12000;  // 3s plateau (sustained)
+                sie_phase5_dur <= 16'd40000;  // 10s propagation (enhanced PAC)
+                sie_phase6_dur <= 16'd20000;  // 5s decay (slow return)
+                sie_refractory <= 16'd32000;  // 8s refractory (moderate frequency)
             end
             default: begin
                 mu_dt_theta  <= MU_FULL;
@@ -147,6 +199,13 @@ always @(posedge clk or posedge rst) begin
                 mu_dt_l4     <= MU_FULL;
                 mu_dt_l23    <= MU_FULL;
                 ca_threshold <= CA_THRESH_NORMAL;  // 0.5 - balanced
+                // SIE timing: same as NORMAL
+                sie_phase2_dur <= 16'd14000;
+                sie_phase3_dur <= 16'd10000;
+                sie_phase4_dur <= 16'd10000;
+                sie_phase5_dur <= 16'd36000;
+                sie_phase6_dur <= 16'd16000;
+                sie_refractory <= 16'd40000;
             end
         endcase
     end

@@ -1,5 +1,11 @@
 //=============================================================================
-// Cortical Column - v9.6 with Extended L6 Connectivity
+// Cortical Column - v10.0 with Frequency Drift + Amplitude Envelopes
+//
+// v10.0 CHANGES (EEG Realism - Phase 8):
+// - Added omega_drift_* input ports for per-layer frequency drift
+// - Frequency drift applied: omega_effective = OMEGA_DT_base + drift
+// - Creates ~1 Hz spectral peak spreading for natural EEG appearance
+// - Combined with existing amplitude envelopes for full EEG realism
 //
 // v9.6 CHANGES (Extended L6 Connectivity - Phase 7):
 // - Added L6 → L2/3 alpha-gamma coupling (K_L6_L23 = 0.15)
@@ -126,7 +132,8 @@
 
 module cortical_column #(
     parameter WIDTH = 18,
-    parameter FRAC = 14
+    parameter FRAC = 14,
+    parameter COLUMN_ID = 0  // v10.0: Unique ID for envelope LFSR seeds
 )(
     input  wire clk,
     input  wire rst,
@@ -155,6 +162,14 @@ module cortical_column #(
 
     // v9.5: State-dependent Ca2+ threshold for dendritic compartments
     input  wire signed [WIDTH-1:0] ca_threshold,
+
+    // v10.0: Frequency drift inputs (signed offset from base OMEGA_DT)
+    // Range: ±0.5 Hz (~±13 OMEGA_DT units) for natural spectral spreading
+    input  wire signed [WIDTH-1:0] omega_drift_l6,
+    input  wire signed [WIDTH-1:0] omega_drift_l5a,
+    input  wire signed [WIDTH-1:0] omega_drift_l5b,
+    input  wire signed [WIDTH-1:0] omega_drift_l4,
+    input  wire signed [WIDTH-1:0] omega_drift_l23,
 
     input  wire signed [WIDTH-1:0] mu_dt_l6,
     input  wire signed [WIDTH-1:0] mu_dt_l5b,
@@ -194,23 +209,36 @@ localparam signed [WIDTH-1:0] OMEGA_DT_L23_FAST = 18'sd1681;  // 65.3 Hz (fast g
 // v8.1: Theta-phase-dependent gamma frequency selection
 // encoding_window=1 → fast gamma (65.3 Hz) for precise temporal coding during sensory input
 // encoding_window=0 → slow gamma (40.36 Hz) matches CA3 reactivation during retrieval
-wire signed [WIDTH-1:0] omega_dt_l23_active;
-assign omega_dt_l23_active = encoding_window ? OMEGA_DT_L23_FAST : OMEGA_DT_L23;
+wire signed [WIDTH-1:0] omega_dt_l23_base;
+assign omega_dt_l23_base = encoding_window ? OMEGA_DT_L23_FAST : OMEGA_DT_L23;
 
-// v8.6: Coupling constants for canonical microcircuit
-localparam signed [WIDTH-1:0] K_L4_L23 = 18'sd6554;  // 0.4 - L4 → L2/3
-localparam signed [WIDTH-1:0] K_L23_L5 = 18'sd4915;  // 0.3 - L2/3 → L5 (canonical pathway)
-localparam signed [WIDTH-1:0] K_L5_L6  = 18'sd3277;  // 0.2 - L5b → L6 intra-column feedback
-localparam signed [WIDTH-1:0] K_PAC    = 18'sd3277;  // 0.2 - PAC modulation
-localparam signed [WIDTH-1:0] K_FB_L5  = 18'sd3277;  // 0.2 - Inter-column feedback
+//-----------------------------------------------------------------------------
+// v10.0: Effective OMEGA_DT with Frequency Drift
+// Each layer's frequency drifts slowly (±0.5 Hz) for natural spectral spreading
+// omega_effective = OMEGA_DT_base + drift_offset
+//-----------------------------------------------------------------------------
+wire signed [WIDTH-1:0] omega_eff_l6, omega_eff_l5a, omega_eff_l5b, omega_eff_l4, omega_eff_l23;
 
-// v8.8: L6 output connectivity constants
-localparam signed [WIDTH-1:0] K_L6_L5A = 18'sd2458;  // 0.15 - L6 → L5a intra-column
-localparam signed [WIDTH-1:0] K_L4_L5A = 18'sd1638;  // 0.1 - L4 → L5a bypass (fast sensorimotor)
+assign omega_eff_l6  = OMEGA_DT_L6  + omega_drift_l6;
+assign omega_eff_l5a = OMEGA_DT_L5A + omega_drift_l5a;
+assign omega_eff_l5b = OMEGA_DT_L5B + omega_drift_l5b;
+assign omega_eff_l4  = OMEGA_DT_L4  + omega_drift_l4;
+assign omega_eff_l23 = omega_dt_l23_base + omega_drift_l23;
 
-// v9.6: Extended L6 output connectivity
-localparam signed [WIDTH-1:0] K_L6_L23 = 18'sd2458;  // 0.15 - L6 → L2/3 alpha-gamma coupling
-localparam signed [WIDTH-1:0] K_L6_L5B = 18'sd1638;  // 0.1 - L6 → L5b intra-column feedback
+// v8.6: Coupling constants for canonical microcircuit (MINIMAL for frequency separation test)
+localparam signed [WIDTH-1:0] K_L4_L23 = 18'sd820;   // 0.05 - L4 → L2/3 (minimal)
+localparam signed [WIDTH-1:0] K_L23_L5 = 18'sd328;   // 0.02 - L2/3 → L5 (minimal)
+localparam signed [WIDTH-1:0] K_L5_L6  = 18'sd328;   // 0.02 - L5b → L6 (minimal)
+localparam signed [WIDTH-1:0] K_PAC    = 18'sd328;   // 0.02 - PAC modulation (minimal)
+localparam signed [WIDTH-1:0] K_FB_L5  = 18'sd328;   // 0.02 - Inter-column feedback (minimal)
+
+// v8.8: L6 output connectivity constants (MINIMAL for frequency separation)
+localparam signed [WIDTH-1:0] K_L6_L5A = 18'sd328;   // 0.02 - L6 → L5a (minimal)
+localparam signed [WIDTH-1:0] K_L4_L5A = 18'sd328;   // 0.02 - L4 → L5a bypass (minimal)
+
+// v9.6: Extended L6 output connectivity (MINIMAL for frequency separation)
+localparam signed [WIDTH-1:0] K_L6_L23 = 18'sd164;   // 0.01 - L6 → L2/3 (minimal)
+localparam signed [WIDTH-1:0] K_L6_L5B = 18'sd328;   // 0.02 - L6 → L5b (minimal)
 
 // v9.2: PV+ interneuron now uses separate module with its own dynamics
 // K_PV, K_EXCITE, TAU_INV are inside pv_interneuron.v
@@ -482,16 +510,117 @@ dendritic_compartment #(
     .bac_active(l23_bac)
 );
 
+//=============================================================================
+// v10.0: Amplitude Envelope Generators (Biological Realism - Phase 4)
+//=============================================================================
+// Each layer gets its own O-U process envelope for slow amplitude modulation.
+// Creates biological "alpha breathing" effect where oscillator amplitudes
+// wax and wane over 2-5 second timescales.
+//
+// Envelope range: 0.5 to 1.5 (modulates MU, not replaces it)
+// mu_effective = (mu_dt * envelope) >>> FRAC
+//
+// LFSR seeds are derived from COLUMN_ID to ensure different columns
+// have uncorrelated envelope patterns.
+
+// Envelope signals
+wire signed [WIDTH-1:0] envelope_l6, envelope_l5b, envelope_l5a, envelope_l4, envelope_l23;
+
+// Modulated MU values
+wire signed [2*WIDTH-1:0] mu_mod_l6_full, mu_mod_l5b_full, mu_mod_l5a_full, mu_mod_l4_full, mu_mod_l23_full;
+wire signed [WIDTH-1:0] mu_mod_l6, mu_mod_l5b, mu_mod_l5a, mu_mod_l4, mu_mod_l23;
+
+// Default tau_inv (3 second time constant)
+localparam signed [WIDTH-1:0] DEFAULT_TAU_INV = 18'sd1;
+
+// Envelope generator for L6 (alpha band)
+amplitude_envelope_generator #(
+    .WIDTH(WIDTH),
+    .FRAC(FRAC)
+) env_l6 (
+    .clk(clk),
+    .rst(rst),
+    .clk_en(clk_en),
+    .seed(16'hA5C3 + (COLUMN_ID * 16'h1111)),  // Unique seed per column
+    .tau_inv(DEFAULT_TAU_INV),
+    .envelope(envelope_l6)
+);
+
+// Envelope generator for L5b (high beta)
+amplitude_envelope_generator #(
+    .WIDTH(WIDTH),
+    .FRAC(FRAC)
+) env_l5b (
+    .clk(clk),
+    .rst(rst),
+    .clk_en(clk_en),
+    .seed(16'hB4D2 + (COLUMN_ID * 16'h1111)),
+    .tau_inv(DEFAULT_TAU_INV),
+    .envelope(envelope_l5b)
+);
+
+// Envelope generator for L5a (low beta)
+amplitude_envelope_generator #(
+    .WIDTH(WIDTH),
+    .FRAC(FRAC)
+) env_l5a (
+    .clk(clk),
+    .rst(rst),
+    .clk_en(clk_en),
+    .seed(16'hC3E1 + (COLUMN_ID * 16'h1111)),
+    .tau_inv(DEFAULT_TAU_INV),
+    .envelope(envelope_l5a)
+);
+
+// Envelope generator for L4 (gamma boundary)
+amplitude_envelope_generator #(
+    .WIDTH(WIDTH),
+    .FRAC(FRAC)
+) env_l4 (
+    .clk(clk),
+    .rst(rst),
+    .clk_en(clk_en),
+    .seed(16'hD2F0 + (COLUMN_ID * 16'h1111)),
+    .tau_inv(DEFAULT_TAU_INV),
+    .envelope(envelope_l4)
+);
+
+// Envelope generator for L2/3 (gamma)
+amplitude_envelope_generator #(
+    .WIDTH(WIDTH),
+    .FRAC(FRAC)
+) env_l23 (
+    .clk(clk),
+    .rst(rst),
+    .clk_en(clk_en),
+    .seed(16'hE1AF + (COLUMN_ID * 16'h1111)),
+    .tau_inv(DEFAULT_TAU_INV),
+    .envelope(envelope_l23)
+);
+
+// Compute modulated MU values: mu_effective = (mu_dt * envelope) >>> FRAC
+assign mu_mod_l6_full = mu_dt_l6 * envelope_l6;
+assign mu_mod_l5b_full = mu_dt_l5b * envelope_l5b;
+assign mu_mod_l5a_full = mu_dt_l5a * envelope_l5a;
+assign mu_mod_l4_full = mu_dt_l4 * envelope_l4;
+assign mu_mod_l23_full = mu_dt_l23 * envelope_l23;
+
+assign mu_mod_l6 = mu_mod_l6_full >>> FRAC;
+assign mu_mod_l5b = mu_mod_l5b_full >>> FRAC;
+assign mu_mod_l5a = mu_mod_l5a_full >>> FRAC;
+assign mu_mod_l4 = mu_mod_l4_full >>> FRAC;
+assign mu_mod_l23 = mu_mod_l23_full >>> FRAC;
+
 hopf_oscillator #(.WIDTH(WIDTH), .FRAC(FRAC)) osc_l6 (
     .clk(clk), .rst(rst), .clk_en(clk_en),
-    .mu_dt(mu_dt_l6), .omega_dt(OMEGA_DT_L6),
+    .mu_dt(mu_mod_l6), .omega_dt(omega_eff_l6),  // v10.0: modulated MU + frequency drift
     .input_x(l6_input),
     .x(l6_x_int), .y(l6_y_int), .amplitude(l6_amp)
 );
 
 hopf_oscillator #(.WIDTH(WIDTH), .FRAC(FRAC)) osc_l5b (
     .clk(clk), .rst(rst), .clk_en(clk_en),
-    .mu_dt(mu_dt_l5b), .omega_dt(OMEGA_DT_L5B),
+    .mu_dt(mu_mod_l5b), .omega_dt(omega_eff_l5b),  // v10.0: modulated MU + frequency drift
     .input_x(l5b_input),  // v8.8: separate L5b input
     .x(l5b_x_int), .y(l5b_y_int), .amplitude(l5b_amp)
 );
@@ -499,14 +628,14 @@ hopf_oscillator #(.WIDTH(WIDTH), .FRAC(FRAC)) osc_l5b (
 // v8.8: L5a now has separate input with L6 feedback and L4 bypass
 hopf_oscillator #(.WIDTH(WIDTH), .FRAC(FRAC)) osc_l5a (
     .clk(clk), .rst(rst), .clk_en(clk_en),
-    .mu_dt(mu_dt_l5a), .omega_dt(OMEGA_DT_L5A),
+    .mu_dt(mu_mod_l5a), .omega_dt(omega_eff_l5a),  // v10.0: modulated MU + frequency drift
     .input_x(l5a_input),  // v8.8: separate L5a input (L2/3 + L6 + L4_bypass)
     .x(l5a_x_int), .y(l5a_y_int), .amplitude(l5a_amp)
 );
 
 hopf_oscillator #(.WIDTH(WIDTH), .FRAC(FRAC)) osc_l4 (
     .clk(clk), .rst(rst), .clk_en(clk_en),
-    .mu_dt(mu_dt_l4), .omega_dt(OMEGA_DT_L4),
+    .mu_dt(mu_mod_l4), .omega_dt(omega_eff_l4),  // v10.0: modulated MU + frequency drift
     .input_x(l4_input),
     .x(l4_x_int), .y(l4_y_int), .amplitude(l4_amp)
 );
@@ -514,7 +643,7 @@ hopf_oscillator #(.WIDTH(WIDTH), .FRAC(FRAC)) osc_l4 (
 // v8.1: L2/3 now uses dynamic omega based on theta phase (gamma nesting)
 hopf_oscillator #(.WIDTH(WIDTH), .FRAC(FRAC)) osc_l23 (
     .clk(clk), .rst(rst), .clk_en(clk_en),
-    .mu_dt(mu_dt_l23), .omega_dt(omega_dt_l23_active),  // v8.1: theta-phase dependent
+    .mu_dt(mu_mod_l23), .omega_dt(omega_eff_l23),  // v10.0: theta-phase + frequency drift + modulated MU
     .input_x(l23_input),
     .x(l23_x_int), .y(l23_y_int), .amplitude(l23_amp)
 );

@@ -106,6 +106,13 @@ cortical_column #(
     .phase_couple_l6(phase_couple_l6),
     .encoding_window(encoding_window),
     .attention_input(18'sd0),  // v9.4: No attention for PING tests
+    .ca_threshold(18'sd8192),  // v9.5: Default Ca2+ threshold (0.5)
+    // v10.0: No frequency drift for PING tests
+    .omega_drift_l6(18'sd0),
+    .omega_drift_l5a(18'sd0),
+    .omega_drift_l5b(18'sd0),
+    .omega_drift_l4(18'sd0),
+    .omega_drift_l23(18'sd0),
     .mu_dt_l6(mu_dt_l6),
     .mu_dt_l5b(mu_dt_l5b),
     .mu_dt_l5a(mu_dt_l5a),

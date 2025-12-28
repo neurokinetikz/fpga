@@ -76,6 +76,7 @@ layer1_minimal #(
     .feedback_input_1(feedback_input_1),
     .feedback_input_2(feedback_input_2),
     .attention_input(attention_input),
+    .l6_direct_input(18'sd0),                       // v9.6
     .apical_gain(apical_gain),
     .sst_activity_out(sst_activity),
     .vip_activity_out(vip_activity),
@@ -387,8 +388,9 @@ initial begin
         reg pass_clamp;
         pass_clamp = 1;
 
+        // v9.6: Bounds changed from [0.5, 1.5] to [0.25, 2.0]
         $display("  Baseline gain: %0d (expected ~16384)", apical_gain);
-        if (apical_gain < 18'sd8192 || apical_gain > 18'sd24576) begin
+        if (apical_gain < 18'sd4096 || apical_gain > 18'sd32768) begin
             pass_clamp = 0;
         end
 
@@ -397,13 +399,13 @@ initial begin
         attention_input = 0;
         wait_cycles(500);
 
-        $display("  High SST+ gain: %0d (max 24576)", apical_gain);
-        if (apical_gain > 18'sd24576) begin
+        $display("  High SST+ gain: %0d (max 32768 = 2.0)", apical_gain);
+        if (apical_gain > 18'sd32768) begin
             pass_clamp = 0;
         end
 
         if (pass_clamp) begin
-            $display("  PASS: Gain clamped to [0.5, 1.5]");
+            $display("  PASS: Gain clamped to [0.25, 2.0] (v9.6)");
             pass_count = pass_count + 1;
         end else begin
             $display("  FAIL: Gain outside valid range");

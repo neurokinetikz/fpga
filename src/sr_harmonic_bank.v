@@ -89,10 +89,11 @@ localparam signed [WIDTH-1:0] OMEGA_DT_F2 = 18'sd514;   // 20 Hz (3rd SR mode)
 localparam signed [WIDTH-1:0] OMEGA_DT_F3 = 18'sd643;   // 25 Hz (4th SR mode)
 localparam signed [WIDTH-1:0] OMEGA_DT_F4 = 18'sd823;   // 32 Hz (5th SR mode)
 
-// Beta quiet threshold: 0.9375 in Q14
-// At MU=4 (NORMAL), amplitude ~2.0, |x| avg ~1.27 - rarely quiet
-// At MU=2 (MEDITATION), amplitude ~1.41, |x| avg ~0.90 - frequently quiet
-localparam signed [WIDTH-1:0] BETA_QUIET_THRESHOLD = 18'sd15360;
+// Beta quiet threshold: 0.35 in Q14 (v7.5 - calibrated to actual oscillator behavior)
+// Observed: At MU=4 (NORMAL), |x| avg ~0.46 - need lower threshold
+// Threshold 0.35 means beta is only "quiet" when dampened below normal operation
+// This prevents false SR ignition in NORMAL resting state
+localparam signed [WIDTH-1:0] BETA_QUIET_THRESHOLD = 18'sd5734;  // 0.35 in Q14
 
 // Coherence threshold: 0.75 in Q14 (high phase-locking = SIE state)
 localparam signed [WIDTH-1:0] COHERENCE_THRESHOLD = 18'sd12288;

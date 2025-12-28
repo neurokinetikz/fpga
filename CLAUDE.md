@@ -4,7 +4,7 @@
 
 This is an FPGA implementation of a biologically-realistic neural oscillator system based on the **φⁿ (golden ratio) frequency architecture** with Schumann Resonance coupling. The system implements 21 Hopf oscillators organized into a thalamo-cortical architecture for neural signal processing and consciousness state modeling.
 
-**Current Version:** v9.6 (Extended L6 Connectivity)
+**Current Version:** v10.2 (EEG Realism)
 **Target Platform:** Digilent Zybo Z7-20 (Xilinx Zynq-7020)
 
 ## Quick Start
@@ -49,24 +49,27 @@ make clean             # Clean generated files
 
 ```
 fpga/
-├── src/                          # Verilog source modules (16 files)
-│   ├── phi_n_neural_processor.v  # Top-level (v9.5, 21 oscillators + dendritic)
+├── src/                          # Verilog source modules (19 files)
+│   ├── phi_n_neural_processor.v  # Top-level (v10.2, 21 oscillators + EEG realism)
 │   ├── hopf_oscillator.v         # Core oscillator (v6.0, dx/dt = μx - ωy - r²x)
 │   ├── hopf_oscillator_stochastic.v # Stochastic variant with noise input
 │   ├── ca3_phase_memory.v        # Hebbian phase memory (v8.0, theta-gated)
 │   ├── thalamus.v                # Theta + SR + matrix + L6 inhibition (v8.8)
-│   ├── cortical_column.v         # 6-layer cortical model (v9.6, extended L6)
+│   ├── cortical_column.v         # 6-layer cortical model (v10.0, freq drift)
 │   ├── dendritic_compartment.v   # v9.5: Two-compartment dendritic model
 │   ├── layer1_minimal.v          # Layer 1 with L6 input (v9.6)
 │   ├── pv_interneuron.v          # PV+ basket cell dynamics (v9.2)
 │   ├── sr_harmonic_bank.v        # 5-harmonic SR bank (v7.4, continuous gain)
 │   ├── sr_noise_generator.v      # Per-harmonic stochastic noise (5 LFSRs)
 │   ├── sr_frequency_drift.v      # v8.5: Realistic SR frequency drift
-│   ├── config_controller.v       # Consciousness states (v9.5, state-dependent Ca²⁺)
+│   ├── sr_ignition_controller.v  # v10.0: Six-phase SIE state machine
+│   ├── amplitude_envelope_generator.v # v10.0: O-U process for alpha breathing
+│   ├── cortical_frequency_drift.v # v10.2: Slow drift + fast jitter
+│   ├── config_controller.v       # Consciousness states (v10.0, SIE timing)
 │   ├── clock_enable_generator.v  # FAST_SIM-aware 4kHz clock (v6.0)
 │   ├── pink_noise_generator.v    # 1/f noise (v5.5, Voss-McCartney)
-│   └── output_mixer.v            # DAC output mixing (v5.5)
-├── tb/                           # Testbenches (25 files)
+│   └── output_mixer.v            # DAC output mixing (v7.3, envelope modulation)
+├── tb/                           # Testbenches (27 files)
 │   ├── tb_full_system_fast.v     # Full system integration (v6.5, 15 tests)
 │   ├── tb_theta_phase_multiplexing.v # Theta phase tests (19 tests)
 │   ├── tb_scaffold_architecture.v    # Scaffold layer tests (14 tests)
@@ -77,6 +80,9 @@ fpga/
 │   ├── tb_l6_connectivity.v      # v8.8: L6 output target tests (10 tests)
 │   ├── tb_l6_extended.v          # v9.6: Extended L6 connectivity tests (10 tests)
 │   ├── tb_dendritic_compartment.v # v9.5: Dendritic Ca²⁺/BAC tests (10 tests)
+│   ├── tb_amplitude_envelope.v   # v10.0: O-U envelope tests (8 tests)
+│   ├── tb_sr_ignition_phases.v   # v10.0: SIE phase evolution tests (10 tests)
+│   ├── tb_eeg_export.v           # v10.0: EEG data export testbench
 │   ├── tb_learning_fast.v        # CA3 learning test (v2.1, 8 tests)
 │   ├── tb_hopf_oscillator.v      # Hopf oscillator unit test
 │   ├── tb_state_transitions.v    # State machine test (12 tests)
@@ -84,11 +90,13 @@ fpga/
 │   └── ...                       # Other testbenches
 ├── scripts/                      # Simulation and analysis scripts
 │   ├── visualize_*.py            # Python visualization
+│   ├── dac_spectrogram.py        # v10.2: DAC output spectrogram analysis
+│   ├── analyze_eeg_comparison.py # v10.0: Comprehensive EEG analysis
 │   └── run_vivado_*.tcl          # Vivado TCL scripts
 ├── docs/                         # Specifications
 │   ├── FPGA_SPECIFICATION_V8.md  # Base architecture spec (v8.0)
-│   ├── SPEC_v8.7_UPDATE.md       # Current version (v8.7)
-│   ├── SPEC_v8.6_UPDATE.md       # Canonical microcircuit (v8.6)
+│   ├── SPEC_v10.2_UPDATE.md      # Current version (v10.2 EEG Realism)
+│   ├── SPEC_v9.6_UPDATE.md       # Extended L6 connectivity (v9.6)
 │   └── SYSTEM_DESCRIPTION.md     # Comprehensive system description
 └── Makefile
 ```
@@ -204,10 +212,30 @@ fpga/
 | K_L6_L23 | 2458 | 0.15 | L6 → L2/3 alpha-gamma coupling (v9.6) |
 | K_L6_L5B | 1638 | 0.1 | L6 → L5b intra-column feedback (v9.6) |
 | K_L6_L1 | 1638 | 0.1 | L6 → L1 direct gain modulation (v9.6) |
+| ENVELOPE_MIN | 8192 | 0.5 | Amplitude envelope minimum (v10.0) |
+| ENVELOPE_MAX | 24576 | 1.5 | Amplitude envelope maximum (v10.0) |
+| ENVELOPE_MEAN | 16384 | 1.0 | Amplitude envelope equilibrium (v10.0) |
+| DRIFT_MAX | 13 | ±0.5 Hz | Cortical frequency drift range (v10.0) |
+| JITTER_MAX | 13 | ±0.5 Hz | Fast frequency jitter range (v10.2) |
+| W_THETA | 328 | 0.02 | Output mixer theta weight (v7.3) |
+| W_ALPHA | 492 | 0.03 | Output mixer alpha weight (v7.3) |
+| W_BETA | 328 | 0.02 | Output mixer beta weight (v7.3) |
+| W_GAMMA | 164 | 0.01 | Output mixer gamma weight (v7.3) |
+| W_PINK_NOISE | 15073 | 0.92 | Output mixer 1/f noise weight (v7.3) |
+| SIE_COHERENCE_THRESH | 9830 | 0.60 | SR ignition trigger threshold (v10.0) |
+| SIE_GAIN_BASELINE | 0 | 0.0 | SR baseline gain (v10.0, coherence-gated) |
+| SIE_GAIN_PEAK | 16384 | 1.0 | SR peak gain during ignition (v10.0) |
 
 ## Current Specification
 
-See [docs/SPEC_v9.6_UPDATE.md](docs/SPEC_v9.6_UPDATE.md) for the latest v9.6 architecture with:
+See [docs/SPEC_v10.2_UPDATE.md](docs/SPEC_v10.2_UPDATE.md) for the latest v10.2 EEG Realism architecture with:
+- **Spectral Broadening** (v10.2): Fast frequency jitter (±0.5 Hz/sample) for ~1-2 Hz wide peaks
+- **Envelope Integration** (v10.1): Per-band amplitude envelopes connected to output mixer
+- **EEG Realism Phase 1** (v10.0): Amplitude envelopes, slow drift, SIE controller
+- **1/f-Dominated Spectrum** (v7.3): 8% oscillators, 92% pink noise for realistic EEG
+- **Coherence-Gated SR** (v10.0): SR only appears during ignition events (GAIN_BASELINE = 0)
+
+Previous architecture features (v9.x series):
 - **Extended L6 Connectivity** (v9.6): L6→L2/3, L6→L5b, L6→L1 modulatory pathways (all basal compartment)
 - **Two-Compartment Dendritic Model** (v9.5): Basal/apical separation with Ca²⁺ spike dynamics and BAC firing
 - **State-Dependent Ca²⁺ Threshold** (v9.5): Lower in PSYCHEDELIC (more Ca²⁺), higher in ANESTHESIA (fewer Ca²⁺)
@@ -224,13 +252,12 @@ See [docs/SPEC_v9.6_UPDATE.md](docs/SPEC_v9.6_UPDATE.md) for the latest v9.6 arc
 - Theta phase multiplexing (8-phase encoding/retrieval windows)
 - Scaffold architecture (L4/L5b stable, L2/3/L6 plastic)
 - Gamma-theta nesting (L2/3 frequency switching: 65.3/40.36 Hz)
-- Continuous coherence-based SR gain (replaces binary SIE)
 
 Base specification: [docs/FPGA_SPECIFICATION_V8.md](docs/FPGA_SPECIFICATION_V8.md)
 
 ## Testing
 
-All testbenches should pass. Key tests (206+ total):
+All testbenches should pass. Key tests (226+ total):
 - `tb_full_system_fast`: 15/15 tests - full integration (v6.5)
 - `tb_theta_phase_multiplexing`: 19/19 tests - theta phase (v8.3)
 - `tb_scaffold_architecture`: 14/14 tests - scaffold layers (v8.0)
@@ -246,6 +273,8 @@ All testbenches should pass. Key tests (206+ total):
 - `tb_vip_disinhibition`: 8/8 tests - VIP+ disinhibition (v9.4)
 - `tb_dendritic_compartment`: 10/10 tests - Dendritic Ca²⁺/BAC (v9.5)
 - `tb_l6_extended`: 10/10 tests - Extended L6 connectivity (v9.6)
+- `tb_amplitude_envelope`: 8/8 tests - O-U envelope dynamics (v10.0)
+- `tb_sr_ignition_phases`: 10/10 tests - SIE phase evolution (v10.0)
 - `tb_multi_harmonic_sr`: 17/17 tests - multi-harmonic SR
 - `tb_learning_fast`: 8/8 tests - CA3 Hebbian learning (v2.1)
 - `tb_sr_coupling`: 12/12 tests - SR coupling

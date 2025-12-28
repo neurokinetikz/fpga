@@ -64,12 +64,12 @@ localparam signed [WIDTH-1:0] OMEGA_CENTER_2 = 18'sd514;   // f2: 20 Hz
 localparam signed [WIDTH-1:0] OMEGA_CENTER_3 = 18'sd643;   // f3: 25 Hz
 localparam signed [WIDTH-1:0] OMEGA_CENTER_4 = 18'sd823;   // f4: 32 Hz
 
-// Expected drift ranges
-localparam signed [WIDTH-1:0] DRIFT_MAX_0 = 18'sd15;    // f0: ±0.6 Hz
-localparam signed [WIDTH-1:0] DRIFT_MAX_1 = 18'sd19;    // f1: ±0.75 Hz
-localparam signed [WIDTH-1:0] DRIFT_MAX_2 = 18'sd26;    // f2: ±1 Hz
-localparam signed [WIDTH-1:0] DRIFT_MAX_3 = 18'sd39;    // f3: ±1.5 Hz
-localparam signed [WIDTH-1:0] DRIFT_MAX_4 = 18'sd51;    // f4: ±2 Hz
+// Expected drift ranges (v2.0: 1.5× wider for visible spectrogram wobble)
+localparam signed [WIDTH-1:0] DRIFT_MAX_0 = 18'sd23;    // f0: ±0.9 Hz (was ±15)
+localparam signed [WIDTH-1:0] DRIFT_MAX_1 = 18'sd28;    // f1: ±1.1 Hz (was ±19)
+localparam signed [WIDTH-1:0] DRIFT_MAX_2 = 18'sd39;    // f2: ±1.5 Hz (was ±26)
+localparam signed [WIDTH-1:0] DRIFT_MAX_3 = 18'sd58;    // f3: ±2.25 Hz (was ±39)
+localparam signed [WIDTH-1:0] DRIFT_MAX_4 = 18'sd77;    // f4: ±3.0 Hz (was ±51)
 
 // Track min/max drift for each harmonic
 reg signed [WIDTH-1:0] min_drift [0:NUM_HARMONICS-1];
@@ -156,15 +156,15 @@ initial begin
     $display("Harmonic 3: drift range [%0d, %0d], max allowed ±%0d", min_drift[3], max_drift[3], DRIFT_MAX_3);
     $display("Harmonic 4: drift range [%0d, %0d], max allowed ±%0d", min_drift[4], max_drift[4], DRIFT_MAX_4);
 
-    report_test("f0 drift stays within ±15",
+    report_test("f0 drift stays within ±23",
                 min_drift[0] >= -DRIFT_MAX_0 && max_drift[0] <= DRIFT_MAX_0);
-    report_test("f1 drift stays within ±19",
+    report_test("f1 drift stays within ±28",
                 min_drift[1] >= -DRIFT_MAX_1 && max_drift[1] <= DRIFT_MAX_1);
-    report_test("f2 drift stays within ±26",
+    report_test("f2 drift stays within ±39",
                 min_drift[2] >= -DRIFT_MAX_2 && max_drift[2] <= DRIFT_MAX_2);
-    report_test("f3 drift stays within ±39",
+    report_test("f3 drift stays within ±58",
                 min_drift[3] >= -DRIFT_MAX_3 && max_drift[3] <= DRIFT_MAX_3);
-    report_test("f4 drift stays within ±51",
+    report_test("f4 drift stays within ±77",
                 min_drift[4] >= -DRIFT_MAX_4 && max_drift[4] <= DRIFT_MAX_4);
 
     //=========================================================================

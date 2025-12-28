@@ -1,5 +1,8 @@
 //=============================================================================
-// Output Mixer - v5.5
+// Output Mixer - v7.0
+// Per-band amplitude envelope modulation for EEG-realistic spectral dynamics
+// v7.0: Added envelope inputs for "alpha breathing" effect (2-5s timescales)
+// v6.0: Added theta + L6 alpha inputs, reweighted for ~10 Hz alpha peak
 //=============================================================================
 `timescale 1ns / 1ps
 
@@ -11,27 +14,77 @@ module output_mixer #(
     input  wire rst,
     input  wire clk_en,
 
-    input  wire signed [WIDTH-1:0] motor_l23_x,
-    input  wire signed [WIDTH-1:0] motor_l5a_x,
-    input  wire signed [WIDTH-1:0] pink_noise,
+    // 5-channel input for realistic EEG spectrum
+    input  wire signed [WIDTH-1:0] theta_x,       // 5.89 Hz - thalamic theta
+    input  wire signed [WIDTH-1:0] motor_l6_x,    // 9.53 Hz - alpha (L6)
+    input  wire signed [WIDTH-1:0] motor_l5a_x,   // 15.42 Hz - low beta
+    input  wire signed [WIDTH-1:0] motor_l23_x,   // 40.36 Hz - gamma
+    input  wire signed [WIDTH-1:0] pink_noise,    // 1/f broadband
+
+    // v7.0: Per-band amplitude envelopes (Q14 format, 0.5-1.5 range, mean 1.0)
+    input  wire signed [WIDTH-1:0] env_theta,     // Theta band envelope
+    input  wire signed [WIDTH-1:0] env_alpha,     // Alpha band envelope
+    input  wire signed [WIDTH-1:0] env_beta,      // Beta band envelope
+    input  wire signed [WIDTH-1:0] env_gamma,     // Gamma band envelope
 
     output reg signed [WIDTH-1:0] mixed_output,
     output wire [11:0] dac_output
 );
 
-localparam signed [WIDTH-1:0] W_MOTOR_GAMMA = 18'sd6554;
-localparam signed [WIDTH-1:0] W_MOTOR_BETA  = 18'sd4915;
-localparam signed [WIDTH-1:0] W_PINK_NOISE  = 18'sd3277;
+// v7.3: Minimal oscillator weights for EEG-realistic 1/f-dominated spectrum
+// Target: 1/f slope dominates, oscillator peaks barely visible (~1-2 dB above floor)
+// Real EEG: oscillators are subtle modulations on 1/f background
+// Total oscillators: ~8%, pink noise: ~92%
+localparam signed [WIDTH-1:0] W_THETA      = 18'sd328;   // 0.02 - theta (was 0.04)
+localparam signed [WIDTH-1:0] W_ALPHA      = 18'sd492;   // 0.03 - alpha peak (was 0.06)
+localparam signed [WIDTH-1:0] W_BETA       = 18'sd328;   // 0.02 - low beta (was 0.04)
+localparam signed [WIDTH-1:0] W_GAMMA      = 18'sd164;   // 0.01 - gamma (was 0.025)
+localparam signed [WIDTH-1:0] W_PINK_NOISE = 18'sd15073; // 0.92 - 1/f background dominates (was 0.835)
 
-wire signed [2*WIDTH-1:0] term_gamma, term_beta, term_noise;
+// Default envelope value (1.0 = no modulation)
+localparam signed [WIDTH-1:0] ENVELOPE_UNITY = 18'sd16384;
+
+//-----------------------------------------------------------------------------
+// v7.0: Envelope Modulation
+// Each oscillator signal is multiplied by its envelope before weighting
+// Envelope range [0.5, 1.5] creates natural amplitude "breathing"
+//-----------------------------------------------------------------------------
+wire signed [2*WIDTH-1:0] mod_theta_full, mod_alpha_full, mod_beta_full, mod_gamma_full;
+wire signed [WIDTH-1:0] mod_theta, mod_alpha, mod_beta, mod_gamma;
+
+// Use envelope if valid (non-zero), otherwise use unity (no modulation)
+wire signed [WIDTH-1:0] env_theta_eff  = (env_theta  != 0) ? env_theta  : ENVELOPE_UNITY;
+wire signed [WIDTH-1:0] env_alpha_eff  = (env_alpha  != 0) ? env_alpha  : ENVELOPE_UNITY;
+wire signed [WIDTH-1:0] env_beta_eff   = (env_beta   != 0) ? env_beta   : ENVELOPE_UNITY;
+wire signed [WIDTH-1:0] env_gamma_eff  = (env_gamma  != 0) ? env_gamma  : ENVELOPE_UNITY;
+
+// Envelope modulation: signal * envelope / 16384
+assign mod_theta_full = theta_x     * env_theta_eff;
+assign mod_alpha_full = motor_l6_x  * env_alpha_eff;
+assign mod_beta_full  = motor_l5a_x * env_beta_eff;
+assign mod_gamma_full = motor_l23_x * env_gamma_eff;
+
+// Scale back to Q14 (divide by 16384)
+assign mod_theta = mod_theta_full >>> FRAC;
+assign mod_alpha = mod_alpha_full >>> FRAC;
+assign mod_beta  = mod_beta_full  >>> FRAC;
+assign mod_gamma = mod_gamma_full >>> FRAC;
+
+//-----------------------------------------------------------------------------
+// Weighted mixing (using envelope-modulated signals)
+//-----------------------------------------------------------------------------
+wire signed [2*WIDTH-1:0] term_theta, term_alpha, term_beta, term_gamma, term_noise;
 wire signed [2*WIDTH-1:0] sum_full;
 wire signed [WIDTH-1:0] sum_scaled;
 
-assign term_gamma = motor_l23_x * W_MOTOR_GAMMA;
-assign term_beta  = motor_l5a_x * W_MOTOR_BETA;
-assign term_noise = pink_noise  * W_PINK_NOISE;
+assign term_theta = mod_theta * W_THETA;
+assign term_alpha = mod_alpha * W_ALPHA;
+assign term_beta  = mod_beta  * W_BETA;
+assign term_gamma = mod_gamma * W_GAMMA;
+assign term_noise = pink_noise * W_PINK_NOISE;  // Pink noise NOT modulated
 
-assign sum_full = term_gamma + term_beta + term_noise;
+// Sum all weighted terms
+assign sum_full = term_theta + term_alpha + term_beta + term_gamma + term_noise;
 assign sum_scaled = sum_full >>> FRAC;
 
 always @(posedge clk or posedge rst) begin
@@ -42,10 +95,11 @@ always @(posedge clk or posedge rst) begin
     end
 end
 
+// 12-bit DAC output with offset to unsigned range
 wire signed [WIDTH-1:0] shifted;
 wire [15:0] dac_raw;
 
-assign shifted = mixed_output + 18'sd16384;
+assign shifted = mixed_output + 18'sd16384;  // Shift to positive
 assign dac_raw = shifted[17:3];
 assign dac_output = (dac_raw > 16'd4095) ? 12'd4095 : dac_raw[11:0];
 

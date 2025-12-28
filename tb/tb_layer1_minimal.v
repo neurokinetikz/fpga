@@ -43,6 +43,8 @@ wire signed [WIDTH-1:0] sst_effective;
 localparam signed [WIDTH-1:0] GAIN_1_0 = 18'sd16384;  // 1.0
 localparam signed [WIDTH-1:0] GAIN_0_5 = 18'sd8192;   // 0.5
 localparam signed [WIDTH-1:0] GAIN_1_5 = 18'sd24576;  // 1.5
+localparam signed [WIDTH-1:0] GAIN_2_0 = 18'sd32768;  // 2.0 (v9.6 upper bound)
+localparam signed [WIDTH-1:0] GAIN_0_25 = 18'sd4096;  // 0.25 (v9.6 lower bound)
 localparam signed [WIDTH-1:0] ONE = 18'sd16384;       // 1.0 for input
 
 // v9.1: Weights for gain calculation (match layer1_minimal.v)
@@ -69,6 +71,7 @@ layer1_minimal #(
     .feedback_input_1(feedback_input_1),
     .feedback_input_2(feedback_input_2),
     .attention_input(attention_input),              // v9.4
+    .l6_direct_input(18'sd0),                       // v9.6
     .apical_gain(apical_gain),
     .sst_activity_out(sst_activity),                // v9.4 debug
     .vip_activity_out(vip_activity),                // v9.4 debug
@@ -253,9 +256,9 @@ initial begin
     report_test("all inputs=-1.0 -> gain=0.5 (clamped)", check_value(apical_gain, GAIN_0_5, TOLERANCE));
 
     //=========================================================================
-    // TEST 7: Clamping - extreme positive should clamp at 1.5
+    // TEST 7: Clamping - extreme positive should clamp at 2.0 (v9.6)
     //=========================================================================
-    $display("\n--- TEST 7: Extreme positive clamping ---");
+    $display("\n--- TEST 7: Extreme positive clamping (v9.6: 2.0) ---");
     matrix_thalamic_input = 18'sd32768;  // +2.0
     feedback_input_1 = 18'sd32768;  // +2.0
     feedback_input_2 = 18'sd32768;  // +2.0
@@ -265,14 +268,14 @@ initial begin
     $display("matrix = %.4f, fb1 = %.4f, fb2 = %.4f",
              q14_to_real(matrix_thalamic_input), q14_to_real(feedback_input_1), q14_to_real(feedback_input_2));
     $display("apical_gain = %d (%.4f)", apical_gain, q14_to_real(apical_gain));
-    $display("expected max = %d (%.4f)", GAIN_1_5, q14_to_real(GAIN_1_5));
+    $display("expected max = %d (%.4f)", GAIN_2_0, q14_to_real(GAIN_2_0));
 
-    report_test("extreme positive clamped at 1.5", check_value(apical_gain, GAIN_1_5, TOLERANCE));
+    report_test("extreme positive clamped at 2.0", check_value(apical_gain, GAIN_2_0, TOLERANCE));
 
     //=========================================================================
-    // TEST 8: Clamping - extreme negative should clamp at 0.5
+    // TEST 8: Clamping - extreme negative should clamp at 0.25 (v9.6)
     //=========================================================================
-    $display("\n--- TEST 8: Extreme negative clamping ---");
+    $display("\n--- TEST 8: Extreme negative clamping (v9.6: 0.25) ---");
     matrix_thalamic_input = -18'sd32768;  // -2.0
     feedback_input_1 = -18'sd32768;  // -2.0
     feedback_input_2 = -18'sd32768;  // -2.0
@@ -282,9 +285,9 @@ initial begin
     $display("matrix = %.4f, fb1 = %.4f, fb2 = %.4f",
              q14_to_real(matrix_thalamic_input), q14_to_real(feedback_input_1), q14_to_real(feedback_input_2));
     $display("apical_gain = %d (%.4f)", apical_gain, q14_to_real(apical_gain));
-    $display("expected min = %d (%.4f)", GAIN_0_5, q14_to_real(GAIN_0_5));
+    $display("expected min = %d (%.4f)", GAIN_0_25, q14_to_real(GAIN_0_25));
 
-    report_test("extreme negative clamped at 0.5", check_value(apical_gain, GAIN_0_5, TOLERANCE));
+    report_test("extreme negative clamped at 0.25", check_value(apical_gain, GAIN_0_25, TOLERANCE));
 
     //=========================================================================
     // TEST 9: Mixed - matrix positive, feedbacks negative

@@ -3,3 +3,5 @@
 .DS_Store
 *.vcd
 *.vvp
+eeg_analysis/
+sim/
