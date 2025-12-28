@@ -11,7 +11,7 @@
 // 7. Refractory - No re-ignition
 //
 // Validation criteria (from empirical 556-582s event):
-// - Baseline gain ~0.10, PLV ~0.45
+// - Baseline gain = 0 (v1.1 coherence-gated), PLV ~0.45
 // - Coherence phase: PLV rises to ~0.80, gain stays low (~0.20)
 // - Peak gain reaches 1.0 during plateau
 // - Total event ~21.5s for NORMAL state
@@ -153,7 +153,7 @@ initial begin
     $display("\n--- Test 1: Baseline State ---");
     run_cycles(100);
     check_test("Phase is BASELINE (0)", ignition_phase == 3'd0);
-    check_test("Gain at baseline (~0.10)", gain_envelope < Q14_HALF && gain_envelope > 18'sd0);
+    check_test("Gain at baseline (0, coherence-gated)", gain_envelope == 18'sd0);
     check_test("PLV at baseline (~0.45)", plv_envelope >= Q14_POINT45 - 18'sd500 && plv_envelope <= Q14_POINT45 + 18'sd500);
     check_test("Ignition not active", ignition_active == 1'b0);
 

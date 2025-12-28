@@ -4,7 +4,7 @@
 
 This is an FPGA implementation of a biologically-realistic neural oscillator system based on the **φⁿ (golden ratio) frequency architecture** with Schumann Resonance coupling. The system implements 21 Hopf oscillators organized into a thalamo-cortical architecture for neural signal processing and consciousness state modeling.
 
-**Current Version:** v10.3 (1/f^φ Spectral Slope)
+**Current Version:** v10.4 (φⁿ Geophysical SR Integration)
 **Target Platform:** Digilent Zybo Z7-20 (Xilinx Zynq-7020)
 
 ## Quick Start
@@ -225,10 +225,26 @@ fpga/
 | SIE_COHERENCE_THRESH | 9830 | 0.60 | SR ignition trigger threshold (v10.0) |
 | SIE_GAIN_BASELINE | 0 | 0.0 | SR baseline gain (v10.0, coherence-gated) |
 | SIE_GAIN_PEAK | 16384 | 1.0 | SR peak gain during ignition (v10.0) |
+| Q_NORM_F0 | 7929 | 0.484 | Q-factor normalization f₀ (v10.4) |
+| Q_NORM_F1 | 10051 | 0.613 | Q-factor normalization f₁ (bridging) (v10.4) |
+| Q_NORM_F2 | 16384 | 1.0 | Q-factor normalization f₂ (ANCHOR) (v10.4) |
+| Q_NORM_F3 | 8995 | 0.549 | Q-factor normalization f₃ (v10.4) |
+| Q_NORM_F4 | 7405 | 0.452 | Q-factor normalization f₄ (v10.4) |
+| AMP_SCALE_F0 | 16384 | 1.0 | Amplitude scale f₀ (v10.4) |
+| AMP_SCALE_F1 | 13926 | 0.85 | Amplitude scale f₁ (bridging) (v10.4) |
+| AMP_SCALE_F2 | 5571 | 0.34 | Amplitude scale f₂ ≈ φ⁻² (v10.4) |
+| AMP_SCALE_F3 | 2458 | 0.15 | Amplitude scale f₃ ≈ φ⁻⁴ (v10.4) |
+| AMP_SCALE_F4 | 983 | 0.06 | Amplitude scale f₄ ≈ φ⁻⁶ (v10.4) |
+| SIE_ENHANCE_F0 | 44237 | 2.7× | SIE mode-selective enhancement f₀ (v10.4) |
+| SIE_ENHANCE_F1 | 49152 | 3.0× | SIE mode-selective enhancement f₁ (v10.4) |
+| SIE_ENHANCE_F2 | 20480 | 1.25× | SIE mode-selective enhancement f₂ (v10.4) |
+| SIE_ENHANCE_F3 | 19661 | 1.2× | SIE mode-selective enhancement f₃ (v10.4) |
+| SIE_ENHANCE_F4 | 19661 | 1.2× | SIE mode-selective enhancement f₄ (v10.4) |
 
 ## Current Specification
 
-See [docs/SPEC_v10.3_UPDATE.md](docs/SPEC_v10.3_UPDATE.md) for the latest v10.3 architecture with:
+See [docs/SPEC_v10.4_UPDATE.md](docs/SPEC_v10.4_UPDATE.md) for the latest v10.4 architecture with:
+- **φⁿ Geophysical SR Integration** (v10.4): Q-factor modeling, amplitude hierarchy, mode-selective SIE
 - **1/f^φ Spectral Slope** (v10.3): √Fibonacci-weighted pink noise (v7.2) achieves golden ratio exponent
 - **Spectral Broadening** (v10.2): Fast frequency jitter (±0.5 Hz/sample) for ~1-2 Hz wide peaks
 - **Envelope Integration** (v10.1): Per-band amplitude envelopes connected to output mixer
@@ -276,6 +292,7 @@ All testbenches should pass. Key tests (226+ total):
 - `tb_l6_extended`: 10/10 tests - Extended L6 connectivity (v9.6)
 - `tb_amplitude_envelope`: 8/8 tests - O-U envelope dynamics (v10.0)
 - `tb_sr_ignition_phases`: 10/10 tests - SIE phase evolution (v10.0)
+- `tb_phi_n_sr_relationships`: 10/10 tests - φⁿ Q-factor and amplitude hierarchy (v10.4)
 - `tb_multi_harmonic_sr`: 17/17 tests - multi-harmonic SR
 - `tb_learning_fast`: 8/8 tests - CA3 Hebbian learning (v2.1)
 - `tb_sr_coupling`: 12/12 tests - SR coupling

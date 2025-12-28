@@ -1,5 +1,12 @@
 //=============================================================================
-// Top-Level Module - v10.2 with Fast Frequency Jitter for EEG-Like Spectral Broadening
+// Top-Level Module - v10.4 with φⁿ Geophysical SR Integration
+//
+// v10.4 CHANGES (φⁿ Geophysical SR Integration):
+// - Q-factor modeling: f₂ (20 Hz) is anchor with highest Q=15.5
+// - Amplitude hierarchy: φ^(-n) power decay across harmonics
+// - Mode-selective SIE: f₀/f₁ respond 2.7-3×, f₂/f₃/f₄ only 1.2×
+// - Based on Dec 2025 geophysical Schumann Resonance data analysis
+// - f₁ (13.75 Hz) documented as "non-φⁿ bridging mode"
 //
 // v10.2 CHANGES (Spectral Broadening):
 // - Added fast cycle-by-cycle frequency jitter (±0.15 Hz per sample)

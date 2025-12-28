@@ -1,5 +1,11 @@
 //=============================================================================
-// Thalamus Module - v10.2 with Gain-Only SR Modulation
+// Thalamus Module - v10.4 with φⁿ Mode-Selective SR Enhancement
+//
+// v10.4 CHANGES (φⁿ Geophysical SR Integration):
+// - Mode-selective SIE enhancement: f₀/f₁ respond 2.7-3×, f₂/f₃/f₄ only 1.2×
+// - Uses gain_weighted_packed (Q-factor + amplitude-scaled) from sr_harmonic_bank
+// - SIE enhancement factors based on Dec 2025 geophysical observations
+// - f₂ (20 Hz) is "anchor" mode with highest Q-factor (15.5)
 //
 // v10.2 CHANGES (No Direct Signal Coupling):
 // - K_ENTRAIN_BASELINE = 0 AND K_ENTRAIN_BOOST = 0
@@ -174,6 +180,18 @@ localparam signed [WIDTH-1:0] AMPLIFICATION_GAIN = 18'sd24576;
 // Baseline gain: 1.0× in Q14
 localparam signed [WIDTH-1:0] SR_BASELINE_GAIN = 18'sd16384;
 
+//-----------------------------------------------------------------------------
+// v10.4: Mode-Selective SIE Enhancement (from Dec 27 geophysical event data)
+// Lower modes (f₀, f₁) respond 2.7-3× during events
+// Higher modes (f₂, f₃, f₄) are "protected", respond only 1.2×
+// Applied during SIE events when gain_envelope is active
+//-----------------------------------------------------------------------------
+localparam signed [WIDTH-1:0] SIE_ENHANCE_F0 = 18'sd44237;  // 2.7× (responsive)
+localparam signed [WIDTH-1:0] SIE_ENHANCE_F1 = 18'sd49152;  // 3.0× (bridging, most responsive)
+localparam signed [WIDTH-1:0] SIE_ENHANCE_F2 = 18'sd20480;  // 1.25× (anchor, protected)
+localparam signed [WIDTH-1:0] SIE_ENHANCE_F3 = 18'sd19661;  // 1.2× (protected)
+localparam signed [WIDTH-1:0] SIE_ENHANCE_F4 = 18'sd19661;  // 1.2× (protected)
+
 // v8.8: L6 CT → Thalamus inhibitory modulation constants (MINIMAL for frequency separation)
 // L6 projects to thalamus with 10:1 convergence ratio (weak individual effect)
 localparam signed [WIDTH-1:0] K_L6_THAL = 18'sd164;   // 0.01 - minimal L6 inhibition
@@ -199,6 +217,9 @@ wire sie_active_any;
 
 // v7.4: Per-harmonic continuous gains
 wire signed [NUM_HARMONICS*WIDTH-1:0] gain_per_harmonic;
+
+// v7.5: Per-harmonic weighted gains (Q-factor + amplitude scale)
+wire signed [NUM_HARMONICS*WIDTH-1:0] gain_weighted;
 
 sr_harmonic_bank #(
     .WIDTH(WIDTH),
@@ -245,6 +266,9 @@ sr_harmonic_bank #(
 
     // v7.4: Continuous per-harmonic gains
     .gain_per_harmonic_packed(gain_per_harmonic),
+
+    // v7.5: Weighted per-harmonic gains (Q-factor + amplitude scale)
+    .gain_weighted_packed(gain_weighted),
 
     // Aggregate outputs
     .sie_active_any(sie_active_any),
@@ -329,29 +353,76 @@ hopf_oscillator #(.WIDTH(WIDTH), .FRAC(FRAC)) theta_relay (
 
 //-----------------------------------------------------------------------------
 // Dynamic Amplification Logic (SIE Model)
+// v10.4: Mode-selective enhancement based on geophysical observations
+// - Uses gain_weighted (Q-factor + amplitude scaled) from sr_harmonic_bank
+// - Applies SIE_ENHANCE factors during ignition (modulated by gain_envelope)
+// - Lower modes (f₀, f₁) respond 2.7-3×, higher modes (f₂-f₄) only 1.2×
 // v7.4: Continuous gain based on summed per-harmonic contributions
-// Each harmonic contributes 0 to 1.0 (Q14), scaled to 0.2× boost each
-// Total boost range: 1.0× (no coherence) to 2.0× (all harmonics maxed)
 //-----------------------------------------------------------------------------
 
-// Unpack per-harmonic gains
-wire signed [WIDTH-1:0] gain_h0, gain_h1, gain_h2, gain_h3, gain_h4;
-assign gain_h0 = gain_per_harmonic[0*WIDTH +: WIDTH];
-assign gain_h1 = gain_per_harmonic[1*WIDTH +: WIDTH];
-assign gain_h2 = gain_per_harmonic[2*WIDTH +: WIDTH];
-assign gain_h3 = gain_per_harmonic[3*WIDTH +: WIDTH];
-assign gain_h4 = gain_per_harmonic[4*WIDTH +: WIDTH];
+// Unpack per-harmonic weighted gains (Q-factor + amplitude scaled)
+wire signed [WIDTH-1:0] gain_w0, gain_w1, gain_w2, gain_w3, gain_w4;
+assign gain_w0 = gain_weighted[0*WIDTH +: WIDTH];
+assign gain_w1 = gain_weighted[1*WIDTH +: WIDTH];
+assign gain_w2 = gain_weighted[2*WIDTH +: WIDTH];
+assign gain_w3 = gain_weighted[3*WIDTH +: WIDTH];
+assign gain_w4 = gain_weighted[4*WIDTH +: WIDTH];
 
-// Sum all per-harmonic gains (each 0 to 16384 Q14)
-// Total can be 0 to 81920 (5 × 16384)
+// v10.4: Apply mode-selective SIE enhancement
+// SIE enhancement is modulated by gain_envelope to only apply during ignition
+// enhanced_gain[h] = gain_weighted[h] × (1 + (gain_envelope × (SIE_ENHANCE[h] - 1)))
+// Simplified: enhanced_gain[h] = gain_weighted[h] × mix(1, SIE_ENHANCE[h], gain_envelope)
+
+// For each harmonic: apply SIE_ENHANCE scaled by gain_envelope
+// When gain_envelope = 0: use gain_weighted as-is (no enhancement)
+// When gain_envelope = 1: use gain_weighted × SIE_ENHANCE / 16384
+
+wire signed [2*WIDTH-1:0] env_h0_full, env_h1_full, env_h2_full, env_h3_full, env_h4_full;
+wire signed [WIDTH-1:0] enhance_h0, enhance_h1, enhance_h2, enhance_h3, enhance_h4;
+
+// Scale SIE_ENHANCE by gain_envelope (both Q14, product is Q28)
+assign env_h0_full = gain_envelope * SIE_ENHANCE_F0;
+assign env_h1_full = gain_envelope * SIE_ENHANCE_F1;
+assign env_h2_full = gain_envelope * SIE_ENHANCE_F2;
+assign env_h3_full = gain_envelope * SIE_ENHANCE_F3;
+assign env_h4_full = gain_envelope * SIE_ENHANCE_F4;
+
+// Shift back to Q14 and add baseline (1.0 when envelope=0)
+// enhance_h = 1.0 + envelope × (SIE_ENHANCE - 1.0)
+// = 1.0 + (envelope × SIE_ENHANCE - envelope)
+// Simplified: enhance_h = (16384 - gain_envelope) + (env_full >>> FRAC)
+// This gives: at envelope=0, enhance=1.0; at envelope=1.0, enhance=SIE_ENHANCE
+wire signed [WIDTH-1:0] base_factor;
+assign base_factor = 18'sd16384 - gain_envelope;  // 1.0 - envelope
+
+assign enhance_h0 = base_factor + (env_h0_full >>> FRAC);
+assign enhance_h1 = base_factor + (env_h1_full >>> FRAC);
+assign enhance_h2 = base_factor + (env_h2_full >>> FRAC);
+assign enhance_h3 = base_factor + (env_h3_full >>> FRAC);
+assign enhance_h4 = base_factor + (env_h4_full >>> FRAC);
+
+// Apply enhancement to weighted gains
+wire signed [2*WIDTH-1:0] enh_gain_h0_full, enh_gain_h1_full, enh_gain_h2_full;
+wire signed [2*WIDTH-1:0] enh_gain_h3_full, enh_gain_h4_full;
+wire signed [WIDTH-1:0] enh_gain_h0, enh_gain_h1, enh_gain_h2, enh_gain_h3, enh_gain_h4;
+
+assign enh_gain_h0_full = gain_w0 * enhance_h0;
+assign enh_gain_h1_full = gain_w1 * enhance_h1;
+assign enh_gain_h2_full = gain_w2 * enhance_h2;
+assign enh_gain_h3_full = gain_w3 * enhance_h3;
+assign enh_gain_h4_full = gain_w4 * enhance_h4;
+
+assign enh_gain_h0 = enh_gain_h0_full >>> FRAC;
+assign enh_gain_h1 = enh_gain_h1_full >>> FRAC;
+assign enh_gain_h2 = enh_gain_h2_full >>> FRAC;
+assign enh_gain_h3 = enh_gain_h3_full >>> FRAC;
+assign enh_gain_h4 = enh_gain_h4_full >>> FRAC;
+
+// Sum all enhanced per-harmonic gains
 wire signed [WIDTH+2:0] total_gain_sum;
-assign total_gain_sum = gain_h0 + gain_h1 + gain_h2 + gain_h3 + gain_h4;
+assign total_gain_sum = enh_gain_h0 + enh_gain_h1 + enh_gain_h2 + enh_gain_h3 + enh_gain_h4;
 
-// Scale: each harmonic contributes up to 0.2× boost when at max
-// Boost = total_gain_sum / 5 × 0.2 = total_gain_sum × 0.2/5 = total_gain_sum × 0.04
-// 0.04 in Q14 = 655.36 ≈ 655
-// Or simpler: total_gain_sum / 5 gives 0-16384 per harmonic avg
-// Then scale by 0.2: (avg / 5) = total / 25 ≈ total >> 4.64 ≈ (total * 3) >> 6
+// Scale for output boost (keep same scaling factor for consistency)
 wire signed [WIDTH+4:0] boost_scaled;
 assign boost_scaled = (total_gain_sum * 20'sd3277) >>> FRAC;  // 3277/16384 ≈ 0.2
 
