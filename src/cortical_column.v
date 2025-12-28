@@ -180,7 +180,9 @@ module cortical_column #(
     output wire signed [WIDTH-1:0] l23_x,
     output wire signed [WIDTH-1:0] l23_y,
     output wire signed [WIDTH-1:0] l5b_x,
+    output wire signed [WIDTH-1:0] l5b_y,   // v11.1a: Added for Kuramoto R computation
     output wire signed [WIDTH-1:0] l5a_x,
+    output wire signed [WIDTH-1:0] l5a_y,   // v11.1a: Added for Kuramoto R computation
     output wire signed [WIDTH-1:0] l6_x,
     output wire signed [WIDTH-1:0] l6_y,
     output wire signed [WIDTH-1:0] l4_x,
@@ -651,7 +653,9 @@ hopf_oscillator #(.WIDTH(WIDTH), .FRAC(FRAC)) osc_l23 (
 assign l23_x = l23_x_int;
 assign l23_y = l23_y_int;
 assign l5b_x = l5b_x_int;
+assign l5b_y = l5b_y_int;  // v11.1a: Added for Kuramoto R
 assign l5a_x = l5a_x_int;
+assign l5a_y = l5a_y_int;  // v11.1a: Added for Kuramoto R
 assign l6_x  = l6_x_int;
 assign l6_y  = l6_y_int;
 assign l4_x  = l4_x_int;

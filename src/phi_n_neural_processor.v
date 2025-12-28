@@ -724,12 +724,15 @@ assign phase_couple_motor_l6    = phase_pattern[5] ? theta_couple_base : -theta_
 
 wire signed [WIDTH-1:0] sensory_l23_x, sensory_l23_y, sensory_l5b_x, sensory_l5a_x, sensory_l4_x;
 wire signed [WIDTH-1:0] sensory_l6_y;
+wire signed [WIDTH-1:0] sensory_l5a_y, sensory_l5b_y;  // v11.1a: For Kuramoto R
 
 wire signed [WIDTH-1:0] assoc_l23_x, assoc_l23_y, assoc_l5b_x, assoc_l5a_x, assoc_l4_x;
 wire signed [WIDTH-1:0] assoc_l6_y;
+wire signed [WIDTH-1:0] assoc_l5a_y, assoc_l5b_y;  // v11.1a: For Kuramoto R
 
 wire signed [WIDTH-1:0] motor_l23_x, motor_l23_y, motor_l5b_x, motor_l5a_x, motor_l4_x;
 wire signed [WIDTH-1:0] motor_l6_y;
+wire signed [WIDTH-1:0] motor_l5a_y, motor_l5b_y;  // v11.1a: For Kuramoto R
 
 wire signed [WIDTH-1:0] sensory_feedforward = 18'sd0;
 wire signed [WIDTH-1:0] assoc_feedforward   = sensory_l23_x;
@@ -780,7 +783,9 @@ cortical_column #(.WIDTH(WIDTH), .FRAC(FRAC), .COLUMN_ID(0)) col_sensory (
     .l23_x(sensory_l23_x),
     .l23_y(sensory_l23_y),
     .l5b_x(sensory_l5b_x),
+    .l5b_y(sensory_l5b_y),    // v11.1a: For Kuramoto R
     .l5a_x(sensory_l5a_x),
+    .l5a_y(sensory_l5a_y),    // v11.1a: For Kuramoto R
     .l6_x(sensory_l6_x),
     .l6_y(sensory_l6_y),
     .l4_x(sensory_l4_x),
@@ -824,7 +829,9 @@ cortical_column #(.WIDTH(WIDTH), .FRAC(FRAC), .COLUMN_ID(1)) col_assoc (
     .l23_x(assoc_l23_x),
     .l23_y(assoc_l23_y),
     .l5b_x(assoc_l5b_x),
+    .l5b_y(assoc_l5b_y),      // v11.1a: For Kuramoto R
     .l5a_x(assoc_l5a_x),
+    .l5a_y(assoc_l5a_y),      // v11.1a: For Kuramoto R
     .l6_x(assoc_l6_x),
     .l6_y(assoc_l6_y),
     .l4_x(assoc_l4_x),
@@ -868,7 +875,9 @@ cortical_column #(.WIDTH(WIDTH), .FRAC(FRAC), .COLUMN_ID(2)) col_motor (
     .l23_x(motor_l23_x),
     .l23_y(motor_l23_y),
     .l5b_x(motor_l5b_x),
+    .l5b_y(motor_l5b_y),      // v11.1a: For Kuramoto R
     .l5a_x(motor_l5a_x),
+    .l5a_y(motor_l5a_y),      // v11.1a: For Kuramoto R
     .l6_x(motor_l6_x),
     .l6_y(motor_l6_y),
     .l4_x(motor_l4_x),
@@ -1003,6 +1012,208 @@ pac_strength #(
     .class_alpha_gamma_fast(),
     .class_sr_f0_f2(),
     .class_theta_gamma()
+);
+
+//=============================================================================
+// KURAMOTO ORDER PARAMETER (v11.1a)
+// Computes population-level synchronization metric R ∈ [0,1]
+// Used for SIE ignition detection and coupling mode switching
+//=============================================================================
+
+// Extract SR f0 x/y components from packed signals
+wire signed [WIDTH-1:0] sr_f0_x = sr_f_x_packed[WIDTH-1:0];
+wire signed [WIDTH-1:0] sr_f0_y = sr_f_y_packed_int[WIDTH-1:0];
+
+// Kuramoto outputs
+wire signed [WIDTH-1:0] kuramoto_R;
+wire signed [WIDTH-1:0] kuramoto_mean_phase;
+wire kuramoto_high_synchrony;
+
+kuramoto_order_parameter #(
+    .WIDTH(WIDTH),
+    .FRAC(FRAC),
+    .N_OSC(6)
+) kuramoto_inst (
+    .clk(clk),
+    .rst(rst),
+    .clk_en(clk_4khz_en),
+    // Oscillator state inputs (x, y coordinates)
+    .theta_x(thalamic_theta_x),
+    .theta_y(thalamic_theta_y),
+    .alpha_x(motor_l6_x),           // L6 = alpha band
+    .alpha_y(motor_l6_y),
+    .beta1_x(motor_l5a_x),          // L5a = low beta
+    .beta1_y(motor_l5a_y),
+    .beta2_x(motor_l5b_x),          // L5b = high beta
+    .beta2_y(motor_l5b_y),
+    .gamma_x(motor_l23_x),          // L2/3 = gamma
+    .gamma_y(motor_l23_y),
+    .sr_f0_x(sr_f0_x),              // SR fundamental
+    .sr_f0_y(sr_f0_y),
+    // Outputs
+    .kuramoto_R(kuramoto_R),
+    .mean_phase(kuramoto_mean_phase),
+    .high_synchrony(kuramoto_high_synchrony)
+);
+
+//=============================================================================
+// BOUNDARY GENERATORS (v11.1a)
+// Generates boundary frequencies between adjacent φⁿ attractors
+// These emerge during SIE transitions and state boundaries
+//=============================================================================
+
+// Boundary mixing strength - scales with Kuramoto R (high sync = stronger mixing)
+// During SIE ignition, oscillators synchronize → boundaries emerge strongly
+wire signed [WIDTH-1:0] boundary_mixing = kuramoto_R;
+
+// θ/α boundary: sqrt(5.89 × 9.53) = 7.49 Hz
+wire signed [WIDTH-1:0] boundary_theta_alpha_x;
+wire signed [WIDTH-1:0] boundary_theta_alpha_y;
+wire signed [WIDTH-1:0] boundary_theta_alpha_amp;
+
+boundary_generator #(.WIDTH(WIDTH), .FRAC(FRAC)) boundary_theta_alpha (
+    .clk(clk),
+    .rst(rst),
+    .clk_en(clk_4khz_en),
+    .osc_low_x(thalamic_theta_x),
+    .osc_low_y(thalamic_theta_y),
+    .osc_high_x(motor_l6_x),
+    .osc_high_y(motor_l6_y),
+    .mixing_strength(boundary_mixing),
+    .boundary_x(boundary_theta_alpha_x),
+    .boundary_y(boundary_theta_alpha_y),
+    .boundary_amplitude(boundary_theta_alpha_amp)
+);
+
+// α/β₁ boundary: sqrt(9.53 × 15.42) = 12.12 Hz
+wire signed [WIDTH-1:0] boundary_alpha_beta1_x;
+wire signed [WIDTH-1:0] boundary_alpha_beta1_y;
+wire signed [WIDTH-1:0] boundary_alpha_beta1_amp;
+
+boundary_generator #(.WIDTH(WIDTH), .FRAC(FRAC)) boundary_alpha_beta1 (
+    .clk(clk),
+    .rst(rst),
+    .clk_en(clk_4khz_en),
+    .osc_low_x(motor_l6_x),
+    .osc_low_y(motor_l6_y),
+    .osc_high_x(motor_l5a_x),
+    .osc_high_y(motor_l5a_y),
+    .mixing_strength(boundary_mixing),
+    .boundary_x(boundary_alpha_beta1_x),
+    .boundary_y(boundary_alpha_beta1_y),
+    .boundary_amplitude(boundary_alpha_beta1_amp)
+);
+
+// β₁/β₂ boundary: sqrt(15.42 × 24.94) = 19.60 Hz
+wire signed [WIDTH-1:0] boundary_beta1_beta2_x;
+wire signed [WIDTH-1:0] boundary_beta1_beta2_y;
+wire signed [WIDTH-1:0] boundary_beta1_beta2_amp;
+
+boundary_generator #(.WIDTH(WIDTH), .FRAC(FRAC)) boundary_beta1_beta2 (
+    .clk(clk),
+    .rst(rst),
+    .clk_en(clk_4khz_en),
+    .osc_low_x(motor_l5a_x),
+    .osc_low_y(motor_l5a_y),
+    .osc_high_x(motor_l5b_x),
+    .osc_high_y(motor_l5b_y),
+    .mixing_strength(boundary_mixing),
+    .boundary_x(boundary_beta1_beta2_x),
+    .boundary_y(boundary_beta1_beta2_y),
+    .boundary_amplitude(boundary_beta1_beta2_amp)
+);
+
+// Total boundary power (for SIE detection and coupling mode decisions)
+wire signed [WIDTH+1:0] total_boundary_power_sum = boundary_theta_alpha_amp +
+                                                    boundary_alpha_beta1_amp +
+                                                    boundary_beta1_beta2_amp;
+wire signed [WIDTH-1:0] total_boundary_power = total_boundary_power_sum >>> 2;  // Scale to Q14
+
+//=============================================================================
+// BICOHERENCE MONITOR (v11.1a)
+// Detects nonlinear three-frequency interactions for θ/α/boundary triad
+//=============================================================================
+
+wire signed [WIDTH-1:0] bicoh_theta_alpha;
+wire bicoh_high;
+
+bicoherence_monitor #(
+    .WIDTH(WIDTH),
+    .FRAC(FRAC),
+    .AVG_SHIFT(6)  // ~15ms averaging at 4 kHz
+) bicoherence_theta_alpha (
+    .clk(clk),
+    .rst(rst),
+    .clk_en(clk_4khz_en),
+    .osc1_x(thalamic_theta_x),
+    .osc1_y(thalamic_theta_y),
+    .osc2_x(motor_l6_x),
+    .osc2_y(motor_l6_y),
+    .osc12_x(boundary_theta_alpha_x),  // θ/α boundary as sum frequency proxy
+    .osc12_y(boundary_theta_alpha_y),
+    .bicoherence(bicoh_theta_alpha),
+    .high_bicoherence(bicoh_high)
+);
+
+//=============================================================================
+// COUPLING MODE CONTROLLER (v11.1a)
+// Switches between modulatory (PAC) and harmonic coupling modes
+// Based on Kuramoto R, boundary power, and SIE phase
+//=============================================================================
+
+wire [1:0] coupling_mode;
+wire signed [WIDTH-1:0] pac_gain;
+wire signed [WIDTH-1:0] harmonic_gain;
+wire mode_transition_active;
+
+coupling_mode_controller #(
+    .WIDTH(WIDTH),
+    .FRAC(FRAC),
+    .TRANSITION_CYCLES(2000)  // ~500ms at 4 kHz
+) coupling_ctrl (
+    .clk(clk),
+    .rst(rst),
+    .clk_en(clk_4khz_en),
+    .kuramoto_R(kuramoto_R),
+    .boundary_power(total_boundary_power),
+    .sie_phase(sie_ignition_phase),
+    .r_high_thresh(18'sd0),     // Use default: 0.7
+    .r_low_thresh(18'sd0),      // Use default: 0.5
+    .boundary_thresh(18'sd0),   // Use default: 0.5
+    .coupling_mode(coupling_mode),
+    .pac_gain(pac_gain),
+    .harmonic_gain(harmonic_gain),
+    .mode_transition_active(mode_transition_active)
+);
+
+//=============================================================================
+// HARMONIC SPACING INDEX (v11.1a)
+// Monitors deviation from ideal φⁿ frequency ratios
+// HSI = 1.0 when ratios match φ, decreases with deviation
+// ΔHSI positive = tightening toward attractors, negative = loosening
+//=============================================================================
+wire signed [WIDTH-1:0] hsi_value;
+wire signed [WIDTH-1:0] hsi_delta;
+wire hsi_locked;
+
+harmonic_spacing_index #(
+    .WIDTH(WIDTH),
+    .FRAC(FRAC),
+    .AVG_SHIFT(8)  // ~64s baseline time constant
+) hsi_inst (
+    .clk(clk),
+    .rst(rst),
+    .clk_en(clk_4khz_en),
+    // Use static omega values (drift is small ±0.5 Hz)
+    .omega_theta(OMEGA_DT_THETA),
+    .omega_alpha(OMEGA_DT_ALPHA),
+    .omega_beta1(OMEGA_DT_BETA_LOW),
+    .omega_beta2(OMEGA_DT_BETA_HIGH),
+    .omega_gamma(OMEGA_DT_GAMMA_FAST),  // Use gamma (40.36 Hz) for L2/3
+    // Outputs
+    .hsi(hsi_value),
+    .delta_hsi(hsi_delta),
+    .harmonic_locked(hsi_locked)
 );
 
 //=============================================================================

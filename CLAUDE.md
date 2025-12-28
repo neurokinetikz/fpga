@@ -4,7 +4,7 @@
 
 This is an FPGA implementation of a biologically-realistic neural oscillator system based on the **φⁿ (golden ratio) frequency architecture** with Schumann Resonance coupling. The system implements 21 Hopf oscillators organized into a thalamo-cortical architecture for neural signal processing and consciousness state modeling.
 
-**Current Version:** v11.1 (Unified Boundary-Attractor Framework)
+**Current Version:** v11.3 (SIE Dynamics & Population Metrics)
 **Target Platform:** Digilent Zybo Z7-20 (Xilinx Zynq-7020)
 
 ## Quick Start
@@ -49,13 +49,13 @@ make clean             # Clean generated files
 
 ```
 fpga/
-├── src/                          # Verilog source modules (24 files)
-│   ├── phi_n_neural_processor.v  # Top-level (v11.1, 21 oscillators + PAC module)
+├── src/                          # Verilog source modules (29 files)
+│   ├── phi_n_neural_processor.v  # Top-level (v11.3, 21 oscillators + SIE dynamics)
 │   ├── hopf_oscillator.v         # Core oscillator (v6.0, dx/dt = μx - ωy - r²x)
 │   ├── hopf_oscillator_stochastic.v # Stochastic variant with noise input
 │   ├── ca3_phase_memory.v        # Hebbian phase memory (v8.0, theta-gated)
 │   ├── thalamus.v                # Theta + SR + matrix + L6 inhibition (v10.5)
-│   ├── cortical_column.v         # 6-layer cortical model (v10.0, freq drift)
+│   ├── cortical_column.v         # 6-layer cortical model (v11.3, l5a_y/l5b_y outputs)
 │   ├── dendritic_compartment.v   # v9.5: Two-compartment dendritic model
 │   ├── layer1_minimal.v          # Layer 1 with L6 input (v9.6)
 │   ├── pv_interneuron.v          # PV+ basket cell dynamics (v9.2)
@@ -65,7 +65,7 @@ fpga/
 │   ├── sr_ignition_controller.v  # v10.0: Six-phase SIE state machine
 │   ├── amplitude_envelope_generator.v # v10.0: O-U process for alpha breathing
 │   ├── cortical_frequency_drift.v # v3.0: Force-based adaptive drift
-│   ├── config_controller.v       # Consciousness states (v10.0, SIE timing)
+│   ├── config_controller.v       # Consciousness states (v11.3, enhanced MEDITATION)
 │   ├── clock_enable_generator.v  # FAST_SIM-aware 4kHz clock (v6.0)
 │   ├── pink_noise_generator.v    # 1/f^φ noise (v7.2, √Fibonacci-weighted)
 │   ├── output_mixer.v            # DAC output mixing (v7.3, envelope modulation)
@@ -73,8 +73,13 @@ fpga/
 │   ├── quarter_integer_detector.v # v11.0: Position classification and stability
 │   ├── sin_quarter_lut.v         # v11.0: 256-entry quarter-wave sine LUT
 │   ├── coupling_susceptibility.v # v11.1a: Farey χ(r) with 55 rationals + φⁿ boundaries
-│   └── pac_strength.v            # v11.1c: Phase-amplitude coupling strength (10 pairs)
-├── tb/                           # Testbenches (32 files)
+│   ├── pac_strength.v            # v11.1c: Phase-amplitude coupling strength (10 pairs)
+│   ├── kuramoto_order_parameter.v # v11.3: Population synchronization metric
+│   ├── boundary_generator.v      # v11.3: Nonlinear mixing for boundary frequencies
+│   ├── bicoherence_monitor.v     # v11.3: Three-frequency coupling detection
+│   ├── coupling_mode_controller.v # v11.3: Modulatory ↔ harmonic mode switching
+│   └── harmonic_spacing_index.v  # v11.3: φⁿ ratio deviation monitoring
+├── tb/                           # Testbenches (37 files)
 │   ├── tb_full_system_fast.v     # Full system integration (v6.5, 15 tests)
 │   ├── tb_theta_phase_multiplexing.v # Theta phase tests (19 tests)
 │   ├── tb_scaffold_architecture.v    # Scaffold layer tests (14 tests)
@@ -93,6 +98,11 @@ fpga/
 │   ├── tb_quarter_integer_detector.v # v11.0: Position classification (8 tests)
 │   ├── tb_self_organization.v    # v11.0: Full integration tests (10 tests)
 │   ├── tb_pac_strength.v         # v11.1c: PAC strength tests (10 tests)
+│   ├── tb_kuramoto_order.v       # v11.3: Kuramoto R tests (7 tests)
+│   ├── tb_boundary_generator.v   # v11.3: Boundary mixing tests (7 tests)
+│   ├── tb_bicoherence_monitor.v  # v11.3: Bicoherence tests (6 tests)
+│   ├── tb_coupling_mode_controller.v # v11.3: Mode switching tests (8 tests)
+│   ├── tb_harmonic_spacing_index.v # v11.3: HSI tests (8 tests)
 │   ├── tb_learning_fast.v        # CA3 learning test (v2.1, 8 tests)
 │   ├── tb_hopf_oscillator.v      # Hopf oscillator unit test
 │   ├── tb_state_transitions.v    # State machine test (12 tests)
@@ -105,7 +115,9 @@ fpga/
 │   └── run_vivado_*.tcl          # Vivado TCL scripts
 ├── docs/                         # Specifications
 │   ├── FPGA_SPECIFICATION_V8.md  # Base architecture spec (v8.0)
-│   ├── SPEC_v11.1_UPDATE.md      # Current version (v11.1 Unified Boundary-Attractor)
+│   ├── SPEC_v11.3_UPDATE.md      # Current version (v11.3 SIE Dynamics)
+│   ├── SPEC_v11.2_UPDATE.md      # DAC anti-clipping
+│   ├── SPEC_v11.1_UPDATE.md      # Unified Boundary-Attractor
 │   ├── SPEC_v11.0_UPDATE.md      # Active φⁿ Dynamics
 │   ├── SPEC_v10.5_UPDATE.md      # Quarter-Integer φⁿ Theory
 │   ├── SPEC_v10.4_UPDATE.md      # φⁿ Geophysical SR Integration
@@ -284,7 +296,18 @@ fpga/
 
 ## Current Specification
 
-See [docs/SPEC_v11.1_UPDATE.md](docs/SPEC_v11.1_UPDATE.md) for the latest v11.1 architecture with:
+See [docs/SPEC_v11.3_UPDATE.md](docs/SPEC_v11.3_UPDATE.md) for the latest v11.3 architecture with:
+- **Kuramoto Order Parameter** (v11.3): Population synchronization R ∈ [0,1] from 6 oscillators
+- **Boundary Generators** (v11.3): Nonlinear mixing creates θ/α (7.49 Hz), α/β₁, β₁/β₂ boundaries
+- **Bicoherence Monitor** (v11.3): Detects nonlinear three-frequency interactions
+- **Coupling Mode Controller** (v11.3): Automatic modulatory ↔ harmonic mode switching
+- **Harmonic Spacing Index** (v11.3): Monitors φⁿ ratio adherence with ΔHSI tracking
+- **Spectral Differentiation** (v11.3): MEDITATION state now >3dB different from NORMAL
+
+Previous architecture features (v11.2):
+- **DAC Anti-Clipping** (v11.2): MU_MODERATE (3) for NORMAL, soft limiter at ±0.75
+
+Previous architecture features (v11.1):
 - **Farey χ(r) Computation** (v11.1a): Systematic formula with 55 rationals + 6 φⁿ boundaries
 - **Rational Resonance Forces** (v11.1b): Lorentzian gradient F_rational(n) from p/q ratios
 - **Multi-Catastrophe Detection** (v11.1b): 2:1, 3:1, 4:1 zone-based repulsion
@@ -331,7 +354,7 @@ Base specification: [docs/FPGA_SPECIFICATION_V8.md](docs/FPGA_SPECIFICATION_V8.m
 
 ## Testing
 
-All testbenches should pass. Key tests (319+ total):
+All testbenches should pass. Key tests (355+ total):
 - `tb_full_system_fast`: 15/15 tests - full integration (v6.5)
 - `tb_theta_phase_multiplexing`: 19/19 tests - theta phase (v8.3)
 - `tb_scaffold_architecture`: 14/14 tests - scaffold layers (v8.0)
@@ -356,6 +379,11 @@ All testbenches should pass. Key tests (319+ total):
 - `tb_quarter_integer_detector`: 8/8 tests - Position classification (v11.0)
 - `tb_self_organization`: 10/10 tests - Full integration validation (v11.0)
 - `tb_pac_strength`: 10/10 tests - Phase-amplitude coupling (v11.1c)
+- `tb_kuramoto_order`: 7/7 tests - Kuramoto order parameter (v11.3)
+- `tb_boundary_generator`: 7/7 tests - Boundary frequency mixing (v11.3)
+- `tb_bicoherence_monitor`: 6/6 tests - Bicoherence detection (v11.3)
+- `tb_coupling_mode_controller`: 8/8 tests - Mode switching (v11.3)
+- `tb_harmonic_spacing_index`: 8/8 tests - φⁿ ratio tracking (v11.3)
 - `tb_multi_harmonic_sr`: 17/17 tests - multi-harmonic SR
 - `tb_learning_fast`: 8/8 tests - CA3 Hebbian learning (v2.1)
 - `tb_sr_coupling`: 12/12 tests - SR coupling

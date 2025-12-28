@@ -357,22 +357,24 @@ initial begin
     end
 
     // TEST 7: State modulation - Meditation
-    // Updated to match v5.5 config_controller values:
-    // MEDITATION: stable theta (MU_FULL=4), reduced gamma (MU_HALF=2)
+    // v11.1a: Enhanced spectral differentiation from NORMAL
+    // MEDITATION: strong theta/alpha (MU_ENHANCED=6), reduced gamma (MU_HALF=2)
+    // Creates >3dB difference in target bands vs NORMAL state
     $display("\n[TEST 7] State modulation (Meditation)");
     state_select = 3'd4;
     wait_updates(100);
     $display("         Mu_dt values in meditation:");
-    $display("           Theta: %0d (stable)", mu_dt_theta);
-    $display("           L6:    %0d (stable)", mu_dt_l6);
-    $display("           L2/3:  %0d (reduced for internal focus)", mu_dt_l23);
-    // Expected: mu_theta=4 (MU_FULL), mu_l23=2 (MU_HALF)
-    if (mu_dt_theta == 18'sd4 && mu_dt_l23 == 18'sd2) begin
-        $display("         PASS - Meditation state active");
+    $display("           Theta: %0d (enhanced for meditation signature)", mu_dt_theta);
+    $display("           L6:    %0d (enhanced alpha)", mu_dt_l6);
+    $display("           L2/3:  %0d (moderate gamma)", mu_dt_l23);
+    // v11.1a: mu_theta=6 (MU_ENHANCED), mu_l6=6 (MU_ENHANCED), mu_l23=2 (MU_HALF)
+    if (mu_dt_theta == 18'sd6 && mu_dt_l6 == 18'sd6 && mu_dt_l23 == 18'sd2) begin
+        $display("         PASS - Meditation state active (enhanced spectral differentiation)");
         test_pass = test_pass + 1;
     end else begin
         $display("         FAIL - State not configured correctly");
-        $display("         Expected: theta=4, l23=2, Got: theta=%0d, l23=%0d", mu_dt_theta, mu_dt_l23);
+        $display("         Expected: theta=6, l6=6, l23=2, Got: theta=%0d, l6=%0d, l23=%0d",
+                 mu_dt_theta, mu_dt_l6, mu_dt_l23);
         test_fail = test_fail + 1;
     end
     state_select = 3'd0;

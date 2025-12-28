@@ -177,14 +177,15 @@ always @(posedge clk or posedge rst) begin
                 sie_refractory <= 16'd48000;  // 12s refractory (task focus)
             end
             STATE_MEDITATION: begin
-                // Reduced MU values for frequency stability (high MU destabilizes)
-                // MEDITATION = stable theta coherence, not aggressive amplitude
-                mu_dt_theta  <= MU_FULL;     // 4 (was 6) - stable theta
-                mu_dt_l6     <= MU_FULL;     // 4 (was 6) - moderate alpha
-                mu_dt_l5b    <= MU_HALF;     // 2 - low motor feedback
-                mu_dt_l5a    <= MU_HALF;     // 2 - low motor output
-                mu_dt_l4     <= MU_HALF;     // 2 - sensory withdrawal
-                mu_dt_l23    <= MU_HALF;     // 2 - reduced gamma (internal focus)
+                // v11.1a: Enhanced spectral differentiation from NORMAL
+                // MEDITATION: prominent theta/alpha peaks, suppressed beta/gamma
+                // Creates >3dB difference in target bands vs NORMAL state
+                mu_dt_theta  <= MU_ENHANCED; // 6 - strong theta peak (key signature)
+                mu_dt_l6     <= MU_ENHANCED; // 6 - strong alpha peak
+                mu_dt_l5b    <= MU_WEAK;     // 1 - suppressed high beta
+                mu_dt_l5a    <= MU_WEAK;     // 1 - suppressed low beta
+                mu_dt_l4     <= MU_WEAK;     // 1 - sensory withdrawal (minimal gamma)
+                mu_dt_l23    <= MU_HALF;     // 2 - moderate gamma (some internal activity)
                 ca_threshold <= CA_THRESH_MEDITATION;  // 0.375 - enhanced top-down
                 // SIE timing: ~25s event + 8s refractory (enhanced, prominent events)
                 sie_phase2_dur <= 16'd16000;  // 4s coherence (extended awareness)

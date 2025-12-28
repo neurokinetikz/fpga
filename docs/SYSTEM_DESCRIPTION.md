@@ -1,8 +1,8 @@
 # φⁿ Neural Processor - Comprehensive System Description
 
-**Version:** 11.1 (Unified Boundary-Attractor Framework)
+**Version:** 11.3 (SIE Dynamics & Population Metrics)
 **Date:** 2025-12-28
-**Based on:** Complete analysis of all 24 source modules (~6,500 lines of Verilog)
+**Based on:** Complete analysis of all 29 source modules (~7,500 lines of Verilog)
 
 ---
 
@@ -10,7 +10,19 @@
 
 The φⁿ Neural Processor is an FPGA implementation of 21 coupled nonlinear oscillators organized as a thalamo-cortical network. The system models biological neural rhythms using golden ratio (φ ≈ 1.618) frequency relationships, implements associative memory through theta-gated Hebbian learning, and exhibits stochastic resonance sensitivity to weak external electromagnetic fields.
 
-**Version 11.1** completes the Unified Boundary-Attractor Framework:
+**Version 11.3** implements comprehensive SIE Dynamics monitoring and control:
+- **Kuramoto Order Parameter**: Population synchronization R ∈ [0,1] from 6 oscillators
+- **Boundary Generators**: Nonlinear mixing creates θ/α (7.49 Hz), α/β₁ (12.12 Hz), β₁/β₂ (19.60 Hz)
+- **Bicoherence Monitor**: Detects nonlinear three-frequency interactions for SIE verification
+- **Coupling Mode Controller**: Automatic switching between modulatory (PAC) and harmonic (phase-locked) modes
+- **Harmonic Spacing Index**: Monitors φⁿ ratio adherence with ΔHSI for tightening/loosening detection
+- **Spectral Differentiation**: MEDITATION state now spectrally distinct (>3dB difference from NORMAL)
+
+**Version 11.2** added anti-clipping measures:
+- **MU_MODERATE**: NORMAL state MU reduced from 4 to 3 for DAC headroom
+- **Soft Limiter**: 2:1 compression above ±0.75 prevents hard clipping
+
+**Version 11.1** completed the Unified Boundary-Attractor Framework:
 - **Farey χ(r) Computation** (v11.1a): Systematic formula with 55 rationals (q≤5) + 6 φⁿ boundaries
 - **Rational Resonance Forces** (v11.1b): Lorentzian gradient F = -2B×d/(d²+ε²)² from p/q ratios
 - **Multi-Catastrophe Detection** (v11.1b): 2:1, 3:1, 4:1 zone-based repulsion
@@ -221,6 +233,99 @@ Where K_FORCE = 0.1 provides gentle correction toward stable positions.
 Backward-compatible mode switch in phi_n_neural_processor.v:
 - `ENABLE_ADAPTIVE = 0` (default): v10.5 static behavior preserved
 - `ENABLE_ADAPTIVE = 1`: Active φⁿ dynamics enabled
+
+---
+
+## SIE Dynamics Monitoring (v11.3)
+
+Version 11.3 adds comprehensive real-time monitoring of SIE dynamics through five new modules.
+
+### Kuramoto Order Parameter (kuramoto_order_parameter.v)
+
+Computes population-level synchronization across 6 key oscillators:
+
+```
+R = |1/N × Σ exp(i×θ_k)| = sqrt(sum_cos² + sum_sin²) / N
+```
+
+| Condition | Kuramoto R | Interpretation |
+|-----------|-----------|----------------|
+| Random phases | 0.2-0.4 | Baseline desynchronization |
+| Partial sync | 0.5-0.7 | Approaching coherence |
+| SIE ignition | 0.7-1.0 | Population synchronized |
+| Full phase lock | ~1.0 | Complete synchrony |
+
+The module provides a `high_synchrony` flag when R > 0.7, useful for triggering mode transitions.
+
+### Boundary Generators (boundary_generator.v)
+
+Three instances generate boundary frequencies via nonlinear mixing:
+
+| Boundary | Parent Oscillators | Frequency |
+|----------|-------------------|-----------|
+| θ/α | Theta (5.89 Hz) + Alpha (9.53 Hz) | 7.49 Hz |
+| α/β₁ | Alpha (9.53 Hz) + Beta1 (15.42 Hz) | 12.12 Hz |
+| β₁/β₂ | Beta1 (15.42 Hz) + Beta2 (24.94 Hz) | 19.60 Hz |
+
+The geometric mean `f_boundary = sqrt(f_low × f_high)` emerges naturally from amplitude product mixing. Boundary power increases during SIE transitions when parent oscillators align in phase.
+
+### Bicoherence Monitor (bicoherence_monitor.v)
+
+Detects nonlinear three-frequency interactions (f1, f2, f1+f2 triads):
+
+```
+B(f1,f2) = |E[X(f1) × X(f2) × X*(f1+f2)]| / sqrt(P1 × P2 × P12)
+```
+
+Hardware implementation uses phase-based bispectrum with IIR temporal averaging. The `high_bicoherence` flag triggers when B > 0.5, indicating active nonlinear coupling.
+
+### Coupling Mode Controller (coupling_mode_controller.v)
+
+Implements automatic switching between two coupling regimes:
+
+| Mode | PAC Gain | Harmonic Gain | Characteristics |
+|------|----------|---------------|-----------------|
+| MODULATORY | 1.0 | 0.125 | Gamma amplitude modulated by theta phase |
+| TRANSITION | 0.5 | 0.5 | ~500ms crossfade between modes |
+| HARMONIC | 0.125 | 1.0 | Gamma phase-locked to theta at integer ratio |
+
+**Transition Rules:**
+- MODULATORY → HARMONIC: `kuramoto_R > 0.7 AND boundary_power > thresh` OR `sie_active`
+- HARMONIC → MODULATORY: `kuramoto_R < 0.5 OR sie_decay_phase` AND `!sie_active`
+
+### Harmonic Spacing Index (harmonic_spacing_index.v)
+
+Monitors deviation from ideal φⁿ frequency ratios:
+
+```
+Ratios: α/θ, β₁/α, β₂/β₁, γ/β₂  (ideal: φ = 1.618)
+HSI = 1.0 - mean_deviation / 0.5  (clamped to [0,1])
+ΔHSI = HSI - baseline  (EMA with ~64s time constant)
+```
+
+| ΔHSI | Interpretation |
+|------|----------------|
+| > +0.05 | System tightening toward φⁿ attractors |
+| ±0.02 | Stable baseline |
+| < -0.05 | System loosening from ideal ratios |
+
+The `harmonic_locked` flag triggers when all ratios are within 8% of φ.
+
+### SIE Observable Timeline
+
+Typical SIE event progression with v11.3 observables:
+
+```
+Phase      | Time  | R    | Boundary | Bicoherence | Mode
+-----------+-------+------+----------+-------------+------------
+Baseline   | 0s    | 0.3  | Low      | Low         | MODULATORY
+Coherence  | 0-4s  | ↑0.7 | Rising   | Rising      | MODULATORY
+Ignition   | 4-6s  | >0.7 | Peak     | Peak        | TRANSITION
+Plateau    | 6-8s  | 0.9  | High     | High        | HARMONIC
+Propagate  | 8-17s | 0.8  | Sustained| Sustained   | HARMONIC
+Decay      | 17-21s| ↓0.5 | Falling  | Falling     | TRANSITION
+Refractory | 21-31s| 0.3  | Low      | Low         | MODULATORY
+```
 
 ---
 
