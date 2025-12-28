@@ -12,12 +12,13 @@
 // - Phase 4 (80-100s): NORMAL steady-state
 //
 // MU interpolation (NORMAL → MEDITATION):
-// - mu_theta: 4 → 4 (unchanged)
-// - mu_l6:    4 → 4 (unchanged)
-// - mu_l5b:   4 → 2 (halved)
-// - mu_l5a:   4 → 2 (halved)
-// - mu_l4:    4 → 2 (halved)
-// - mu_l23:   4 → 2 (halved)
+// v11.1: NORMAL now uses MU=3 (was 4) to prevent DAC clipping
+// - mu_theta: 3 → 3 (unchanged, note: theta also at 3 via config_controller)
+// - mu_l6:    3 → 3 (unchanged, note: L6 also at 3 via config_controller)
+// - mu_l5b:   3 → 2 (reduced)
+// - mu_l5a:   3 → 2 (reduced)
+// - mu_l4:    3 → 2 (reduced)
+// - mu_l23:   3 → 2 (reduced)
 //
 // Output files:
 //   state_transition_eeg.csv - Full oscillator data (27 columns)
@@ -54,7 +55,8 @@ localparam PHASE_NORMAL2    = 3'd4;  // 80-100s
 
 // MU values in integer form (these are raw values, not Q4.14)
 // In config_controller, MU values are small integers (2-6 range)
-localparam signed [WIDTH-1:0] MU_FULL = 18'sd4;  // NORMAL state MU
+// v11.1: NORMAL reduced from 4 to 3 to prevent DAC clipping
+localparam signed [WIDTH-1:0] MU_FULL = 18'sd3;  // NORMAL state MU (was 4, now 3)
 localparam signed [WIDTH-1:0] MU_HALF = 18'sd2;  // MEDITATION state MU
 
 // Phase updates: 20 seconds at 4 kHz = 80,000 updates per phase

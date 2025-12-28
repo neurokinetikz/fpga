@@ -71,6 +71,7 @@ localparam [2:0] STATE_MEDITATION = 3'd4;
 
 // MU values scaled for 4 kHz update rate (dt=0.00025)
 localparam signed [WIDTH-1:0] MU_FULL     = 18'sd4;
+localparam signed [WIDTH-1:0] MU_MODERATE = 18'sd3;   // v11.1: between FULL and HALF for NORMAL state
 localparam signed [WIDTH-1:0] MU_HALF     = 18'sd2;
 localparam signed [WIDTH-1:0] MU_WEAK     = 18'sd1;   // min practical value
 localparam signed [WIDTH-1:0] MU_ENHANCED = 18'sd6;
@@ -93,12 +94,12 @@ assign plastic_l6   = 1'b1;  // L6 is always plastic
 
 always @(posedge clk or posedge rst) begin
     if (rst) begin
-        mu_dt_theta <= MU_FULL;
-        mu_dt_l6    <= MU_FULL;
-        mu_dt_l5b   <= MU_FULL;
-        mu_dt_l5a   <= MU_FULL;
-        mu_dt_l4    <= MU_FULL;
-        mu_dt_l23   <= MU_FULL;
+        mu_dt_theta <= MU_MODERATE;  // v11.1: reduced from MU_FULL to prevent clipping
+        mu_dt_l6    <= MU_MODERATE;
+        mu_dt_l5b   <= MU_MODERATE;
+        mu_dt_l5a   <= MU_MODERATE;
+        mu_dt_l4    <= MU_MODERATE;
+        mu_dt_l23   <= MU_MODERATE;
         ca_threshold <= CA_THRESH_NORMAL;
         // v10.0: SIE timing reset (NORMAL state defaults)
         sie_phase2_dur <= 16'd14000;  // 3.5s coherence-first
@@ -110,12 +111,14 @@ always @(posedge clk or posedge rst) begin
     end else if (clk_en) begin
         case (state_select)
             STATE_NORMAL: begin
-                mu_dt_theta  <= MU_FULL;
-                mu_dt_l6     <= MU_FULL;
-                mu_dt_l5b    <= MU_FULL;
-                mu_dt_l5a    <= MU_FULL;
-                mu_dt_l4     <= MU_FULL;
-                mu_dt_l23    <= MU_FULL;
+                // v11.1: Reduced from MU_FULL (4) to MU_MODERATE (3) to prevent DAC clipping
+                // Amplitude: sqrt(3) ≈ 1.73 instead of 2.0, still distinct from MEDITATION
+                mu_dt_theta  <= MU_MODERATE;
+                mu_dt_l6     <= MU_MODERATE;
+                mu_dt_l5b    <= MU_MODERATE;
+                mu_dt_l5a    <= MU_MODERATE;
+                mu_dt_l4     <= MU_MODERATE;
+                mu_dt_l23    <= MU_MODERATE;
                 ca_threshold <= CA_THRESH_NORMAL;  // 0.5 - balanced
                 // SIE timing: ~21.5s event + 10s refractory
                 sie_phase2_dur <= 16'd14000;  // 3.5s coherence-first
