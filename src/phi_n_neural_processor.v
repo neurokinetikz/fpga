@@ -1,5 +1,14 @@
 //=============================================================================
-// Top-Level Module - v10.5 with Quarter-Integer φⁿ Theory
+// Top-Level Module - v11.0 with Active φⁿ Dynamics
+//
+// v11.0 CHANGES (Active φⁿ Dynamics):
+// - ENABLE_ADAPTIVE parameter for self-organizing oscillator dynamics
+// - Energy landscape module computes restoring forces toward φⁿ positions
+// - Quarter-integer detector classifies oscillator positions
+// - Dynamic SIE enhancement based on stability metric
+// - Force-based frequency corrections through cortical_frequency_drift
+// - When ENABLE_ADAPTIVE=0, preserves v10.5 static behavior
+// - See docs/SPEC_v11.0_UPDATE.md for implementation details
 //
 // v10.5 CHANGES (Quarter-Integer φⁿ Theory):
 // - RESOLVED: f₁ "bridging mode mystery" - f₁ is φ^1.25 quarter-integer fallback
@@ -165,7 +174,8 @@ module phi_n_neural_processor #(
     parameter FAST_SIM = 0,  // 1 = use fast clock divider (÷10 vs ÷31250) for simulation
     parameter NUM_HARMONICS = 5,  // v7.3: Number of SR harmonics
     parameter SR_STOCHASTIC_ENABLE = 1,  // Enable stochastic noise in SR oscillators
-    parameter SR_DRIFT_ENABLE = 1  // v8.2: Enable SR frequency drift (realistic variation)
+    parameter SR_DRIFT_ENABLE = 1,  // v8.2: Enable SR frequency drift (realistic variation)
+    parameter ENABLE_ADAPTIVE = 0  // v11.0: Enable active φⁿ dynamics (self-organizing)
 )(
     input  wire clk,
     input  wire rst,
@@ -277,14 +287,24 @@ wire signed [WIDTH-1:0] cortical_drift_l4, cortical_drift_l23;
 wire signed [WIDTH-1:0] cortical_jitter_l6, cortical_jitter_l5a, cortical_jitter_l5b;
 wire signed [WIDTH-1:0] cortical_jitter_l4, cortical_jitter_l23;
 
+// v11.0: Forward declarations for force signals (defined later by energy_landscape)
+wire signed [WIDTH-1:0] force_l6, force_l5a, force_l5b, force_l4, force_l23;
+
 cortical_frequency_drift #(
     .WIDTH(WIDTH),
     .FRAC(FRAC),
-    .FAST_SIM(FAST_SIM)
+    .FAST_SIM(FAST_SIM),
+    .ENABLE_ADAPTIVE(ENABLE_ADAPTIVE)  // v11.0: Enable force-based corrections
 ) cortical_drift_gen (
     .clk(clk),
     .rst(rst),
     .clk_en(clk_4khz_en),
+    // v11.0: Force inputs from energy landscape (zero when ENABLE_ADAPTIVE=0)
+    .force_l6(force_l6),
+    .force_l5a(force_l5a),
+    .force_l5b(force_l5b),
+    .force_l4(force_l4),
+    .force_l23(force_l23),
     // Slow drift outputs
     .drift_l6(cortical_drift_l6),
     .drift_l5a(cortical_drift_l5a),
@@ -305,6 +325,96 @@ wire signed [WIDTH-1:0] omega_offset_l5a = cortical_drift_l5a + cortical_jitter_
 wire signed [WIDTH-1:0] omega_offset_l5b = cortical_drift_l5b + cortical_jitter_l5b;
 wire signed [WIDTH-1:0] omega_offset_l4  = cortical_drift_l4  + cortical_jitter_l4;
 wire signed [WIDTH-1:0] omega_offset_l23 = cortical_drift_l23 + cortical_jitter_l23;
+
+//-----------------------------------------------------------------------------
+// v11.0: Active φⁿ Dynamics - Energy Landscape and Force Computation
+// When ENABLE_ADAPTIVE=1:
+//   - Energy landscape computes restoring forces toward half-integer attractors
+//   - Quarter-integer detector classifies oscillator positions
+//   - Forces modify drift values to achieve self-organizing dynamics
+// When ENABLE_ADAPTIVE=0:
+//   - Forces are zero, preserving v10.5 static behavior
+//-----------------------------------------------------------------------------
+
+// Precomputed exponent n values for each cortical layer (Q14 format)
+// n = log_φ(f_layer / f_reference) where f_reference = 5.89 Hz (theta)
+// L6:   9.53 Hz → φ^0.5 → n = 0.5 (half-integer, stable attractor)
+// L5a: 15.42 Hz → φ^1.5 → n = 1.5 (half-integer, but near 2:1 catastrophe)
+// L5b: 24.94 Hz → φ^2.5 → n = 2.5 (half-integer, stable attractor)
+// L4:  31.73 Hz → φ^3.0 → n = 3.0 (integer boundary)
+// L2/3: 40.36 Hz → φ^3.5 → n = 3.5 (half-integer, stable attractor)
+localparam NUM_CORTICAL_LAYERS = 5;
+wire signed [NUM_CORTICAL_LAYERS*WIDTH-1:0] n_cortical_packed;
+wire signed [NUM_CORTICAL_LAYERS*WIDTH-1:0] drift_cortical_packed;
+
+// Pack exponent values (static base positions)
+assign n_cortical_packed = {
+    18'sd57344,   // L2/3: n = 3.5 in Q14
+    18'sd49152,   // L4:   n = 3.0 in Q14
+    18'sd40960,   // L5b:  n = 2.5 in Q14
+    18'sd24576,   // L5a:  n = 1.5 in Q14 (near 2:1 catastrophe!)
+    18'sd8192    // L6:   n = 0.5 in Q14
+};
+
+// Pack current drift values (for effective n computation)
+assign drift_cortical_packed = {
+    cortical_drift_l23,
+    cortical_drift_l4,
+    cortical_drift_l5b,
+    cortical_drift_l5a,
+    cortical_drift_l6
+};
+
+// Force outputs from energy landscape
+wire signed [NUM_CORTICAL_LAYERS*WIDTH-1:0] force_cortical_packed;
+wire signed [NUM_CORTICAL_LAYERS*WIDTH-1:0] energy_cortical_packed;
+wire [NUM_CORTICAL_LAYERS-1:0] near_harmonic_2_1_cortical;
+
+// Unpack forces for cortical_frequency_drift (connects to forward-declared wires)
+assign force_l6  = force_cortical_packed[0*WIDTH +: WIDTH];
+assign force_l5a = force_cortical_packed[1*WIDTH +: WIDTH];
+assign force_l5b = force_cortical_packed[2*WIDTH +: WIDTH];
+assign force_l4  = force_cortical_packed[3*WIDTH +: WIDTH];
+assign force_l23 = force_cortical_packed[4*WIDTH +: WIDTH];
+
+energy_landscape #(
+    .WIDTH(WIDTH),
+    .FRAC(FRAC),
+    .NUM_OSCILLATORS(NUM_CORTICAL_LAYERS),
+    .ENABLE_ADAPTIVE(ENABLE_ADAPTIVE)
+) energy_landscape_cortical (
+    .clk(clk),
+    .rst(rst),
+    .clk_en(clk_4khz_en),
+    .n_packed(n_cortical_packed),
+    .drift_packed(drift_cortical_packed),
+    .force_packed(force_cortical_packed),
+    .energy_packed(energy_cortical_packed),
+    .near_harmonic_2_1(near_harmonic_2_1_cortical)
+);
+
+// Quarter-integer position detector for cortical layers
+wire [NUM_CORTICAL_LAYERS*2-1:0] cortical_position_class;
+wire signed [NUM_CORTICAL_LAYERS*WIDTH-1:0] cortical_stability_packed;
+wire [NUM_CORTICAL_LAYERS-1:0] cortical_is_half_integer;
+wire [NUM_CORTICAL_LAYERS-1:0] cortical_is_quarter_integer;
+
+quarter_integer_detector #(
+    .WIDTH(WIDTH),
+    .FRAC(FRAC),
+    .NUM_OSCILLATORS(NUM_CORTICAL_LAYERS)
+) quarter_int_cortical (
+    .clk(clk),
+    .rst(rst),
+    .clk_en(clk_4khz_en),
+    .n_packed(n_cortical_packed),
+    .position_class_packed(cortical_position_class),
+    .stability_packed(cortical_stability_packed),
+    .is_integer_boundary(),
+    .is_half_integer(cortical_is_half_integer),
+    .is_quarter_integer(cortical_is_quarter_integer),
+    .is_near_catastrophe()
+);
 
 //-----------------------------------------------------------------------------
 // v10.1: Amplitude Envelope Generators for Output Mixer

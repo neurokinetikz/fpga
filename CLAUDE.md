@@ -4,7 +4,7 @@
 
 This is an FPGA implementation of a biologically-realistic neural oscillator system based on the **φⁿ (golden ratio) frequency architecture** with Schumann Resonance coupling. The system implements 21 Hopf oscillators organized into a thalamo-cortical architecture for neural signal processing and consciousness state modeling.
 
-**Current Version:** v10.5 (Quarter-Integer φⁿ Theory)
+**Current Version:** v11.0 (Active φⁿ Dynamics)
 **Target Platform:** Digilent Zybo Z7-20 (Xilinx Zynq-7020)
 
 ## Quick Start
@@ -49,8 +49,8 @@ make clean             # Clean generated files
 
 ```
 fpga/
-├── src/                          # Verilog source modules (19 files)
-│   ├── phi_n_neural_processor.v  # Top-level (v10.5, 21 oscillators + quarter-integer φⁿ)
+├── src/                          # Verilog source modules (23 files)
+│   ├── phi_n_neural_processor.v  # Top-level (v11.0, 21 oscillators + active φⁿ dynamics)
 │   ├── hopf_oscillator.v         # Core oscillator (v6.0, dx/dt = μx - ωy - r²x)
 │   ├── hopf_oscillator_stochastic.v # Stochastic variant with noise input
 │   ├── ca3_phase_memory.v        # Hebbian phase memory (v8.0, theta-gated)
@@ -59,17 +59,21 @@ fpga/
 │   ├── dendritic_compartment.v   # v9.5: Two-compartment dendritic model
 │   ├── layer1_minimal.v          # Layer 1 with L6 input (v9.6)
 │   ├── pv_interneuron.v          # PV+ basket cell dynamics (v9.2)
-│   ├── sr_harmonic_bank.v        # 5-harmonic SR bank (v7.6, quarter-integer φⁿ)
+│   ├── sr_harmonic_bank.v        # 5-harmonic SR bank (v7.7, dynamic SIE from stability)
 │   ├── sr_noise_generator.v      # Per-harmonic stochastic noise (5 LFSRs)
-│   ├── sr_frequency_drift.v      # v8.5: Realistic SR frequency drift
+│   ├── sr_frequency_drift.v      # v2.0: Faster update, wider drift ranges
 │   ├── sr_ignition_controller.v  # v10.0: Six-phase SIE state machine
 │   ├── amplitude_envelope_generator.v # v10.0: O-U process for alpha breathing
-│   ├── cortical_frequency_drift.v # v10.2: Slow drift + fast jitter
+│   ├── cortical_frequency_drift.v # v3.0: Force-based adaptive drift
 │   ├── config_controller.v       # Consciousness states (v10.0, SIE timing)
 │   ├── clock_enable_generator.v  # FAST_SIM-aware 4kHz clock (v6.0)
 │   ├── pink_noise_generator.v    # 1/f^φ noise (v7.2, √Fibonacci-weighted)
-│   └── output_mixer.v            # DAC output mixing (v7.3, envelope modulation)
-├── tb/                           # Testbenches (27 files)
+│   ├── output_mixer.v            # DAC output mixing (v7.3, envelope modulation)
+│   ├── energy_landscape.v        # v11.0: φⁿ energy potential and force computation
+│   ├── quarter_integer_detector.v # v11.0: Position classification and stability
+│   ├── sin_quarter_lut.v         # v11.0: 256-entry quarter-wave sine LUT
+│   └── coupling_susceptibility.v # v11.0: χ(r) coupling susceptibility
+├── tb/                           # Testbenches (31 files)
 │   ├── tb_full_system_fast.v     # Full system integration (v6.5, 15 tests)
 │   ├── tb_theta_phase_multiplexing.v # Theta phase tests (19 tests)
 │   ├── tb_scaffold_architecture.v    # Scaffold layer tests (14 tests)
@@ -83,6 +87,10 @@ fpga/
 │   ├── tb_amplitude_envelope.v   # v10.0: O-U envelope tests (8 tests)
 │   ├── tb_sr_ignition_phases.v   # v10.0: SIE phase evolution tests (10 tests)
 │   ├── tb_eeg_export.v           # v10.0: EEG data export testbench
+│   ├── tb_coupling_susceptibility.v # v11.0: χ(r) validation tests (10 tests)
+│   ├── tb_energy_landscape.v     # v11.0: E(n), F(n) force tests (12 tests)
+│   ├── tb_quarter_integer_detector.v # v11.0: Position classification (8 tests)
+│   ├── tb_self_organization.v    # v11.0: Full integration tests (10 tests)
 │   ├── tb_learning_fast.v        # CA3 learning test (v2.1, 8 tests)
 │   ├── tb_hopf_oscillator.v      # Hopf oscillator unit test
 │   ├── tb_state_transitions.v    # State machine test (12 tests)
@@ -95,7 +103,8 @@ fpga/
 │   └── run_vivado_*.tcl          # Vivado TCL scripts
 ├── docs/                         # Specifications
 │   ├── FPGA_SPECIFICATION_V8.md  # Base architecture spec (v8.0)
-│   ├── SPEC_v10.5_UPDATE.md      # Current version (v10.5 Quarter-Integer φⁿ)
+│   ├── SPEC_v11.0_UPDATE.md      # Current version (v11.0 Active φⁿ Dynamics)
+│   ├── SPEC_v10.5_UPDATE.md      # Quarter-Integer φⁿ Theory
 │   ├── SPEC_v10.4_UPDATE.md      # φⁿ Geophysical SR Integration
 │   ├── SPEC_v9.6_UPDATE.md       # Extended L6 connectivity (v9.6)
 │   └── SYSTEM_DESCRIPTION.md     # Comprehensive system description
@@ -251,10 +260,26 @@ fpga/
 | PHI_2_5 | 54569 | 3.330 | φ^2.5 (v10.5) |
 | HARMONIC_2_1 | 32768 | 2.0 | 2:1 harmonic ratio (v10.5) |
 | OMEGA_DT_F1_THEORY | 356 | 13.84 Hz | Theoretical f₁ at φ^1.25 × f₀ (v10.5) |
+| ENABLE_ADAPTIVE | 0/1 | — | v11.0: 0=static, 1=self-organizing |
+| K_FORCE | 1638 | 0.1 | Force-to-drift gain (v11.0) |
+| FORCE_SCALE_A | 8192 | 0.5 | φ-landscape force amplitude (v11.0) |
+| FORCE_SCALE_B | 16384 | 1.0 | Catastrophe repulsion strength (v11.0) |
+| CATASTROPHE_N_MIN | 22118 | 1.35 | 2:1 danger zone lower bound (v11.0) |
+| CATASTROPHE_N_MAX | 25395 | 1.55 | 2:1 danger zone upper bound (v11.0) |
+| SIE_BASE_ENHANCE | 19661 | 1.2× | Dynamic SIE minimum enhancement (v11.0) |
+| SIE_K_INSTABILITY | 29491 | 1.8× | SIE instability scaling factor (v11.0) |
 
 ## Current Specification
 
-See [docs/SPEC_v10.5_UPDATE.md](docs/SPEC_v10.5_UPDATE.md) for the latest v10.5 architecture with:
+See [docs/SPEC_v11.0_UPDATE.md](docs/SPEC_v11.0_UPDATE.md) for the latest v11.0 architecture with:
+- **Active φⁿ Dynamics** (v11.0): Self-organizing frequencies via energy landscape and restoring forces
+- **Energy Landscape** (v11.0): E(n) = -A×cos(2πn) with attractors at half-integers, repulsion at integers
+- **2:1 Harmonic Catastrophe Avoidance** (v11.0): Automatic f₁ retreat from n=1.5 to n=1.25
+- **Position Classification** (v11.0): INTEGER_BOUNDARY, HALF_INTEGER, QUARTER_INTEGER, NEAR_CATASTROPHE
+- **Dynamic SIE Enhancement** (v11.0): SIE gain computed from stability metric (replaces hardcoded values)
+- **ENABLE_ADAPTIVE Parameter** (v11.0): Backward compatible mode switch (0=static, 1=adaptive)
+
+Previous architecture features (v10.x series):
 - **Quarter-Integer φⁿ Theory** (v10.5): f₁ explained as φ^1.25 fallback due to 2:1 Harmonic Catastrophe
 - **φⁿ Geophysical SR Integration** (v10.4): Q-factor modeling, amplitude hierarchy, mode-selective SIE
 - **1/f^φ Spectral Slope** (v10.3): √Fibonacci-weighted pink noise (v7.2) achieves golden ratio exponent
@@ -286,7 +311,7 @@ Base specification: [docs/FPGA_SPECIFICATION_V8.md](docs/FPGA_SPECIFICATION_V8.m
 
 ## Testing
 
-All testbenches should pass. Key tests (226+ total):
+All testbenches should pass. Key tests (287+ total):
 - `tb_full_system_fast`: 15/15 tests - full integration (v6.5)
 - `tb_theta_phase_multiplexing`: 19/19 tests - theta phase (v8.3)
 - `tb_scaffold_architecture`: 14/14 tests - scaffold layers (v8.0)
@@ -306,6 +331,10 @@ All testbenches should pass. Key tests (226+ total):
 - `tb_sr_ignition_phases`: 10/10 tests - SIE phase evolution (v10.0)
 - `tb_phi_n_sr_relationships`: 10/10 tests - φⁿ Q-factor and amplitude hierarchy (v10.4)
 - `tb_quarter_integer_theory`: 12/12 tests - Quarter-integer fallback validation (v10.5)
+- `tb_coupling_susceptibility`: 10/10 tests - χ(r) coupling validation (v11.0)
+- `tb_energy_landscape`: 12/12 tests - Force direction and magnitude (v11.0)
+- `tb_quarter_integer_detector`: 8/8 tests - Position classification (v11.0)
+- `tb_self_organization`: 10/10 tests - Full integration validation (v11.0)
 - `tb_multi_harmonic_sr`: 17/17 tests - multi-harmonic SR
 - `tb_learning_fast`: 8/8 tests - CA3 Hebbian learning (v2.1)
 - `tb_sr_coupling`: 12/12 tests - SR coupling

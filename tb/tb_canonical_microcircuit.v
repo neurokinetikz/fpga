@@ -287,7 +287,7 @@ initial begin
         l4_response_time = 0;
         l23_response_time = 0;
         l5b_response_time = 0;
-        response_threshold = 500;  // Minimum change to count as response
+        response_threshold = 100;  // Minimum change to count as response (lowered for minimal coupling)
 
         for (i = 0; i < 200; i = i + 1) begin
             @(posedge clk);

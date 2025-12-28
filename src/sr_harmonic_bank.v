@@ -1,8 +1,14 @@
 //=============================================================================
-// Schumann-Aligned Harmonic Bank v7.6
+// Schumann-Aligned Harmonic Bank v7.7
 //
 // Implements 5 externally-driven Hopf oscillators at Schumann-aligned frequencies.
 // Each harmonic can independently couple to brain oscillators when beta quiet.
+//
+// v7.7: Dynamic SIE Enhancement (v11.4 Active φⁿ Dynamics)
+//   - ENABLE_ADAPTIVE parameter for stability-based enhancement
+//   - Stability inputs from quarter_integer_detector
+//   - Enhancement = 1.2× + 1.8× × (1 - stability)
+//   - Less stable positions → higher responsiveness to SR field
 //
 // v7.6: Quarter-Integer φⁿ Theory - f₁ explained as φ^1.25 fallback
 //   - 2:1 Harmonic Catastrophe makes φ^1.5 unstable (too close to ratio 2.0)
@@ -44,7 +50,8 @@ module sr_harmonic_bank #(
     parameter FRAC = 14,
     parameter NUM_HARMONICS = 5,
     parameter ENABLE_STOCHASTIC = 1,  // Enable stochastic noise injection
-    parameter ENABLE_DRIFT = 1        // Enable external frequency drift
+    parameter ENABLE_DRIFT = 1,       // Enable external frequency drift
+    parameter ENABLE_ADAPTIVE = 0     // v11.4: Enable stability-based dynamic SIE enhancement
 )(
     input  wire clk,
     input  wire rst,
@@ -71,6 +78,11 @@ module sr_harmonic_bank #(
     // Beta amplitude for SR gating
     input  wire signed [WIDTH-1:0] beta_amplitude,
 
+    // v11.4: Per-harmonic stability metrics from quarter_integer_detector
+    // Q14 format: 0 = unstable (boundary), 1.0 = fully stable (half-integer)
+    // Only used when ENABLE_ADAPTIVE = 1
+    input  wire signed [NUM_HARMONICS*WIDTH-1:0] stability_packed,
+
     // Per-harmonic outputs - packed for synthesis
     output wire signed [NUM_HARMONICS*WIDTH-1:0] f_x_packed,
     output wire signed [NUM_HARMONICS*WIDTH-1:0] f_y_packed,
@@ -83,6 +95,10 @@ module sr_harmonic_bank #(
 
     // v7.5: Weighted per-harmonic gain (with Q-factor, amplitude scale, SIE enhancement)
     output wire signed [NUM_HARMONICS*WIDTH-1:0] gain_weighted_packed,
+
+    // v11.4: Dynamic SIE enhancement output (for use by thalamus.v)
+    // When ENABLE_ADAPTIVE=1, computed from stability; otherwise, hardcoded values
+    output wire signed [NUM_HARMONICS*WIDTH-1:0] sie_enhance_packed,
 
     // Aggregate outputs
     output wire sie_active_any,                    // Any harmonic in SIE state
@@ -198,6 +214,20 @@ localparam signed [WIDTH-1:0] SIE_ENHANCE_F3 = 18'sd19661;  // 1.2× (protected)
 localparam signed [WIDTH-1:0] SIE_ENHANCE_F4 = 18'sd19661;  // 1.2× (protected)
 
 //-----------------------------------------------------------------------------
+// v11.4: Dynamic SIE Enhancement Constants
+// Enhancement = BASE_ENHANCE + K_INSTABILITY × (1 - stability)
+// - When stability=1.0 (half-integer): enhance = 1.2×
+// - When stability=0.5 (quarter-integer): enhance = 1.2 + 0.9 × 0.5 = 1.65× → use higher K
+// - When stability=0 (boundary): enhance = 1.2 + 1.8 = 3.0×
+// Calibrated so that:
+//   f₁ (quarter-integer, stability≈0.5) → ~3.0×
+//   f₂ (stable anchor, stability≈1.0) → ~1.2×
+//   f₀ (boundary, stability≈0) → ~3.0×
+//-----------------------------------------------------------------------------
+localparam signed [WIDTH-1:0] SIE_BASE_ENHANCE = 18'sd19661;  // 1.2× in Q14
+localparam signed [WIDTH-1:0] SIE_K_INSTABILITY = 18'sd29491; // 1.8× in Q14 (scaling factor)
+
+//-----------------------------------------------------------------------------
 // Unpack input signals
 //-----------------------------------------------------------------------------
 wire signed [WIDTH-1:0] sr_field_input [0:NUM_HARMONICS-1];
@@ -216,6 +246,16 @@ assign noise_input[1] = noise_packed[1*WIDTH +: WIDTH];
 assign noise_input[2] = noise_packed[2*WIDTH +: WIDTH];
 assign noise_input[3] = noise_packed[3*WIDTH +: WIDTH];
 assign noise_input[4] = noise_packed[4*WIDTH +: WIDTH];
+
+//-----------------------------------------------------------------------------
+// v11.4: Unpack stability signals
+//-----------------------------------------------------------------------------
+wire signed [WIDTH-1:0] stability_input [0:NUM_HARMONICS-1];
+assign stability_input[0] = stability_packed[0*WIDTH +: WIDTH];
+assign stability_input[1] = stability_packed[1*WIDTH +: WIDTH];
+assign stability_input[2] = stability_packed[2*WIDTH +: WIDTH];
+assign stability_input[3] = stability_packed[3*WIDTH +: WIDTH];
+assign stability_input[4] = stability_packed[4*WIDTH +: WIDTH];
 
 //-----------------------------------------------------------------------------
 // Beta Quiet Detection (Stochastic Resonance Gate)
@@ -299,6 +339,44 @@ assign SIE_ENHANCE[1] = SIE_ENHANCE_F1;
 assign SIE_ENHANCE[2] = SIE_ENHANCE_F2;
 assign SIE_ENHANCE[3] = SIE_ENHANCE_F3;
 assign SIE_ENHANCE[4] = SIE_ENHANCE_F4;
+
+//-----------------------------------------------------------------------------
+// v11.4: Dynamic SIE Enhancement Computation
+// Enhancement = BASE_ENHANCE + K_INSTABILITY × (1 - stability)
+// Uses hardcoded values when ENABLE_ADAPTIVE=0, computed values when =1
+//-----------------------------------------------------------------------------
+wire signed [WIDTH-1:0] SIE_ENHANCE_DYN [0:NUM_HARMONICS-1];
+wire signed [WIDTH-1:0] instability [0:NUM_HARMONICS-1];
+wire signed [2*WIDTH-1:0] enhance_contrib [0:NUM_HARMONICS-1];
+wire signed [WIDTH-1:0] enhance_computed [0:NUM_HARMONICS-1];
+
+// Compute instability = 1.0 - stability for each harmonic
+assign instability[0] = ONE_Q14 - stability_input[0];
+assign instability[1] = ONE_Q14 - stability_input[1];
+assign instability[2] = ONE_Q14 - stability_input[2];
+assign instability[3] = ONE_Q14 - stability_input[3];
+assign instability[4] = ONE_Q14 - stability_input[4];
+
+// Compute enhancement contribution: K × instability
+assign enhance_contrib[0] = SIE_K_INSTABILITY * instability[0];
+assign enhance_contrib[1] = SIE_K_INSTABILITY * instability[1];
+assign enhance_contrib[2] = SIE_K_INSTABILITY * instability[2];
+assign enhance_contrib[3] = SIE_K_INSTABILITY * instability[3];
+assign enhance_contrib[4] = SIE_K_INSTABILITY * instability[4];
+
+// Compute final enhancement: BASE + contribution (shift Q28 → Q14)
+assign enhance_computed[0] = SIE_BASE_ENHANCE + (enhance_contrib[0] >>> FRAC);
+assign enhance_computed[1] = SIE_BASE_ENHANCE + (enhance_contrib[1] >>> FRAC);
+assign enhance_computed[2] = SIE_BASE_ENHANCE + (enhance_contrib[2] >>> FRAC);
+assign enhance_computed[3] = SIE_BASE_ENHANCE + (enhance_contrib[3] >>> FRAC);
+assign enhance_computed[4] = SIE_BASE_ENHANCE + (enhance_contrib[4] >>> FRAC);
+
+// Select between hardcoded and computed based on ENABLE_ADAPTIVE
+assign SIE_ENHANCE_DYN[0] = ENABLE_ADAPTIVE ? enhance_computed[0] : SIE_ENHANCE[0];
+assign SIE_ENHANCE_DYN[1] = ENABLE_ADAPTIVE ? enhance_computed[1] : SIE_ENHANCE[1];
+assign SIE_ENHANCE_DYN[2] = ENABLE_ADAPTIVE ? enhance_computed[2] : SIE_ENHANCE[2];
+assign SIE_ENHANCE_DYN[3] = ENABLE_ADAPTIVE ? enhance_computed[3] : SIE_ENHANCE[3];
+assign SIE_ENHANCE_DYN[4] = ENABLE_ADAPTIVE ? enhance_computed[4] : SIE_ENHANCE[4];
 
 //-----------------------------------------------------------------------------
 // Coherence Target Mapping
@@ -456,6 +534,10 @@ assign gain_per_harmonic_packed = {gain_int[4], gain_int[3], gain_int[2], gain_i
 // v7.5: Pack per-harmonic weighted gains (Q-factor + amplitude + SIE enhancement)
 assign gain_weighted_packed = {gain_weighted_int[4], gain_weighted_int[3], gain_weighted_int[2],
                                 gain_weighted_int[1], gain_weighted_int[0]};
+
+// v11.4: Pack dynamic SIE enhancement values
+assign sie_enhance_packed = {SIE_ENHANCE_DYN[4], SIE_ENHANCE_DYN[3], SIE_ENHANCE_DYN[2],
+                              SIE_ENHANCE_DYN[1], SIE_ENHANCE_DYN[0]};
 
 //-----------------------------------------------------------------------------
 // Aggregate Outputs

@@ -1,7 +1,7 @@
-# FPGA Resource Budget - v10.3
+# FPGA Resource Budget - v11.0
 
 **Target Platform:** Digilent Zybo Z7-20 (Xilinx Zynq-7020)
-**Design Version:** v10.3 (1/f^φ Spectral Slope)
+**Design Version:** v11.0 (Active φⁿ Dynamics)
 **Analysis Date:** 2025-12-28
 
 ---
@@ -10,12 +10,24 @@
 
 | Resource | Used | Available | Utilization | Status |
 |----------|------|-----------|-------------|--------|
-| **LUTs** | 18,700 | 53,200 | 35% | Good |
-| **Flip-Flops** | 4,600 | 106,400 | 4% | Excellent |
-| **DSP48E1** | 190 | 220 | 86% | Tight |
-| **Block RAM** | 2 | 140 | 1% | Excellent |
+| **LUTs** | 19,500 | 53,200 | 37% | Good |
+| **Flip-Flops** | 4,870 | 106,400 | 5% | Excellent |
+| **DSP48E1** | 192 | 220 | 87% | Tight |
+| **Block RAM** | 4 | 140 | 3% | Excellent |
 
 **Verdict:** Design fits on Zynq-7020. DSP48 is the limiting resource.
+
+### v11.0 Additions
+
+| New Module | LUTs | Registers | DSPs | BRAMs |
+|------------|------|-----------|------|-------|
+| energy_landscape | 300 | 100 | 1 | 0.5 |
+| quarter_integer_detector | 100 | 30 | 0 | 0 |
+| sin_quarter_lut | 50 | 20 | 0 | 0.5 |
+| coupling_susceptibility | 200 | 50 | 0 | 1 |
+| cortical_frequency_drift (force) | 100 | 50 | 1 | 0 |
+| sr_harmonic_bank (dynamic SIE) | 50 | 20 | 0 | 0 |
+| **v11.0 Total New** | **800** | **270** | **2** | **2** |
 
 ---
 
@@ -41,21 +53,27 @@
 ### Architecture Overview
 
 ```
-phi_n_neural_processor (top)
+phi_n_neural_processor (top) - v11.0
 │
 ├── Clock & Control
 │   ├── clock_enable_generator ────────────── (1)
 │   ├── config_controller ─────────────────── (1)
 │   └── sr_ignition_controller ────────────── (1)
 │
+├── Active φⁿ Dynamics (v11.0 NEW)
+│   ├── energy_landscape ──────────────────── (1) ← NEW
+│   ├── quarter_integer_detector ──────────── (1) ← NEW
+│   ├── sin_quarter_lut ───────────────────── (1) ← NEW
+│   └── coupling_susceptibility ───────────── (1) ← NEW
+│
 ├── Thalamus Subsystem
 │   ├── thalamus ──────────────────────────── (1)
 │   │   ├── hopf_oscillator (theta) ───────── (1)
-│   │   ├── sr_harmonic_bank ──────────────── (1)
+│   │   ├── sr_harmonic_bank (v7.7) ───────── (1) [dynamic SIE]
 │   │   │   └── hopf_oscillator_stochastic ── (5) [generate]
 │   │   └── amplitude_envelope_generator ──── (1)
 │   ├── sr_noise_generator ────────────────── (1)
-│   └── sr_frequency_drift ────────────────── (1)
+│   └── sr_frequency_drift (v2.0) ─────────── (1) [wider drift]
 │
 ├── Cortical Columns (×3: Sensory, Association, Motor)
 │   ├── cortical_column ───────────────────── (3)
@@ -64,7 +82,7 @@ phi_n_neural_processor (top)
 │   │   ├── dendritic_compartment ─────────── (3) per column
 │   │   ├── pv_interneuron ────────────────── (3) per column
 │   │   └── amplitude_envelope_generator ──── (5) per column
-│   └── cortical_frequency_drift ──────────── (1)
+│   └── cortical_frequency_drift (v3.0) ───── (1) [force input]
 │
 ├── Hippocampal Memory
 │   └── ca3_phase_memory ──────────────────── (1)
@@ -87,6 +105,10 @@ phi_n_neural_processor (top)
 | pv_interneuron | 9 | E-I balance (3 per column) |
 | amplitude_envelope_generator | 24 | Breathing dynamics |
 | layer1_minimal | 3 | Gain modulation (1 per column) |
+| energy_landscape | 1 | φⁿ energy potential (v11.0) |
+| quarter_integer_detector | 1 | Position classification (v11.0) |
+| sin_quarter_lut | 1 | Quarter-wave sine LUT (v11.0) |
+| coupling_susceptibility | 1 | χ(r) computation (v11.0) |
 | **Total Hopf oscillators** | **21** | **φⁿ frequency bank** |
 
 ---
@@ -177,14 +199,15 @@ phi_n_neural_processor (top)
 
 | Category | LUTs | Notes |
 |----------|------|-------|
-| Register routing | 2,000 | Muxes for 4,600 FFs |
+| Register routing | 2,100 | Muxes for 4,870 FFs |
 | LUT multipliers | 10,800 | ~150 × 72 LUTs each |
 | Adder chains | 2,500 | 18-bit arithmetic |
 | Comparators/Muxes | 1,500 | State selection |
 | State machines | 500 | CA3, Ignition, Config |
 | LFSR generators | 400 | 7 noise LFSRs |
-| Misc logic | 1,000 | Routing, buffers |
-| **TOTAL** | **18,700** | **35% utilization** |
+| v11.0 Active φⁿ | 800 | Energy landscape, position classification |
+| Misc logic | 900 | Routing, buffers |
+| **TOTAL** | **19,500** | **37% utilization** |
 
 ### 4.5 Block RAM Usage
 
@@ -192,8 +215,11 @@ phi_n_neural_processor (top)
 |----------|------|-------|
 | CA3 weight matrix | 0 | 36 bytes → distributed RAM |
 | Pink noise buffers | 0 | 18 bytes → distributed RAM |
+| sin_quarter_lut (v11.0) | 0.5 | 256 × 18-bit entries |
+| energy_landscape (v11.0) | 0.5 | Force LUT |
+| coupling_susceptibility (v11.0) | 1 | χ(r) LUT, 256 entries |
 | DAC output buffer | 0-2 | Optional double-buffering |
-| **TOTAL** | **0-2** | **<2% utilization** |
+| **TOTAL** | **2-4** | **<3% utilization** |
 
 ---
 
@@ -212,10 +238,10 @@ phi_n_neural_processor (top)
 
 | Resource | Remaining | Critical Threshold |
 |----------|-----------|-------------------|
-| LUTs | 34,500 (65%) | <20% for routing |
-| FFs | 101,800 (96%) | Ample |
-| DSP48 | 30 (14%) | Near limit |
-| BRAM | 138 (99%) | Ample |
+| LUTs | 33,700 (63%) | <20% for routing |
+| FFs | 101,530 (95%) | Ample |
+| DSP48 | 28 (13%) | Near limit |
+| BRAM | 136 (97%) | Ample |
 
 ---
 
@@ -325,4 +351,5 @@ phi_n_neural_processor (top)
 
 | Version | Date | Change |
 |---------|------|--------|
+| v1.1 | 2025-12-28 | Updated for v11.0 Active φⁿ Dynamics |
 | v1.0 | 2025-12-28 | Initial resource budget for v10.3 |

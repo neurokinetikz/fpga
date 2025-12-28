@@ -1,8 +1,8 @@
 # φⁿ Neural Processor - Comprehensive System Description
 
-**Version:** 10.5 (Quarter-Integer φⁿ Theory)
+**Version:** 11.0 (Active φⁿ Dynamics)
 **Date:** 2025-12-28
-**Based on:** Complete analysis of all 19 source modules (~5,000 lines of Verilog)
+**Based on:** Complete analysis of all 23 source modules (~6,000 lines of Verilog)
 
 ---
 
@@ -10,8 +10,16 @@
 
 The φⁿ Neural Processor is an FPGA implementation of 21 coupled nonlinear oscillators organized as a thalamo-cortical network. The system models biological neural rhythms using golden ratio (φ ≈ 1.618) frequency relationships, implements associative memory through theta-gated Hebbian learning, and exhibits stochastic resonance sensitivity to weak external electromagnetic fields.
 
-**Version 10.5** introduces the Quarter-Integer φⁿ Theory, resolving the f₁ anomaly through:
-- **Quarter-Integer φⁿ Theory**: f₁ at φ^1.25 due to 2:1 Harmonic Catastrophe
+**Version 11.0** transforms the system from static (hardcoded frequencies) to **self-organizing** (frequencies emerge from energy landscape dynamics):
+- **Active φⁿ Dynamics**: Oscillators find stable φⁿ positions via energy landscape forces
+- **Energy Landscape**: E(n) = -A×cos(2πn) with attractors at half-integers, repulsion at integers
+- **2:1 Harmonic Catastrophe Avoidance**: f₁ automatically retreats from n=1.5 to n=1.25
+- **Position Classification**: INTEGER_BOUNDARY, HALF_INTEGER, QUARTER_INTEGER, NEAR_CATASTROPHE
+- **Dynamic SIE Enhancement**: Computed from stability metric (replaces hardcoded values)
+- **ENABLE_ADAPTIVE Parameter**: Backward-compatible mode switch (0=static, 1=adaptive)
+
+Previous v10.x features:
+- **Quarter-Integer φⁿ Theory** (v10.5): f₁ at φ^1.25 due to 2:1 Harmonic Catastrophe
 - **Geophysical SR Integration** (v10.4): Q-factor modeling, amplitude hierarchy, mode-selective SIE
 - **1/f^φ spectral slope**: √Fibonacci-weighted pink noise (v7.2) achieves golden ratio exponent
 - **Amplitude envelopes**: Ornstein-Uhlenbeck process creates "alpha breathing" (2-5s timescales)
@@ -109,6 +117,103 @@ The f₁ mode at φ^1.25 has the highest SIE enhancement (3.0×) because quarter
 | f₂ | 1.25× | Half-integer stability (n≈2.5) |
 | f₃ | 1.2× | Half-integer stability (n≈3.2) |
 | f₄ | 1.2× | Integer boundary (n≈4) |
+
+---
+
+## Active φⁿ Dynamics (v11.0)
+
+### From Photograph to Physics
+
+Version 10.5 implemented the "photograph" of φⁿ positions through hardcoded constants. Version 11.0 implements the underlying "physics" that creates these positions dynamically.
+
+**Key Insight:** Oscillator frequencies emerge from energy minimization, not hardcoded parameters.
+
+### Energy Landscape Module (energy_landscape.v)
+
+Computes restoring forces based on the φⁿ energy potential:
+
+**Physics:**
+```
+E_φ(n) = -A × cos(2πn)
+- Minima at half-integers (attractors): n = 0.5, 1.5, 2.5...
+- Maxima at integers (boundaries): n = 0, 1, 2...
+
+E_h(n) = B / (φⁿ - 2)²
+- Catastrophic near n = 1.44 (where φⁿ = 2.0)
+- Drives f₁ away from n = 1.5 toward n = 1.25
+
+Force F(n) = -dE/dn = 2πA × sin(2πn) + harmonic_repulsion
+```
+
+**Constants (Q14):**
+
+| Parameter | Q14 Value | Decimal | Purpose |
+|-----------|-----------|---------|---------|
+| FORCE_SCALE_A | 8192 | 0.5 | φ-landscape amplitude |
+| FORCE_SCALE_B | 16384 | 1.0 | Harmonic repulsion strength |
+| CATASTROPHE_N_MIN | 22118 | 1.35 | Danger zone lower bound |
+| CATASTROPHE_N_MAX | 25395 | 1.55 | Danger zone upper bound |
+| K_FORCE | 1638 | 0.1 | Force-to-drift gain |
+
+### Quarter-Integer Detector (quarter_integer_detector.v)
+
+Classifies oscillator positions in the φⁿ energy landscape:
+
+| Code | Class | n values | Stability |
+|------|-------|----------|-----------|
+| 2'b00 | INTEGER_BOUNDARY | 0, 1, 2, 3... | Low (0-0.125) |
+| 2'b01 | HALF_INTEGER | 0.5, 1.5, 2.5... | High (0.875-1.0) |
+| 2'b10 | QUARTER_INTEGER | 0.25, 0.75, 1.25... | Medium (0.25-0.5) |
+| 2'b11 | NEAR_CATASTROPHE | [1.35, 1.55] | Very Low |
+
+**Stability Metric:**
+```
+stability = 1.0 - |distance_from_nearest_attractor| / 0.5
+- Half-integer (distance = 0): stability = 1.0
+- Quarter-integer (distance = 0.25): stability = 0.5
+- Integer boundary (distance = 0.5): stability = 0.0
+```
+
+### Coupling Susceptibility (coupling_susceptibility.v)
+
+Computes χ(r) coupling susceptibility for frequency ratios:
+
+**Key Results:**
+- χ(1.0) > χ(0.5) by factor of 3+ (validates boundary vs attractor)
+- χ(1.25) intermediate between boundaries and attractors
+- χ(2.0) shows spike (2:1 harmonic proximity)
+
+### Dynamic SIE Enhancement (sr_harmonic_bank.v v7.7)
+
+SIE enhancement now computed from stability metric:
+
+```verilog
+// Enhancement = BASE + K_INSTABILITY × (1 - stability)
+instability = ONE_Q14 - stability;
+enhance_contrib = SIE_K_INSTABILITY × instability;
+enhance_computed = SIE_BASE_ENHANCE + (enhance_contrib >>> FRAC);
+```
+
+| Constant | Q14 Value | Decimal | Purpose |
+|----------|-----------|---------|---------|
+| SIE_BASE_ENHANCE | 19661 | 1.2× | Minimum enhancement |
+| SIE_K_INSTABILITY | 29491 | 1.8× | Instability scaling |
+
+### Force-Based Frequency Drift (cortical_frequency_drift.v v3.0)
+
+Energy-based forces now modify oscillator drift:
+
+```verilog
+drift_new = drift + step × direction + K_FORCE × force;
+```
+
+Where K_FORCE = 0.1 provides gentle correction toward stable positions.
+
+### ENABLE_ADAPTIVE Parameter
+
+Backward-compatible mode switch in phi_n_neural_processor.v:
+- `ENABLE_ADAPTIVE = 0` (default): v10.5 static behavior preserved
+- `ENABLE_ADAPTIVE = 1`: Active φⁿ dynamics enabled
 
 ---
 
@@ -1093,17 +1198,21 @@ Features:
 ### 11.2 Module Hierarchy
 
 ```
-phi_n_neural_processor (top) - v10.5
+phi_n_neural_processor (top) - v11.0
 ├── clock_enable_generator
 ├── sr_noise_generator
-├── sr_frequency_drift (v8.5)
-├── cortical_frequency_drift (v2.1) - slow drift + fast jitter
+├── sr_frequency_drift (v2.0) - faster update, wider drift
+├── cortical_frequency_drift (v3.0) - slow drift + fast jitter + force input
 ├── amplitude_envelope_generator ×4 (v1.0) - theta, alpha, beta, gamma
-├── sr_ignition_controller (v1.1) - 6-phase SIE
+├── sr_ignition_controller (v10.0) - 6-phase SIE
 ├── config_controller (v10.0)
+├── energy_landscape (v11.0) - φⁿ energy potential and forces ← NEW
+├── quarter_integer_detector (v11.0) - position classification ← NEW
+├── coupling_susceptibility (v11.0) - χ(r) computation ← NEW
+├── sin_quarter_lut (v11.0) - 256-entry quarter-wave sine LUT ← NEW
 ├── thalamus (v10.5)
 │   ├── hopf_oscillator (theta 5.89 Hz)
-│   ├── sr_harmonic_bank (v7.6) - quarter-integer φⁿ, Q-factor, amplitude hierarchy
+│   ├── sr_harmonic_bank (v7.7) - dynamic SIE from stability
 │   │   └── hopf_oscillator_stochastic ×5
 │   ├── matrix thalamic computation
 │   └── L6 CT inhibition computation
@@ -1112,7 +1221,7 @@ phi_n_neural_processor (top) - v10.5
 │   ├── layer1_minimal (v9.6) - SST+, VIP+
 │   ├── pv_interneuron ×3 (v9.2) - L2/3, L4, L5
 │   ├── amplitude_envelope_generator ×5 - per-layer envelopes
-│   └── hopf_oscillator ×5 (with omega_drift)
+│   └── hopf_oscillator ×5 (with omega_drift + force correction)
 ├── cortical_column (association) - v10.0
 │   ├── layer1_minimal (v9.6)
 │   ├── pv_interneuron ×3
@@ -1173,12 +1282,16 @@ phi_n_neural_processor (top) - v10.5
 
 ## 13. Test Coverage Summary
 
-248+ automated tests across 21+ testbenches, all passing as of v10.5.
+287+ automated tests across 25+ testbenches, all passing as of v11.0.
 
 ### Key Testbenches
 
 | Testbench | Tests | Version | Coverage |
 |-----------|-------|---------|----------|
+| tb_coupling_susceptibility | 10 | v11.0 | χ(r) coupling validation |
+| tb_energy_landscape | 12 | v11.0 | Force direction and magnitude |
+| tb_quarter_integer_detector | 8 | v11.0 | Position classification |
+| tb_self_organization | 10 | v11.0 | Full integration validation |
 | tb_full_system_fast | 15 | v6.5 | Full integration, all features |
 | tb_quarter_integer_theory | 12 | v10.5 | φⁿ theory, 2:1 catastrophe |
 | tb_phi_n_sr_relationships | 10 | v10.4 | Q-factor, amplitude hierarchy |
@@ -1208,7 +1321,8 @@ phi_n_neural_processor (top) - v10.5
 
 | Version | Date | Key Changes |
 |---------|------|-------------|
-| **v10.5** | **2025-12-28** | **Quarter-Integer φⁿ Theory: 2:1 Harmonic Catastrophe, f₁ at φ^1.25** |
+| **v11.0** | **2025-12-28** | **Active φⁿ Dynamics: Self-organizing frequencies via energy landscape** |
+| v10.5 | 2025-12-28 | Quarter-Integer φⁿ Theory: 2:1 Harmonic Catastrophe, f₁ at φ^1.25 |
 | v10.4 | 2025-12-28 | Geophysical SR Integration: Q-factor modeling, amplitude hierarchy, mode-selective SIE |
 | v10.3 | 2025-12-27 | 1/f^φ Spectral Slope: √Fibonacci-weighted pink noise (v7.2) |
 | v10.2 | 2025-12-27 | Spectral broadening: ±0.5 Hz fast jitter for ~1-2 Hz wide peaks |
@@ -1245,9 +1359,10 @@ phi_n_neural_processor (top) - v10.5
 | 8 | v10.0-10.3 | EEG Realism (envelopes, jitter, SIE) | ✅ Complete |
 | 9 | v10.4 | Geophysical SR Integration (Q-factor, amplitude hierarchy) | ✅ Complete |
 | 10 | v10.5 | Quarter-Integer φⁿ Theory (2:1 catastrophe) | ✅ Complete |
-| 11 | v10.6+ | ACh Neuromodulation | Planned |
-| 12 | v10.7+ | NE Neuromodulation | Planned |
-| 13 | v10.8+ | Slow Oscillations (<1 Hz) | Planned |
-| 14 | v10.9+ | Sleep Spindles (11-16 Hz) | Planned |
-| 15 | v11.0+ | Multiple Gamma Sub-bands | Planned |
-| 16 | v11.1+ | Lognormal Synaptic Weights | Planned |
+| 11 | v11.0 | Active φⁿ Dynamics (energy landscape, forces) | ✅ Complete |
+| 12 | v11.1+ | ACh Neuromodulation | Planned |
+| 13 | v11.2+ | NE Neuromodulation | Planned |
+| 14 | v11.3+ | Slow Oscillations (<1 Hz) | Planned |
+| 15 | v11.4+ | Sleep Spindles (11-16 Hz) | Planned |
+| 16 | v11.5+ | Multiple Gamma Sub-bands | Planned |
+| 17 | v11.6+ | Lognormal Synaptic Weights | Planned |

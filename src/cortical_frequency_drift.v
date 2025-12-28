@@ -1,8 +1,8 @@
 //=============================================================================
-// Cortical Frequency Drift Generator - v2.1
+// Cortical Frequency Drift Generator - v3.0
 //
 // Models frequency variability in cortical oscillators for EEG-realistic output.
-// Two components create broad spectral peaks like real EEG:
+// Three components work together:
 //
 // 1. SLOW DRIFT: Bounded random walk (±0.5 Hz over seconds)
 //    - Updates every 0.2s in simulation
@@ -13,14 +13,22 @@
 //    - Creates significant spectral broadening around oscillator peaks
 //    - Models neural timing variability and phase noise
 //
+// 3. ADAPTIVE FORCE (v3.0, optional): Energy-landscape restoring force
+//    - Enabled via ENABLE_ADAPTIVE parameter
+//    - Receives force from energy_landscape.v
+//    - Guides oscillators toward φⁿ half-integer attractors
+//    - Force added to drift update with gain K_FORCE
+//
+// v3.0 CHANGES:
+// - Added ENABLE_ADAPTIVE parameter (default 0 for backwards compatibility)
+// - Added force inputs from energy_landscape.v
+// - Added K_FORCE gain for scaling force contribution
+// - Force guides drift toward half-integer φⁿ attractors
+//
 // v2.1 CHANGES:
 // - Increased jitter range from ±0.15 Hz to ±0.5 Hz for broader peaks
 // - Use 5 LFSR bits instead of 3 for wider distribution
 // - Creates ~1-2 Hz wide peaks (more EEG-realistic)
-//
-// v2.0 CHANGES:
-// - Added fast jitter outputs for each layer
-// - Jitter uses separate LFSRs updating every sample
 //
 // CORTICAL OSCILLATOR FREQUENCIES (phi^n based):
 //   L6:   9.53 Hz  (phi^0.5)  - alpha band
@@ -37,7 +45,8 @@ module cortical_frequency_drift #(
     parameter WIDTH = 18,
     parameter FRAC = 14,
     parameter NUM_LAYERS = 5,
-    parameter FAST_SIM = 0
+    parameter FAST_SIM = 0,
+    parameter ENABLE_ADAPTIVE = 0  // v3.0: Enable energy-landscape force input
 )(
     input  wire clk,
     input  wire rst,
@@ -55,7 +64,15 @@ module cortical_frequency_drift #(
     output wire signed [WIDTH-1:0] jitter_l5a,    // L5a low-beta jitter
     output wire signed [WIDTH-1:0] jitter_l5b,    // L5b high-beta jitter
     output wire signed [WIDTH-1:0] jitter_l4,     // L4 low-gamma jitter
-    output wire signed [WIDTH-1:0] jitter_l23     // L2/3 gamma jitter
+    output wire signed [WIDTH-1:0] jitter_l23,    // L2/3 gamma jitter
+
+    // v3.0: Adaptive force inputs from energy_landscape.v (optional)
+    // When ENABLE_ADAPTIVE=1, these forces guide drift toward φⁿ attractors
+    input  wire signed [WIDTH-1:0] force_l6,      // L6 restoring force
+    input  wire signed [WIDTH-1:0] force_l5a,     // L5a restoring force
+    input  wire signed [WIDTH-1:0] force_l5b,     // L5b restoring force
+    input  wire signed [WIDTH-1:0] force_l4,      // L4 restoring force
+    input  wire signed [WIDTH-1:0] force_l23      // L2/3 restoring force
 );
 
 //-----------------------------------------------------------------------------
@@ -72,6 +89,14 @@ localparam signed [WIDTH-1:0] DRIFT_MAX = 18'sd13;  // ±0.5 Hz
 // Creates ~1-2 Hz wide peaks instead of sharp lines
 //-----------------------------------------------------------------------------
 localparam signed [WIDTH-1:0] JITTER_MAX = 18'sd13;  // ±0.5 Hz (was ±0.15 Hz)
+
+//-----------------------------------------------------------------------------
+// v3.0: Adaptive Force Gain
+// K_FORCE scales the energy-landscape force contribution to drift
+// K_FORCE = 0.1 in Q14 = 1638 → small perturbations (±5% max)
+// Force contribution: (K_FORCE × force) >>> FRAC added each update
+//-----------------------------------------------------------------------------
+localparam signed [WIDTH-1:0] K_FORCE = 18'sd1638;  // 0.1 in Q14
 
 //-----------------------------------------------------------------------------
 // Update Period
@@ -142,7 +167,29 @@ wire signed [WIDTH-1:0] step_l4  = lfsr_l4[1]  ? 18'sd2 : 18'sd1;
 wire signed [WIDTH-1:0] step_l23 = lfsr_l23[1] ? 18'sd2 : 18'sd1;
 
 //-----------------------------------------------------------------------------
+// v3.0: Scaled Force Contributions
+// force_contrib = (K_FORCE × force) >>> FRAC
+// Need 36-bit intermediate for Q14 × Q14 multiplication
+//-----------------------------------------------------------------------------
+reg signed [2*WIDTH-1:0] force_product_l6, force_product_l5a, force_product_l5b;
+reg signed [2*WIDTH-1:0] force_product_l4, force_product_l23;
+wire signed [WIDTH-1:0] force_contrib_l6, force_contrib_l5a, force_contrib_l5b;
+wire signed [WIDTH-1:0] force_contrib_l4, force_contrib_l23;
+
+// Compute scaled force contributions (combinatorial for simplicity)
+assign force_contrib_l6  = ENABLE_ADAPTIVE ? ((K_FORCE * force_l6)  >>> FRAC) : 18'sd0;
+assign force_contrib_l5a = ENABLE_ADAPTIVE ? ((K_FORCE * force_l5a) >>> FRAC) : 18'sd0;
+assign force_contrib_l5b = ENABLE_ADAPTIVE ? ((K_FORCE * force_l5b) >>> FRAC) : 18'sd0;
+assign force_contrib_l4  = ENABLE_ADAPTIVE ? ((K_FORCE * force_l4)  >>> FRAC) : 18'sd0;
+assign force_contrib_l23 = ENABLE_ADAPTIVE ? ((K_FORCE * force_l23) >>> FRAC) : 18'sd0;
+
+// Temporary variables for next_drift computation (Verilog-2001 compliance)
+reg signed [WIDTH-1:0] next_drift_l6, next_drift_l5a, next_drift_l5b;
+reg signed [WIDTH-1:0] next_drift_l4, next_drift_l23;
+
+//-----------------------------------------------------------------------------
 // Random Walk Update Logic - L6 Alpha
+// v3.0: Adds force_contrib when ENABLE_ADAPTIVE=1
 //-----------------------------------------------------------------------------
 always @(posedge clk or posedge rst) begin
     if (rst) begin
@@ -150,22 +197,21 @@ always @(posedge clk or posedge rst) begin
         drift_l6_reg <= 18'sd0;
     end else if (clk_en && update_tick) begin
         lfsr_l6 <= {lfsr_l6[14:0], fb_l6};
-        if (dir_l6) begin
-            if (drift_l6_reg + step_l6 <= DRIFT_MAX)
-                drift_l6_reg <= drift_l6_reg + step_l6;
-            else
-                drift_l6_reg <= drift_l6_reg - step_l6;  // Reflect
-        end else begin
-            if (drift_l6_reg - step_l6 >= -DRIFT_MAX)
-                drift_l6_reg <= drift_l6_reg - step_l6;
-            else
-                drift_l6_reg <= drift_l6_reg + step_l6;  // Reflect
-        end
+        // v3.0: Base step + force contribution, then clamp
+        next_drift_l6 = dir_l6 ? (drift_l6_reg + step_l6 + force_contrib_l6)
+                               : (drift_l6_reg - step_l6 + force_contrib_l6);
+        if (next_drift_l6 > DRIFT_MAX)
+            drift_l6_reg <= DRIFT_MAX;
+        else if (next_drift_l6 < -DRIFT_MAX)
+            drift_l6_reg <= -DRIFT_MAX;
+        else
+            drift_l6_reg <= next_drift_l6;
     end
 end
 
 //-----------------------------------------------------------------------------
 // Random Walk Update Logic - L5a Low Beta
+// v3.0: Adds force_contrib when ENABLE_ADAPTIVE=1
 //-----------------------------------------------------------------------------
 always @(posedge clk or posedge rst) begin
     if (rst) begin
@@ -173,22 +219,20 @@ always @(posedge clk or posedge rst) begin
         drift_l5a_reg <= 18'sd0;
     end else if (clk_en && update_tick) begin
         lfsr_l5a <= {lfsr_l5a[14:0], fb_l5a};
-        if (dir_l5a) begin
-            if (drift_l5a_reg + step_l5a <= DRIFT_MAX)
-                drift_l5a_reg <= drift_l5a_reg + step_l5a;
-            else
-                drift_l5a_reg <= drift_l5a_reg - step_l5a;
-        end else begin
-            if (drift_l5a_reg - step_l5a >= -DRIFT_MAX)
-                drift_l5a_reg <= drift_l5a_reg - step_l5a;
-            else
-                drift_l5a_reg <= drift_l5a_reg + step_l5a;
-        end
+        next_drift_l5a = dir_l5a ? (drift_l5a_reg + step_l5a + force_contrib_l5a)
+                                 : (drift_l5a_reg - step_l5a + force_contrib_l5a);
+        if (next_drift_l5a > DRIFT_MAX)
+            drift_l5a_reg <= DRIFT_MAX;
+        else if (next_drift_l5a < -DRIFT_MAX)
+            drift_l5a_reg <= -DRIFT_MAX;
+        else
+            drift_l5a_reg <= next_drift_l5a;
     end
 end
 
 //-----------------------------------------------------------------------------
 // Random Walk Update Logic - L5b High Beta
+// v3.0: Adds force_contrib when ENABLE_ADAPTIVE=1
 //-----------------------------------------------------------------------------
 always @(posedge clk or posedge rst) begin
     if (rst) begin
@@ -196,22 +240,20 @@ always @(posedge clk or posedge rst) begin
         drift_l5b_reg <= 18'sd0;
     end else if (clk_en && update_tick) begin
         lfsr_l5b <= {lfsr_l5b[14:0], fb_l5b};
-        if (dir_l5b) begin
-            if (drift_l5b_reg + step_l5b <= DRIFT_MAX)
-                drift_l5b_reg <= drift_l5b_reg + step_l5b;
-            else
-                drift_l5b_reg <= drift_l5b_reg - step_l5b;
-        end else begin
-            if (drift_l5b_reg - step_l5b >= -DRIFT_MAX)
-                drift_l5b_reg <= drift_l5b_reg - step_l5b;
-            else
-                drift_l5b_reg <= drift_l5b_reg + step_l5b;
-        end
+        next_drift_l5b = dir_l5b ? (drift_l5b_reg + step_l5b + force_contrib_l5b)
+                                 : (drift_l5b_reg - step_l5b + force_contrib_l5b);
+        if (next_drift_l5b > DRIFT_MAX)
+            drift_l5b_reg <= DRIFT_MAX;
+        else if (next_drift_l5b < -DRIFT_MAX)
+            drift_l5b_reg <= -DRIFT_MAX;
+        else
+            drift_l5b_reg <= next_drift_l5b;
     end
 end
 
 //-----------------------------------------------------------------------------
 // Random Walk Update Logic - L4 Low Gamma
+// v3.0: Adds force_contrib when ENABLE_ADAPTIVE=1
 //-----------------------------------------------------------------------------
 always @(posedge clk or posedge rst) begin
     if (rst) begin
@@ -219,22 +261,20 @@ always @(posedge clk or posedge rst) begin
         drift_l4_reg <= 18'sd0;
     end else if (clk_en && update_tick) begin
         lfsr_l4 <= {lfsr_l4[14:0], fb_l4};
-        if (dir_l4) begin
-            if (drift_l4_reg + step_l4 <= DRIFT_MAX)
-                drift_l4_reg <= drift_l4_reg + step_l4;
-            else
-                drift_l4_reg <= drift_l4_reg - step_l4;
-        end else begin
-            if (drift_l4_reg - step_l4 >= -DRIFT_MAX)
-                drift_l4_reg <= drift_l4_reg - step_l4;
-            else
-                drift_l4_reg <= drift_l4_reg + step_l4;
-        end
+        next_drift_l4 = dir_l4 ? (drift_l4_reg + step_l4 + force_contrib_l4)
+                               : (drift_l4_reg - step_l4 + force_contrib_l4);
+        if (next_drift_l4 > DRIFT_MAX)
+            drift_l4_reg <= DRIFT_MAX;
+        else if (next_drift_l4 < -DRIFT_MAX)
+            drift_l4_reg <= -DRIFT_MAX;
+        else
+            drift_l4_reg <= next_drift_l4;
     end
 end
 
 //-----------------------------------------------------------------------------
 // Random Walk Update Logic - L2/3 Gamma
+// v3.0: Adds force_contrib when ENABLE_ADAPTIVE=1
 //-----------------------------------------------------------------------------
 always @(posedge clk or posedge rst) begin
     if (rst) begin
@@ -242,17 +282,14 @@ always @(posedge clk or posedge rst) begin
         drift_l23_reg <= 18'sd0;
     end else if (clk_en && update_tick) begin
         lfsr_l23 <= {lfsr_l23[14:0], fb_l23};
-        if (dir_l23) begin
-            if (drift_l23_reg + step_l23 <= DRIFT_MAX)
-                drift_l23_reg <= drift_l23_reg + step_l23;
-            else
-                drift_l23_reg <= drift_l23_reg - step_l23;
-        end else begin
-            if (drift_l23_reg - step_l23 >= -DRIFT_MAX)
-                drift_l23_reg <= drift_l23_reg - step_l23;
-            else
-                drift_l23_reg <= drift_l23_reg + step_l23;
-        end
+        next_drift_l23 = dir_l23 ? (drift_l23_reg + step_l23 + force_contrib_l23)
+                                 : (drift_l23_reg - step_l23 + force_contrib_l23);
+        if (next_drift_l23 > DRIFT_MAX)
+            drift_l23_reg <= DRIFT_MAX;
+        else if (next_drift_l23 < -DRIFT_MAX)
+            drift_l23_reg <= -DRIFT_MAX;
+        else
+            drift_l23_reg <= next_drift_l23;
     end
 end
 
