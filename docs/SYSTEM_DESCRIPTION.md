@@ -1,8 +1,8 @@
 # φⁿ Neural Processor - Comprehensive System Description
 
-**Version:** 11.0 (Active φⁿ Dynamics)
+**Version:** 11.1 (Unified Boundary-Attractor Framework)
 **Date:** 2025-12-28
-**Based on:** Complete analysis of all 23 source modules (~6,000 lines of Verilog)
+**Based on:** Complete analysis of all 24 source modules (~6,500 lines of Verilog)
 
 ---
 
@@ -10,7 +10,14 @@
 
 The φⁿ Neural Processor is an FPGA implementation of 21 coupled nonlinear oscillators organized as a thalamo-cortical network. The system models biological neural rhythms using golden ratio (φ ≈ 1.618) frequency relationships, implements associative memory through theta-gated Hebbian learning, and exhibits stochastic resonance sensitivity to weak external electromagnetic fields.
 
-**Version 11.0** transforms the system from static (hardcoded frequencies) to **self-organizing** (frequencies emerge from energy landscape dynamics):
+**Version 11.1** completes the Unified Boundary-Attractor Framework:
+- **Farey χ(r) Computation** (v11.1a): Systematic formula with 55 rationals (q≤5) + 6 φⁿ boundaries
+- **Rational Resonance Forces** (v11.1b): Lorentzian gradient F = -2B×d/(d²+ε²)² from p/q ratios
+- **Multi-Catastrophe Detection** (v11.1b): 2:1, 3:1, 4:1 zone-based repulsion
+- **Phase-Amplitude Coupling** (v11.1c): PAC strength from chi × amplitude for 10 oscillator pairs
+- **Key Insight**: φ^1.25 = 1.825 is the MOST STABLE position (chi = 0.126)
+
+**Version 11.0** transformed the system from static to **self-organizing**:
 - **Active φⁿ Dynamics**: Oscillators find stable φⁿ positions via energy landscape forces
 - **Energy Landscape**: E(n) = -A×cos(2πn) with attractors at half-integers, repulsion at integers
 - **2:1 Harmonic Catastrophe Avoidance**: f₁ automatically retreats from n=1.5 to n=1.25

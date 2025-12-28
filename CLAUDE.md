@@ -4,7 +4,7 @@
 
 This is an FPGA implementation of a biologically-realistic neural oscillator system based on the **φⁿ (golden ratio) frequency architecture** with Schumann Resonance coupling. The system implements 21 Hopf oscillators organized into a thalamo-cortical architecture for neural signal processing and consciousness state modeling.
 
-**Current Version:** v11.0 (Active φⁿ Dynamics)
+**Current Version:** v11.1 (Unified Boundary-Attractor Framework)
 **Target Platform:** Digilent Zybo Z7-20 (Xilinx Zynq-7020)
 
 ## Quick Start
@@ -49,8 +49,8 @@ make clean             # Clean generated files
 
 ```
 fpga/
-├── src/                          # Verilog source modules (23 files)
-│   ├── phi_n_neural_processor.v  # Top-level (v11.0, 21 oscillators + active φⁿ dynamics)
+├── src/                          # Verilog source modules (24 files)
+│   ├── phi_n_neural_processor.v  # Top-level (v11.1, 21 oscillators + PAC module)
 │   ├── hopf_oscillator.v         # Core oscillator (v6.0, dx/dt = μx - ωy - r²x)
 │   ├── hopf_oscillator_stochastic.v # Stochastic variant with noise input
 │   ├── ca3_phase_memory.v        # Hebbian phase memory (v8.0, theta-gated)
@@ -69,11 +69,12 @@ fpga/
 │   ├── clock_enable_generator.v  # FAST_SIM-aware 4kHz clock (v6.0)
 │   ├── pink_noise_generator.v    # 1/f^φ noise (v7.2, √Fibonacci-weighted)
 │   ├── output_mixer.v            # DAC output mixing (v7.3, envelope modulation)
-│   ├── energy_landscape.v        # v11.0: φⁿ energy potential and force computation
+│   ├── energy_landscape.v        # v11.1b: φⁿ forces + rational resonance + multi-catastrophe
 │   ├── quarter_integer_detector.v # v11.0: Position classification and stability
 │   ├── sin_quarter_lut.v         # v11.0: 256-entry quarter-wave sine LUT
-│   └── coupling_susceptibility.v # v11.0: χ(r) coupling susceptibility
-├── tb/                           # Testbenches (31 files)
+│   ├── coupling_susceptibility.v # v11.1a: Farey χ(r) with 55 rationals + φⁿ boundaries
+│   └── pac_strength.v            # v11.1c: Phase-amplitude coupling strength (10 pairs)
+├── tb/                           # Testbenches (32 files)
 │   ├── tb_full_system_fast.v     # Full system integration (v6.5, 15 tests)
 │   ├── tb_theta_phase_multiplexing.v # Theta phase tests (19 tests)
 │   ├── tb_scaffold_architecture.v    # Scaffold layer tests (14 tests)
@@ -87,10 +88,11 @@ fpga/
 │   ├── tb_amplitude_envelope.v   # v10.0: O-U envelope tests (8 tests)
 │   ├── tb_sr_ignition_phases.v   # v10.0: SIE phase evolution tests (10 tests)
 │   ├── tb_eeg_export.v           # v10.0: EEG data export testbench
-│   ├── tb_coupling_susceptibility.v # v11.0: χ(r) validation tests (10 tests)
-│   ├── tb_energy_landscape.v     # v11.0: E(n), F(n) force tests (12 tests)
+│   ├── tb_coupling_susceptibility.v # v11.1a: Farey χ(r) tests (20 tests)
+│   ├── tb_energy_landscape.v     # v11.1b: Force + rational tests (24 tests)
 │   ├── tb_quarter_integer_detector.v # v11.0: Position classification (8 tests)
 │   ├── tb_self_organization.v    # v11.0: Full integration tests (10 tests)
+│   ├── tb_pac_strength.v         # v11.1c: PAC strength tests (10 tests)
 │   ├── tb_learning_fast.v        # CA3 learning test (v2.1, 8 tests)
 │   ├── tb_hopf_oscillator.v      # Hopf oscillator unit test
 │   ├── tb_state_transitions.v    # State machine test (12 tests)
@@ -103,7 +105,8 @@ fpga/
 │   └── run_vivado_*.tcl          # Vivado TCL scripts
 ├── docs/                         # Specifications
 │   ├── FPGA_SPECIFICATION_V8.md  # Base architecture spec (v8.0)
-│   ├── SPEC_v11.0_UPDATE.md      # Current version (v11.0 Active φⁿ Dynamics)
+│   ├── SPEC_v11.1_UPDATE.md      # Current version (v11.1 Unified Boundary-Attractor)
+│   ├── SPEC_v11.0_UPDATE.md      # Active φⁿ Dynamics
 │   ├── SPEC_v10.5_UPDATE.md      # Quarter-Integer φⁿ Theory
 │   ├── SPEC_v10.4_UPDATE.md      # φⁿ Geophysical SR Integration
 │   ├── SPEC_v9.6_UPDATE.md       # Extended L6 connectivity (v9.6)
@@ -268,10 +271,27 @@ fpga/
 | CATASTROPHE_N_MAX | 25395 | 1.55 | 2:1 danger zone upper bound (v11.0) |
 | SIE_BASE_ENHANCE | 19661 | 1.2× | Dynamic SIE minimum enhancement (v11.0) |
 | SIE_K_INSTABILITY | 29491 | 1.8× | SIE instability scaling factor (v11.0) |
+| B_Q1 | 820 | 0.05 | Rational force weight q=1 (v11.1b) |
+| B_Q2 | 205 | 0.0125 | Rational force weight q=2 (v11.1b) |
+| B_Q3 | 91 | 0.0056 | Rational force weight q=3 (v11.1b) |
+| EPSILON_SQ | 15 | 0.0009 | Lorentzian regularization (v11.1b) |
+| N_3_1_LOW | 36045 | 2.20 | 3:1 catastrophe zone lower (v11.1b) |
+| N_3_1_HIGH | 38666 | 2.36 | 3:1 catastrophe zone upper (v11.1b) |
+| N_4_1_LOW | 45875 | 2.80 | 4:1 catastrophe zone lower (v11.1b) |
+| N_4_1_HIGH | 48497 | 2.96 | 4:1 catastrophe zone upper (v11.1b) |
+| K_CATASTROPHE_3_1 | 16384 | 1.0 | 3:1 repulsion strength (v11.1b) |
+| K_CATASTROPHE_4_1 | 12288 | 0.75 | 4:1 repulsion strength (v11.1b) |
 
 ## Current Specification
 
-See [docs/SPEC_v11.0_UPDATE.md](docs/SPEC_v11.0_UPDATE.md) for the latest v11.0 architecture with:
+See [docs/SPEC_v11.1_UPDATE.md](docs/SPEC_v11.1_UPDATE.md) for the latest v11.1 architecture with:
+- **Farey χ(r) Computation** (v11.1a): Systematic formula with 55 rationals + 6 φⁿ boundaries
+- **Rational Resonance Forces** (v11.1b): Lorentzian gradient F_rational(n) from p/q ratios
+- **Multi-Catastrophe Detection** (v11.1b): 2:1, 3:1, 4:1 zone-based repulsion
+- **Phase-Amplitude Coupling** (v11.1c): PAC strength from chi × amplitude for 10 oscillator pairs
+- **Key Insight**: φ^1.25 = 1.825 is the MOST STABLE position (chi = 0.126)
+
+Previous architecture features (v11.0):
 - **Active φⁿ Dynamics** (v11.0): Self-organizing frequencies via energy landscape and restoring forces
 - **Energy Landscape** (v11.0): E(n) = -A×cos(2πn) with attractors at half-integers, repulsion at integers
 - **2:1 Harmonic Catastrophe Avoidance** (v11.0): Automatic f₁ retreat from n=1.5 to n=1.25
@@ -311,7 +331,7 @@ Base specification: [docs/FPGA_SPECIFICATION_V8.md](docs/FPGA_SPECIFICATION_V8.m
 
 ## Testing
 
-All testbenches should pass. Key tests (287+ total):
+All testbenches should pass. Key tests (319+ total):
 - `tb_full_system_fast`: 15/15 tests - full integration (v6.5)
 - `tb_theta_phase_multiplexing`: 19/19 tests - theta phase (v8.3)
 - `tb_scaffold_architecture`: 14/14 tests - scaffold layers (v8.0)
@@ -331,10 +351,11 @@ All testbenches should pass. Key tests (287+ total):
 - `tb_sr_ignition_phases`: 10/10 tests - SIE phase evolution (v10.0)
 - `tb_phi_n_sr_relationships`: 10/10 tests - φⁿ Q-factor and amplitude hierarchy (v10.4)
 - `tb_quarter_integer_theory`: 12/12 tests - Quarter-integer fallback validation (v10.5)
-- `tb_coupling_susceptibility`: 10/10 tests - χ(r) coupling validation (v11.0)
-- `tb_energy_landscape`: 12/12 tests - Force direction and magnitude (v11.0)
+- `tb_coupling_susceptibility`: 20/20 tests - Farey χ(r) computation (v11.1a)
+- `tb_energy_landscape`: 24/24 tests - Forces + rational resonance (v11.1b)
 - `tb_quarter_integer_detector`: 8/8 tests - Position classification (v11.0)
 - `tb_self_organization`: 10/10 tests - Full integration validation (v11.0)
+- `tb_pac_strength`: 10/10 tests - Phase-amplitude coupling (v11.1c)
 - `tb_multi_harmonic_sr`: 17/17 tests - multi-harmonic SR
 - `tb_learning_fast`: 8/8 tests - CA3 Hebbian learning (v2.1)
 - `tb_sr_coupling`: 12/12 tests - SR coupling

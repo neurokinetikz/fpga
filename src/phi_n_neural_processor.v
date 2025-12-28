@@ -897,6 +897,117 @@ pink_noise_generator #(.WIDTH(WIDTH), .FRAC(FRAC)) pink_gen (
 wire signed [WIDTH-1:0] mixed_output;
 
 // v10.1: Expanded 5-channel mixer with per-band amplitude envelopes
+//=============================================================================
+// v11.1c: PAC STRENGTH MODULE
+// Computes Phase-Amplitude Coupling strength based on chi(frequency ratio)
+// PAC is strong at boundaries (integer ratios), weak at attractors (half-integers)
+//=============================================================================
+
+// Amplitude estimates using |x| as proxy (simple but effective)
+// For oscillators where both x and y are available, we could compute sqrt(x^2+y^2)
+// but |x| gives a reasonable approximation with less hardware
+wire [WIDTH-1:0] amp_theta_est = (thalamic_theta_x[WIDTH-1]) ?
+                                  (~thalamic_theta_x + 1) : thalamic_theta_x;
+wire [WIDTH-1:0] amp_alpha_est = (sensory_l6_x[WIDTH-1]) ?
+                                  (~sensory_l6_x + 1) : sensory_l6_x;
+wire [WIDTH-1:0] amp_beta_low_est = (motor_l5a_x[WIDTH-1]) ?
+                                     (~motor_l5a_x + 1) : motor_l5a_x;
+wire [WIDTH-1:0] amp_beta_high_est = (motor_l5b_x[WIDTH-1]) ?
+                                      (~motor_l5b_x + 1) : motor_l5b_x;
+wire [WIDTH-1:0] amp_gamma_est = (sensory_l4_x[WIDTH-1]) ?
+                                  (~sensory_l4_x + 1) : sensory_l4_x;
+wire [WIDTH-1:0] amp_gamma_fast_est = (sensory_l23_x[WIDTH-1]) ?
+                                       (~sensory_l23_x + 1) : sensory_l23_x;
+
+// SR harmonic amplitudes from packed output (extract f0 and f2)
+wire signed [WIDTH-1:0] sr_f0_amp = sr_amplitude_packed_int[WIDTH-1:0];         // f0
+wire signed [WIDTH-1:0] sr_f2_amp = sr_amplitude_packed_int[3*WIDTH-1:2*WIDTH]; // f2
+wire [WIDTH-1:0] amp_sr_f0_est = (sr_f0_amp[WIDTH-1]) ? (~sr_f0_amp + 1) : sr_f0_amp;
+wire [WIDTH-1:0] amp_sr_f2_est = (sr_f2_amp[WIDTH-1]) ? (~sr_f2_amp + 1) : sr_f2_amp;
+
+// Fixed OMEGA_DT values (from architecture - these could also be dynamic)
+localparam [WIDTH-1:0] OMEGA_DT_THETA      = 18'd152;   // 5.89 Hz
+localparam [WIDTH-1:0] OMEGA_DT_ALPHA      = 18'd245;   // 9.53 Hz
+localparam [WIDTH-1:0] OMEGA_DT_BETA_LOW   = 18'd397;   // 15.42 Hz
+localparam [WIDTH-1:0] OMEGA_DT_BETA_HIGH  = 18'd642;   // 24.94 Hz
+localparam [WIDTH-1:0] OMEGA_DT_GAMMA      = 18'd817;   // 31.73 Hz
+localparam [WIDTH-1:0] OMEGA_DT_GAMMA_FAST = 18'd1040;  // 40.36 Hz
+localparam [WIDTH-1:0] OMEGA_DT_SR_F0      = 18'd196;   // 7.6 Hz
+localparam [WIDTH-1:0] OMEGA_DT_SR_F2      = 18'd514;   // 20 Hz
+
+// PAC strength outputs (internal wires)
+wire [WIDTH-1:0] pac_theta_alpha_int;
+wire [WIDTH-1:0] pac_theta_beta_low_int;
+wire [WIDTH-1:0] pac_alpha_beta_low_int;
+wire [WIDTH-1:0] pac_alpha_beta_high_int;
+wire [WIDTH-1:0] pac_beta_low_gamma_int;   // Near 2:1 - expected to be highest
+wire [WIDTH-1:0] pac_beta_high_gamma_int;
+wire [WIDTH-1:0] pac_theta_gamma_fast_int;
+wire [WIDTH-1:0] pac_alpha_gamma_fast_int;
+wire [WIDTH-1:0] pac_sr_f0_f2_int;
+wire [WIDTH-1:0] pac_theta_gamma_int;
+
+// PAC classification outputs
+wire [1:0] pac_class_theta_alpha;
+wire [1:0] pac_class_beta_low_gamma;  // Most diagnostic: should be boundary/transition
+
+pac_strength #(
+    .WIDTH(WIDTH),
+    .FRAC(FRAC),
+    .NUM_PAIRS(10)
+) pac_module (
+    .clk(clk),
+    .rst(rst),
+    .clk_en(clk_4khz_en),
+
+    // Frequency inputs (OMEGA_DT values)
+    .omega_theta(OMEGA_DT_THETA),
+    .omega_alpha(OMEGA_DT_ALPHA),
+    .omega_beta_low(OMEGA_DT_BETA_LOW),
+    .omega_beta_high(OMEGA_DT_BETA_HIGH),
+    .omega_gamma(OMEGA_DT_GAMMA),
+    .omega_gamma_fast(OMEGA_DT_GAMMA_FAST),
+    .omega_sr_f0(OMEGA_DT_SR_F0),
+    .omega_sr_f2(OMEGA_DT_SR_F2),
+
+    // Amplitude inputs (estimated from |x|)
+    .amp_theta(amp_theta_est),
+    .amp_alpha(amp_alpha_est),
+    .amp_beta_low(amp_beta_low_est),
+    .amp_beta_high(amp_beta_high_est),
+    .amp_gamma(amp_gamma_est),
+    .amp_gamma_fast(amp_gamma_fast_est),
+    .amp_sr_f0(amp_sr_f0_est),
+    .amp_sr_f2(amp_sr_f2_est),
+
+    // PAC strength outputs
+    .pac_theta_alpha(pac_theta_alpha_int),
+    .pac_theta_beta_low(pac_theta_beta_low_int),
+    .pac_alpha_beta_low(pac_alpha_beta_low_int),
+    .pac_alpha_beta_high(pac_alpha_beta_high_int),
+    .pac_beta_low_gamma(pac_beta_low_gamma_int),
+    .pac_beta_high_gamma(pac_beta_high_gamma_int),
+    .pac_theta_gamma_fast(pac_theta_gamma_fast_int),
+    .pac_alpha_gamma_fast(pac_alpha_gamma_fast_int),
+    .pac_sr_f0_f2(pac_sr_f0_f2_int),
+    .pac_theta_gamma(pac_theta_gamma_int),
+
+    // Classification outputs
+    .class_theta_alpha(pac_class_theta_alpha),
+    .class_theta_beta_low(),
+    .class_alpha_beta_low(),
+    .class_alpha_beta_high(),
+    .class_beta_low_gamma(pac_class_beta_low_gamma),
+    .class_beta_high_gamma(),
+    .class_theta_gamma_fast(),
+    .class_alpha_gamma_fast(),
+    .class_sr_f0_f2(),
+    .class_theta_gamma()
+);
+
+//=============================================================================
+// OUTPUT MIXER
+//=============================================================================
 output_mixer #(.WIDTH(WIDTH), .FRAC(FRAC)) mixer (
     .clk(clk),
     .rst(rst),
