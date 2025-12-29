@@ -1,6 +1,18 @@
 //=============================================================================
-// Output Mixer - v7.17
+// Output Mixer - v7.19
 // Per-band amplitude envelope modulation for EEG-realistic spectral dynamics
+//
+// v7.19 CHANGES (Even Darker Baseline - Round 2):
+// - OSC_SCALE_MODULATORY reduced from 0.5× to 0.25× (-6 dB, -12 dB total from v7.17)
+// - OSC_SCALE_HARMONIC reduced from 1.3× to 0.35× (-11 dB) for quieter MEDITATION
+// - W_PINK_MODULATORY increased from 0.96 to 0.98 (more 1/f masking)
+// - Goal: Match real EEG dark purple baseline with SIE bursts emerging from silence
+//
+// v7.18 CHANGES (Darker Baseline for SIE Contrast):
+// - OSC_SCALE_MODULATORY reduced from 1.0× to 0.5× (-6 dB oscillator power)
+// - W_PINK_MODULATORY increased from 0.93 to 0.96 (more 1/f masking)
+// - Goal: Quiet baseline for SIE transients to emerge from "silence"
+// - Matches real EEG: dark purple baseline, yellow SIE bursts
 //
 // v7.17 CHANGES (Distributed SIE Boost Reduction - Option C):
 // - sie_boost reduced from [1.0, 2.0] to [1.0, 1.4] (+2.9 dB contribution)
@@ -112,21 +124,21 @@ localparam [1:0] MODE_HARMONIC   = 2'b10;  // Ignition-phase harmonic locking
 
 //-----------------------------------------------------------------------------
 // v7.16: Mode-Specific Weights (Q14) - now with smooth interpolation
-// MODULATORY: 93% pink, 1.0× osc - diffuse 1/f spectrum (NORMAL, FLOW, PSYCHEDELIC)
+// MODULATORY: 98% pink, 0.25× osc - diffuse 1/f spectrum (NORMAL, FLOW, PSYCHEDELIC) - v7.19 very dark baseline
 // TRANSITION: 67% pink, 2.2× osc - gradual shift toward prominence
-// HARMONIC:   85% pink, 1.3× osc - MEDITATION (v7.16: +5% pink for range compression)
+// HARMONIC:   85% pink, 0.35× osc - MEDITATION (v7.19: reduced from 1.3× for darker baseline)
 //-----------------------------------------------------------------------------
-localparam signed [WIDTH-1:0] W_PINK_MODULATORY = 18'sd15237;  // 0.93 (was 0.90)
+localparam signed [WIDTH-1:0] W_PINK_MODULATORY = 18'sd16056;  // 0.98 (v7.19: was 0.96)
 localparam signed [WIDTH-1:0] W_PINK_TRANSITION = 18'sd10978;  // 0.67
 localparam signed [WIDTH-1:0] W_PINK_HARMONIC   = 18'sd13926;  // 0.85 (v7.16: was 0.80, +5% higher floor)
 
 // Oscillator scale factors: how much to multiply baseline oscillator weights
-// MODULATORY: 1.0× (baseline)
+// MODULATORY: 0.25× (v7.19: was 0.5×, -12 dB total from v7.17)
 // TRANSITION: 2.2× boost (33/15 = 2.2)
-// HARMONIC:   1.3× boost (v7.15: was 1.5× - lower peaks)
-localparam signed [WIDTH-1:0] OSC_SCALE_MODULATORY = 18'sd16384;  // 1.0×
+// HARMONIC:   0.35× (v7.19: was 1.3×, -11 dB for darker MEDITATION)
+localparam signed [WIDTH-1:0] OSC_SCALE_MODULATORY = 18'sd4096;   // 0.25× (v7.19: was 0.5×, -12 dB total)
 localparam signed [WIDTH-1:0] OSC_SCALE_TRANSITION = 18'sd36045;  // 2.2×
-localparam signed [WIDTH-1:0] OSC_SCALE_HARMONIC   = 18'sd21299;  // 1.3× (v7.15: was 1.5×)
+localparam signed [WIDTH-1:0] OSC_SCALE_HARMONIC   = 18'sd5734;   // 0.35× (v7.19: was 1.3×, darker MEDITATION)
 
 // v7.10: Baseline oscillator weights - theta reduced for better θ/α balance
 // v7.5 values: theta=0.03, alpha=0.04, beta=0.025, gamma=0.015 (~11% total)

@@ -78,8 +78,8 @@ localparam [2:0] PHASE_REFRACTORY   = 3'd6;  // No re-ignition
 //-----------------------------------------------------------------------------
 // Thresholds (Q14 format)
 //-----------------------------------------------------------------------------
-// Coherence threshold to trigger ignition (0.6 = 9830)
-localparam signed [WIDTH-1:0] COHERENCE_THRESH = 18'sd9830;
+// Coherence threshold to trigger ignition (0.75 = 12288)
+localparam signed [WIDTH-1:0] COHERENCE_THRESH = 18'sd12288;
 
 // PLV target values for coherence-first signature
 localparam signed [WIDTH-1:0] PLV_BASELINE = 18'sd7373;    // 0.45
