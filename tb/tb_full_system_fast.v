@@ -100,7 +100,9 @@ wire signed [WIDTH-1:0] omega_dt_active = dut.col_sensory.omega_eff_l23;
 // v10.1: Base OMEGA_DT values and drift tolerance for frequency verification
 localparam signed [WIDTH-1:0] OMEGA_FAST = 18'sd1681;       // 65.3 Hz encoding gamma
 localparam signed [WIDTH-1:0] OMEGA_SLOW = 18'sd1039;       // 40.36 Hz retrieval gamma
-localparam signed [WIDTH-1:0] OMEGA_DRIFT_TOL = 18'sd20;    // ±0.5 Hz drift tolerance
+// v3.3: Tolerance reverted after cortical_frequency_drift jitter fix
+// drift ±0.5 Hz (±13) + jitter ±0.2 Hz (±5) = ±0.7 Hz total (±18 units)
+localparam signed [WIDTH-1:0] OMEGA_DRIFT_TOL = 18'sd20;   // ±0.7 Hz drift+jitter tolerance
 
 // v6.5: Integration test signals - scaffold/plastic layer access
 wire signed [WIDTH-1:0] sensory_l4_x = dut.col_sensory.l4_x;

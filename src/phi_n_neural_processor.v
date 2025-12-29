@@ -1,5 +1,10 @@
 //=============================================================================
-// Top-Level Module - v11.0 with Active φⁿ Dynamics
+// Top-Level Module - v11.5 with Distributed SIE Boost
+//
+// v11.5 CHANGES (Option C Distributed SIE Reduction):
+// - DISABLED sie_theta_boost and sie_alpha_boost (set to constant 1.0×)
+// - Signal-level boosts removed; SIE now distributed across mixer + thalamus
+// - Part of distributed 6.8 dB target: mixer(2.9) + f₀(2.3) + f₁(1.6) = 6.8 dB
 //
 // v11.0 CHANGES (Active φⁿ Dynamics):
 // - ENABLE_ADAPTIVE parameter for self-organizing oscillator dynamics
@@ -183,6 +188,9 @@ module phi_n_neural_processor #(
     input  wire signed [WIDTH-1:0] sensory_input,  // v6.2: ONLY external data input
     input  wire [2:0] state_select,
 
+    // v11.4: State transition control - 0 = instant (backward compatible)
+    input  wire [15:0] transition_duration,
+
     // v7.2 compatibility: Single SR field input (uses f₀ only)
     input  wire signed [WIDTH-1:0] sr_field_input,
 
@@ -220,7 +228,13 @@ module phi_n_neural_processor #(
     output wire                    beta_quiet,  // v7.2: Indicates SR-ready state
 
     // v8.0: Theta phase output (8 phases per cycle for temporal multiplexing)
-    output wire [2:0] theta_phase
+    output wire [2:0] theta_phase,
+
+    // v11.4: State transition status outputs
+    output wire        state_transitioning,
+    output wire [15:0] state_transition_progress,
+    output wire [2:0]  state_transition_from,
+    output wire [2:0]  state_transition_to
 );
 
 localparam signed [WIDTH-1:0] ONE_THIRD = 18'sd5461;
@@ -460,11 +474,17 @@ wire signed [WIDTH-1:0] ca_threshold;  // v9.5: state-dependent Ca2+ threshold
 wire [15:0] sie_phase2_dur, sie_phase3_dur, sie_phase4_dur;
 wire [15:0] sie_phase5_dur, sie_phase6_dur, sie_refractory;
 
+// v11.4: State transition status from config_controller
+wire state_transitioning_int;
+wire [15:0] state_transition_progress_int;
+wire [2:0] state_transition_from_int, state_transition_to_int;
+
 config_controller #(.WIDTH(WIDTH), .FRAC(FRAC)) config_ctrl (
     .clk(clk),
     .rst(rst),
     .clk_en(clk_4khz_en),
     .state_select(state_select),
+    .transition_duration(transition_duration),  // v11.4: Transition control
     .mu_dt_theta(mu_dt_theta),
     .mu_dt_l6(mu_dt_l6),
     .mu_dt_l5b(mu_dt_l5b),
@@ -478,8 +498,19 @@ config_controller #(.WIDTH(WIDTH), .FRAC(FRAC)) config_ctrl (
     .sie_phase4_dur(sie_phase4_dur),
     .sie_phase5_dur(sie_phase5_dur),
     .sie_phase6_dur(sie_phase6_dur),
-    .sie_refractory(sie_refractory)
+    .sie_refractory(sie_refractory),
+    // v11.4: Transition status outputs
+    .transitioning(state_transitioning_int),
+    .transition_progress(state_transition_progress_int),
+    .transition_from(state_transition_from_int),
+    .transition_to(state_transition_to_int)
 );
+
+// v11.4: Connect transition status to top-level outputs
+assign state_transitioning = state_transitioning_int;
+assign state_transition_progress = state_transition_progress_int;
+assign state_transition_from = state_transition_from_int;
+assign state_transition_to = state_transition_to_int;
 
 wire signed [WIDTH-1:0] thalamic_theta_output;
 wire signed [WIDTH-1:0] thalamic_theta_x, thalamic_theta_y;
@@ -1174,12 +1205,13 @@ coupling_mode_controller #(
     .clk(clk),
     .rst(rst),
     .clk_en(clk_4khz_en),
+    .state_select(state_select),            // v1.1: State-driven mode
     .kuramoto_R(kuramoto_R),
     .boundary_power(total_boundary_power),
     .sie_phase(sie_ignition_phase),
-    .r_high_thresh(18'sd0),     // Use default: 0.7
-    .r_low_thresh(18'sd0),      // Use default: 0.5
-    .boundary_thresh(18'sd0),   // Use default: 0.5
+    .r_high_thresh(18'sd0),     // Use default: 0.5 (lowered from 0.7)
+    .r_low_thresh(18'sd0),      // Use default: 0.4 (lowered from 0.5)
+    .boundary_thresh(18'sd0),   // Use default: 0.25 (lowered from 0.5)
     .coupling_mode(coupling_mode),
     .pac_gain(pac_gain),
     .harmonic_gain(harmonic_gain),
@@ -1219,20 +1251,48 @@ harmonic_spacing_index #(
 //=============================================================================
 // OUTPUT MIXER
 //=============================================================================
+
+//-----------------------------------------------------------------------------
+// v11.5: SR Ignition Signal Boost DISABLED (Option C Distributed Reduction)
+// Signal-level boosts removed; SIE distributed across mixer(1.4×) + f₀(1.3×) + f₁(1.2×)
+// This prevents excessive boost stacking and achieves ~6.8 dB target
+//-----------------------------------------------------------------------------
+wire signed [WIDTH-1:0] sie_theta_boost, sie_alpha_boost;
+wire signed [2*WIDTH-1:0] boosted_theta_full, boosted_alpha_full;
+wire signed [WIDTH-1:0] boosted_theta, boosted_alpha;
+
+// v11.5: Constant 1.0× (no signal-level SIE boost)
+assign sie_theta_boost = 18'sd16384;  // 1.0× constant (was 2.0× at full envelope)
+assign sie_alpha_boost = 18'sd16384;  // 1.0× constant (was 2.5× at full envelope)
+
+// Pass-through signals (multiply by 1.0 = no change)
+assign boosted_theta_full = thalamic_theta_x * sie_theta_boost;
+assign boosted_alpha_full = motor_l6_x * sie_alpha_boost;
+assign boosted_theta = boosted_theta_full >>> FRAC;
+assign boosted_alpha = boosted_alpha_full >>> FRAC;
+
 output_mixer #(.WIDTH(WIDTH), .FRAC(FRAC)) mixer (
     .clk(clk),
     .rst(rst),
     .clk_en(clk_4khz_en),
-    .theta_x(thalamic_theta_x),    // 5.89 Hz - thalamic theta
-    .motor_l6_x(motor_l6_x),       // 9.53 Hz - alpha (L6)
+    // v11.4: SR-boosted oscillator signals
+    .theta_x(boosted_theta),       // 5.89 Hz - thalamic theta (SR boosted)
+    .motor_l6_x(boosted_alpha),    // 9.53 Hz - alpha L6 (SR boosted)
     .motor_l5a_x(motor_l5a_x),     // 15.42 Hz - low beta
     .motor_l23_x(motor_l23_x),     // 40.36 Hz - gamma
     .pink_noise(pink_noise_out),   // 1/f broadband
-    // v10.1: Per-band amplitude envelopes for "alpha breathing" effect
-    .env_theta(mixer_env_theta),   // Theta band envelope
-    .env_alpha(mixer_env_alpha),   // Alpha band envelope
-    .env_beta(mixer_env_beta),     // Beta band envelope
-    .env_gamma(mixer_env_gamma),   // Gamma band envelope
+    // v11.4: Keep original envelopes for breathing effect
+    .env_theta(mixer_env_theta),   // Theta breathing envelope
+    .env_alpha(mixer_env_alpha),   // Alpha breathing envelope
+    .env_beta(mixer_env_beta),     // Beta envelope
+    .env_gamma(mixer_env_gamma),   // Gamma envelope
+    // v7.6: SR ignition gain envelope (kept for compatibility, ignored in v7.7)
+    .sr_gain_envelope(sie_gain_envelope),
+    // v7.7: Coupling mode for dynamic mix ratios
+    .coupling_mode(coupling_mode),
+    // v7.14: Smooth state transitions
+    .transition_progress(state_transition_progress_int),
+    .state_select(state_select),
     .mixed_output(mixed_output),
     .dac_output(dac_output)
 );

@@ -1,5 +1,5 @@
 //=============================================================================
-// Cortical Frequency Drift Generator - v3.0
+// Cortical Frequency Drift Generator - v3.3
 //
 // Models frequency variability in cortical oscillators for EEG-realistic output.
 // Three components work together:
@@ -8,10 +8,10 @@
 //    - Updates every 0.2s in simulation
 //    - Models slow frequency drift seen in EEG
 //
-// 2. FAST JITTER: Cycle-by-cycle frequency noise (±0.5 Hz per sample)
+// 2. FAST JITTER: Cycle-by-cycle frequency noise (±0.2 Hz per sample)
 //    - Updates every clk_en cycle (4 kHz)
-//    - Creates significant spectral broadening around oscillator peaks
-//    - Models neural timing variability and phase noise
+//    - Adds small per-cycle variability for naturalness
+//    - Does NOT create spectral broadening (that comes from amplitude modulation)
 //
 // 3. ADAPTIVE FORCE (v3.0, optional): Energy-landscape restoring force
 //    - Enabled via ENABLE_ADAPTIVE parameter
@@ -19,16 +19,20 @@
 //    - Guides oscillators toward φⁿ half-integer attractors
 //    - Force added to drift update with gain K_FORCE
 //
+// v3.3 CHANGES:
+// - CRITICAL FIX: Reduced jitter from ±4 Hz to ±0.2 Hz
+// - Per-sample frequency jitter does NOT create realistic spectral broadening
+// - Real EEG spectral width (~1-2 Hz) comes from amplitude modulation, not jitter
+// - Previous ±4 Hz jitter created unrealistic 8 Hz wide smeared peaks
+//
+// v3.2 CHANGES: [REVERTED] Increased jitter to ±4 Hz - too aggressive
+// v3.1 CHANGES: [REVERTED] Increased jitter to ±2 Hz - wrong mechanism
+//
 // v3.0 CHANGES:
 // - Added ENABLE_ADAPTIVE parameter (default 0 for backwards compatibility)
 // - Added force inputs from energy_landscape.v
 // - Added K_FORCE gain for scaling force contribution
 // - Force guides drift toward half-integer φⁿ attractors
-//
-// v2.1 CHANGES:
-// - Increased jitter range from ±0.15 Hz to ±0.5 Hz for broader peaks
-// - Use 5 LFSR bits instead of 3 for wider distribution
-// - Creates ~1-2 Hz wide peaks (more EEG-realistic)
 //
 // CORTICAL OSCILLATOR FREQUENCIES (phi^n based):
 //   L6:   9.53 Hz  (phi^0.5)  - alpha band
@@ -37,7 +41,7 @@
 //   L4:   31.73 Hz (phi^3)    - low gamma
 //   L2/3: 40.36 Hz (phi^3.5)  - gamma (switches to 65.3 Hz in encoding)
 //
-// Effect: Sharp spectral lines → broad EEG-like peaks (~1-2 Hz width)
+// Effect: Narrow spectral peaks (~1-2 Hz) with per-cycle naturalness
 //=============================================================================
 `timescale 1ns / 1ps
 
@@ -84,11 +88,12 @@ localparam signed [WIDTH-1:0] DRIFT_MAX = 18'sd13;  // ±0.5 Hz
 
 //-----------------------------------------------------------------------------
 // Fast Jitter Range
-// ±0.5 Hz in OMEGA_DT units: round(2π × 0.5 × 0.00025 × 16384) = ±13
-// Larger per-sample frequency noise for significant spectral broadening
-// Creates ~1-2 Hz wide peaks instead of sharp lines
+// ±0.2 Hz in OMEGA_DT units: round(2π × 0.2 × 0.00025 × 16384) = ±5
+// Small per-sample frequency noise for natural variability
+// Does NOT create spectral broadening - that comes from amplitude modulation
+// v3.3: Reduced from ±4 Hz (103) which created unrealistic 8 Hz wide peaks
 //-----------------------------------------------------------------------------
-localparam signed [WIDTH-1:0] JITTER_MAX = 18'sd13;  // ±0.5 Hz (was ±0.15 Hz)
+localparam signed [WIDTH-1:0] JITTER_MAX = 18'sd5;  // ±0.2 Hz (was ±4 Hz)
 
 //-----------------------------------------------------------------------------
 // v3.0: Adaptive Force Gain
@@ -339,40 +344,26 @@ end
 
 //-----------------------------------------------------------------------------
 // Fast Jitter Value Computation
-// Use 5 bits from LFSR to create values in range [-13, +13] (±0.5 Hz)
-// Triangular distribution: sum of weighted bits creates bell-curve-ish distribution
-// (bit4 ? +8 : -8) + (bit3 ? +4 : -4) + (bit2 ? +2 : -2) + (bit1 ? +1 : -1) + (bit0 ? +1 : 0)
-// Range: -15 to +14, clamped to ±13
+// v3.3: Use 2 bits from LFSR to create values in range [-5, +5] (±0.2 Hz)
+// Simple triangular distribution: (bit1 ? +3 : -3) + (bit0 ? +2 : -2)
+// Range: -5 to +5, already within JITTER_MAX so no clamping needed
+// IMPORTANT: Per-sample jitter does NOT create spectral broadening
+//            Real EEG spectral width comes from amplitude modulation
 //-----------------------------------------------------------------------------
-wire signed [WIDTH-1:0] jitter_l6_raw  = (jlfsr_l6[4]  ? 18'sd8 : -18'sd8) +
-                                          (jlfsr_l6[3]  ? 18'sd4 : -18'sd4) +
-                                          (jlfsr_l6[2]  ? 18'sd2 : -18'sd2) +
-                                          (jlfsr_l6[1]  ? 18'sd1 : -18'sd1) +
-                                          (jlfsr_l6[0]  ? 18'sd1 : 18'sd0);
+wire signed [WIDTH-1:0] jitter_l6_raw  = (jlfsr_l6[1]  ? 18'sd3 : -18'sd3) +
+                                          (jlfsr_l6[0]  ? 18'sd2 : -18'sd2);
 
-wire signed [WIDTH-1:0] jitter_l5a_raw = (jlfsr_l5a[4] ? 18'sd8 : -18'sd8) +
-                                          (jlfsr_l5a[3] ? 18'sd4 : -18'sd4) +
-                                          (jlfsr_l5a[2] ? 18'sd2 : -18'sd2) +
-                                          (jlfsr_l5a[1] ? 18'sd1 : -18'sd1) +
-                                          (jlfsr_l5a[0] ? 18'sd1 : 18'sd0);
+wire signed [WIDTH-1:0] jitter_l5a_raw = (jlfsr_l5a[1] ? 18'sd3 : -18'sd3) +
+                                          (jlfsr_l5a[0] ? 18'sd2 : -18'sd2);
 
-wire signed [WIDTH-1:0] jitter_l5b_raw = (jlfsr_l5b[4] ? 18'sd8 : -18'sd8) +
-                                          (jlfsr_l5b[3] ? 18'sd4 : -18'sd4) +
-                                          (jlfsr_l5b[2] ? 18'sd2 : -18'sd2) +
-                                          (jlfsr_l5b[1] ? 18'sd1 : -18'sd1) +
-                                          (jlfsr_l5b[0] ? 18'sd1 : 18'sd0);
+wire signed [WIDTH-1:0] jitter_l5b_raw = (jlfsr_l5b[1] ? 18'sd3 : -18'sd3) +
+                                          (jlfsr_l5b[0] ? 18'sd2 : -18'sd2);
 
-wire signed [WIDTH-1:0] jitter_l4_raw  = (jlfsr_l4[4]  ? 18'sd8 : -18'sd8) +
-                                          (jlfsr_l4[3]  ? 18'sd4 : -18'sd4) +
-                                          (jlfsr_l4[2]  ? 18'sd2 : -18'sd2) +
-                                          (jlfsr_l4[1]  ? 18'sd1 : -18'sd1) +
-                                          (jlfsr_l4[0]  ? 18'sd1 : 18'sd0);
+wire signed [WIDTH-1:0] jitter_l4_raw  = (jlfsr_l4[1]  ? 18'sd3 : -18'sd3) +
+                                          (jlfsr_l4[0]  ? 18'sd2 : -18'sd2);
 
-wire signed [WIDTH-1:0] jitter_l23_raw = (jlfsr_l23[4] ? 18'sd8 : -18'sd8) +
-                                          (jlfsr_l23[3] ? 18'sd4 : -18'sd4) +
-                                          (jlfsr_l23[2] ? 18'sd2 : -18'sd2) +
-                                          (jlfsr_l23[1] ? 18'sd1 : -18'sd1) +
-                                          (jlfsr_l23[0] ? 18'sd1 : 18'sd0);
+wire signed [WIDTH-1:0] jitter_l23_raw = (jlfsr_l23[1] ? 18'sd3 : -18'sd3) +
+                                          (jlfsr_l23[0] ? 18'sd2 : -18'sd2);
 
 //-----------------------------------------------------------------------------
 // Output Assignments

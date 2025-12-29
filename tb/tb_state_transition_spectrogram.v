@@ -1,24 +1,25 @@
 //=============================================================================
 // Testbench: State Transition Spectrogram
 //
-// Generates 100 seconds of DAC output with smooth NORMAL ↔ MEDITATION transitions
-// using MU interpolation for gradual state changes.
+// Generates 100 seconds of DAC output with NORMAL ↔ MEDITATION state transitions
+// using config_controller's proper state-dependent MU values.
 //
 // Timeline (100 seconds total, 5 phases of 20 seconds each):
 // - Phase 0 (0-20s):   NORMAL baseline
-// - Phase 1 (20-40s):  Smooth transition NORMAL → MEDITATION
+// - Phase 1 (20-40s):  20-second linear ramp NORMAL → MEDITATION
 // - Phase 2 (40-60s):  MEDITATION steady-state
-// - Phase 3 (60-80s):  Smooth transition MEDITATION → NORMAL
+// - Phase 3 (60-80s):  20-second linear ramp MEDITATION → NORMAL
 // - Phase 4 (80-100s): NORMAL steady-state
 //
-// MU interpolation (NORMAL → MEDITATION):
-// v11.1: NORMAL now uses MU=3 (was 4) to prevent DAC clipping
-// - mu_theta: 3 → 3 (unchanged, note: theta also at 3 via config_controller)
-// - mu_l6:    3 → 3 (unchanged, note: L6 also at 3 via config_controller)
-// - mu_l5b:   3 → 2 (reduced)
-// - mu_l5a:   3 → 2 (reduced)
-// - mu_l4:    3 → 2 (reduced)
-// - mu_l23:   3 → 2 (reduced)
+// v11.4b: Uses transition_duration for 20-second linear interpolation
+// - config_controller lerp functions handle gradual MU ramping
+// - Spectrogram should show gradual power changes during transitions
+// v11.4: Uses state_select to trigger proper config_controller states
+// NORMAL (state_select=0):     All MU=3 (MU_MODERATE)
+// MEDITATION (state_select=4): theta/L6=6, L5a/L5b/L4=1, L23=2
+//   - Theta/Alpha BOOSTED (6 vs 3 = +100%)
+//   - Beta/Gamma SUPPRESSED (1 vs 3 = -67%)
+//   - This creates visible >3dB spectral differentiation
 //
 // Output files:
 //   state_transition_eeg.csv - Full oscillator data (27 columns)
@@ -53,20 +54,23 @@ localparam PHASE_MEDITATION = 3'd2;  // 40-60s
 localparam PHASE_TRANS_M_N  = 3'd3;  // 60-80s (Meditation → Normal)
 localparam PHASE_NORMAL2    = 3'd4;  // 80-100s
 
-// MU values in integer form (these are raw values, not Q4.14)
-// In config_controller, MU values are small integers (2-6 range)
-// v11.1: NORMAL reduced from 4 to 3 to prevent DAC clipping
-localparam signed [WIDTH-1:0] MU_FULL = 18'sd3;  // NORMAL state MU (was 4, now 3)
-localparam signed [WIDTH-1:0] MU_HALF = 18'sd2;  // MEDITATION state MU
+// State codes matching config_controller.v
+localparam [2:0] STATE_NORMAL     = 3'd0;
+localparam [2:0] STATE_MEDITATION = 3'd4;
 
 // Phase updates: 20 seconds at 4 kHz = 80,000 updates per phase
 localparam PHASE_UPDATES = 80000;
+
+// v11.4b: 20-second linear interpolation for state transitions
+// At 4 kHz update rate: 20 seconds = 80,000 cycles
+localparam [15:0] TRANSITION_DURATION = 16'd80000;
 
 reg clk;
 reg rst;
 reg signed [WIDTH-1:0] sensory_input;
 reg signed [WIDTH-1:0] sr_field_input;
 reg [2:0] state_select;
+reg [15:0] transition_duration;
 
 // Top-level outputs
 wire [11:0] dac_output;
@@ -99,6 +103,7 @@ phi_n_neural_processor #(
     .rst(rst),
     .sensory_input(sensory_input),
     .state_select(state_select),
+    .transition_duration(transition_duration),  // v11.4b: 20-second ramp
     .sr_field_input(sr_field_input),
     .sr_field_packed(90'd0),
     .dac_output(dac_output),
@@ -128,9 +133,9 @@ always #(CLK_PERIOD/2) clk = ~clk;
 // Signal extraction for CSV export (same as tb_eeg_export.v)
 //=============================================================================
 
-// Thalamic theta (from internal thalamus module)
-wire signed [WIDTH-1:0] theta_x = dut.thal.theta_x_int;
-wire signed [WIDTH-1:0] theta_y = dut.thal.theta_y_int;
+// Thalamic theta (from thalamus module outputs - scaled by MU)
+wire signed [WIDTH-1:0] theta_x = dut.thal.theta_x;
+wire signed [WIDTH-1:0] theta_y = dut.thal.theta_y;
 
 // SR harmonics unpacked from sr_f_x_packed
 wire signed [WIDTH-1:0] sr_f0_x = sr_f_x_packed[0*WIDTH +: WIDTH];
@@ -161,57 +166,25 @@ wire signed [WIDTH-1:0] motor_l4_x  = dut.col_motor.l4_x;
 wire signed [WIDTH-1:0] motor_l23_x = dut.col_motor.l23_x;
 
 //=============================================================================
-// Phase tracking and MU interpolation
+// Phase tracking and state_select control
+// v11.4: Uses state_select instead of forcing individual MU values
 //=============================================================================
 reg [2:0] current_phase;
 reg [31:0] phase_update_counter;  // Wide enough for 80,000
 reg [31:0] global_update_count;
-
-// Interpolated MU values (computed in always block)
-reg signed [WIDTH-1:0] mu_l5b_interp;
-reg signed [WIDTH-1:0] mu_l5a_interp;
-reg signed [WIDTH-1:0] mu_l4_interp;
-reg signed [WIDTH-1:0] mu_l23_interp;
-
-// Linear interpolation function
-// Returns: start + (end - start) * counter / total
-// For N→M transition: start=4, end=2, so diff=-2
-// As counter goes 0→80000, output goes 4→2
-function signed [WIDTH-1:0] interpolate;
-    input signed [WIDTH-1:0] start_val;
-    input signed [WIDTH-1:0] end_val;
-    input [31:0] counter;
-    input [31:0] total;
-    reg signed [35:0] diff;
-    reg signed [35:0] scaled;
-    reg signed [35:0] counter_signed;
-    reg signed [35:0] total_signed;
-    begin
-        diff = end_val - start_val;  // -2 for N→M, +2 for M→N
-        // CRITICAL: Cast unsigned counter/total to signed for correct arithmetic
-        counter_signed = {4'b0, counter};  // Zero-extend to 36-bit positive
-        total_signed = {4'b0, total};
-        scaled = (diff * counter_signed) / total_signed;
-        // Result is in range [diff, 0] or [0, diff], so fits in WIDTH bits
-        interpolate = start_val + scaled[WIDTH-1:0];
-    end
-endfunction
 
 // Track clk_4khz_en rising edge
 reg prev_clk_en;
 wire clk_en_rising;
 assign clk_en_rising = dut.clk_4khz_en && !prev_clk_en;
 
-// Phase and MU update logic
+// Phase and state_select update logic
 always @(posedge clk or posedge rst) begin
     if (rst) begin
         current_phase <= PHASE_NORMAL1;
         phase_update_counter <= 0;
         global_update_count <= 0;
-        mu_l5b_interp <= MU_FULL;
-        mu_l5a_interp <= MU_FULL;
-        mu_l4_interp <= MU_FULL;
-        mu_l23_interp <= MU_FULL;
+        state_select <= STATE_NORMAL;
     end else if (clk_en_rising) begin
         global_update_count <= global_update_count + 1;
         phase_update_counter <= phase_update_counter + 1;
@@ -223,49 +196,25 @@ always @(posedge clk or posedge rst) begin
                 current_phase <= current_phase + 1;
         end
 
-        // Update MU values based on phase
+        // Update state_select based on phase
+        // v11.4b: Trigger state_select at START of transition window
+        // config_controller's lerp handles the 20-second linear ramp via transition_duration
         case (current_phase)
             PHASE_NORMAL1, PHASE_NORMAL2: begin
-                // Full MU for all cortical layers
-                mu_l5b_interp <= MU_FULL;
-                mu_l5a_interp <= MU_FULL;
-                mu_l4_interp  <= MU_FULL;
-                mu_l23_interp <= MU_FULL;
+                state_select <= STATE_NORMAL;
             end
             PHASE_TRANS_N_M: begin
-                // Interpolate from FULL (4) to HALF (2)
-                mu_l5b_interp <= interpolate(MU_FULL, MU_HALF, phase_update_counter, PHASE_UPDATES);
-                mu_l5a_interp <= interpolate(MU_FULL, MU_HALF, phase_update_counter, PHASE_UPDATES);
-                mu_l4_interp  <= interpolate(MU_FULL, MU_HALF, phase_update_counter, PHASE_UPDATES);
-                mu_l23_interp <= interpolate(MU_FULL, MU_HALF, phase_update_counter, PHASE_UPDATES);
+                // Trigger MEDITATION at start of window - lerp handles 20s ramp
+                state_select <= STATE_MEDITATION;
             end
             PHASE_MEDITATION: begin
-                // Half MU for cortical layers (theta/L6 stay at 4)
-                mu_l5b_interp <= MU_HALF;
-                mu_l5a_interp <= MU_HALF;
-                mu_l4_interp  <= MU_HALF;
-                mu_l23_interp <= MU_HALF;
+                state_select <= STATE_MEDITATION;
             end
             PHASE_TRANS_M_N: begin
-                // Interpolate from HALF (2) to FULL (4)
-                mu_l5b_interp <= interpolate(MU_HALF, MU_FULL, phase_update_counter, PHASE_UPDATES);
-                mu_l5a_interp <= interpolate(MU_HALF, MU_FULL, phase_update_counter, PHASE_UPDATES);
-                mu_l4_interp  <= interpolate(MU_HALF, MU_FULL, phase_update_counter, PHASE_UPDATES);
-                mu_l23_interp <= interpolate(MU_HALF, MU_FULL, phase_update_counter, PHASE_UPDATES);
+                // Trigger NORMAL at start of window - lerp handles 20s ramp
+                state_select <= STATE_NORMAL;
             end
         endcase
-    end
-end
-
-// Apply MU overrides using force (after reset)
-// Note: force must be in initial/always block, applied continuously
-always @(posedge clk) begin
-    if (!rst) begin
-        // Override config_controller's MU outputs with interpolated values
-        force dut.config_ctrl.mu_dt_l5b = mu_l5b_interp;
-        force dut.config_ctrl.mu_dt_l5a = mu_l5a_interp;
-        force dut.config_ctrl.mu_dt_l4 = mu_l4_interp;
-        force dut.config_ctrl.mu_dt_l23 = mu_l23_interp;
     end
 end
 
@@ -283,7 +232,8 @@ initial begin
     rst = 1;
     sensory_input = 18'sd4096;  // Moderate stimulus to excite oscillators
     sr_field_input = 18'sd2048; // External SR field to enable ignition events
-    state_select = 3'd0;        // NORMAL state (base, but we override MU values)
+    transition_duration = TRANSITION_DURATION;  // v11.4b: 20-second linear ramp
+    state_select = STATE_NORMAL; // v11.4: State controlled by phase logic
     sample_count = 0;
     update_count = 0;
     prev_clk_en = 0;
@@ -303,17 +253,20 @@ initial begin
     $fwrite(csv_file, "motor_l6_x,motor_l5a_x,motor_l5b_x,motor_l4_x,motor_l23_x,");
     $fwrite(csv_file, "beta_quiet,sr_amplification\n");
 
-    // Write header for DAC file (4 columns for state_transition_spectrogram.py)
-    $fwrite(dac_file, "time_ms,phase,mu_l5b,dac_output\n");
+    // Write header for DAC file (5 columns for state_transition_spectrogram.py)
+    // v11.4: Added gain_envelope to track SR ignition events
+    $fwrite(dac_file, "time_ms,phase,state_select,dac_output,gain_envelope\n");
 
     $display("=============================================================================");
-    $display("State Transition Spectrogram Testbench");
+    $display("State Transition Spectrogram Testbench v11.4b");
+    $display("Using 20-second linear interpolation via config_controller lerp");
     $display("Duration: 100 seconds (5 phases x 20 seconds)");
-    $display("Phase 0: NORMAL (0-20s)");
-    $display("Phase 1: NORMAL → MEDITATION transition (20-40s)");
-    $display("Phase 2: MEDITATION (40-60s)");
-    $display("Phase 3: MEDITATION → NORMAL transition (60-80s)");
-    $display("Phase 4: NORMAL (80-100s)");
+    $display("");
+    $display("Phase 0 (0-20s):   NORMAL baseline (state=0, all MU=3)");
+    $display("Phase 1 (20-40s):  20s linear ramp NORMAL → MEDITATION");
+    $display("Phase 2 (40-60s):  MEDITATION steady-state (theta/alpha=6, beta/gamma=1)");
+    $display("Phase 3 (60-80s):  20s linear ramp MEDITATION → NORMAL");
+    $display("Phase 4 (80-100s): NORMAL baseline (state=0, all MU=3)");
     $display("=============================================================================");
 
     // Release reset
@@ -384,19 +337,24 @@ initial begin
                     beta_quiet,
                     sr_amplification);
 
-                // Write to DAC file (4 columns for state_transition_spectrogram.py)
-                $fwrite(dac_file, "%0d,%0d,%0d,%0d\n",
+                // Write to DAC file (5 columns for state_transition_spectrogram.py)
+                // v11.4: Added gain_envelope to track SR ignition events
+                $fwrite(dac_file, "%0d,%0d,%0d,%0d,%0d\n",
                     sample_count,
                     current_phase,
-                    $signed(mu_l5b_interp),
-                    dac_output);
+                    state_select,
+                    dac_output,
+                    $signed(dut.sie_gain_envelope));
 
                 sample_count = sample_count + 1;
 
                 // Progress every 10 seconds (10,000 samples)
                 if (sample_count % 10000 == 0) begin
-                    $display("  %0d seconds exported (phase %0d, mu_l5b=%0d)...",
-                        sample_count/1000, current_phase, $signed(mu_l5b_interp));
+                    $display("  %0d seconds exported (phase %0d, state=%0d, mu_theta=%0d, mu_l6=%0d, mu_l5a=%0d)...",
+                        sample_count/1000, current_phase, state_select,
+                        $signed(dut.config_ctrl.mu_dt_theta),
+                        $signed(dut.config_ctrl.mu_dt_l6),
+                        $signed(dut.config_ctrl.mu_dt_l5a));
                 end
             end
         end

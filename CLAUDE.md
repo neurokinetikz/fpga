@@ -4,7 +4,7 @@
 
 This is an FPGA implementation of a biologically-realistic neural oscillator system based on the **φⁿ (golden ratio) frequency architecture** with Schumann Resonance coupling. The system implements 21 Hopf oscillators organized into a thalamo-cortical architecture for neural signal processing and consciousness state modeling.
 
-**Current Version:** v11.3 (SIE Dynamics & Population Metrics)
+**Current Version:** v12.0 (Unified State Dynamics)
 **Target Platform:** Digilent Zybo Z7-20 (Xilinx Zynq-7020)
 
 ## Quick Start
@@ -50,12 +50,12 @@ make clean             # Clean generated files
 ```
 fpga/
 ├── src/                          # Verilog source modules (29 files)
-│   ├── phi_n_neural_processor.v  # Top-level (v11.3, 21 oscillators + SIE dynamics)
+│   ├── phi_n_neural_processor.v  # Top-level (v11.5, distributed SIE boost)
 │   ├── hopf_oscillator.v         # Core oscillator (v6.0, dx/dt = μx - ωy - r²x)
 │   ├── hopf_oscillator_stochastic.v # Stochastic variant with noise input
 │   ├── ca3_phase_memory.v        # Hebbian phase memory (v8.0, theta-gated)
-│   ├── thalamus.v                # Theta + SR + matrix + L6 inhibition (v10.5)
-│   ├── cortical_column.v         # 6-layer cortical model (v11.3, l5a_y/l5b_y outputs)
+│   ├── thalamus.v                # Theta + SR + matrix (v11.5, distributed SIE)
+│   ├── cortical_column.v         # 6-layer cortical model (v11.4, MU scaling)
 │   ├── dendritic_compartment.v   # v9.5: Two-compartment dendritic model
 │   ├── layer1_minimal.v          # Layer 1 with L6 input (v9.6)
 │   ├── pv_interneuron.v          # PV+ basket cell dynamics (v9.2)
@@ -63,12 +63,12 @@ fpga/
 │   ├── sr_noise_generator.v      # Per-harmonic stochastic noise (5 LFSRs)
 │   ├── sr_frequency_drift.v      # v2.0: Faster update, wider drift ranges
 │   ├── sr_ignition_controller.v  # v10.0: Six-phase SIE state machine
-│   ├── amplitude_envelope_generator.v # v10.0: O-U process for alpha breathing
+│   ├── amplitude_envelope_generator.v # v11.4: O-U process with parameterized bounds
 │   ├── cortical_frequency_drift.v # v3.0: Force-based adaptive drift
-│   ├── config_controller.v       # Consciousness states (v11.3, enhanced MEDITATION)
+│   ├── config_controller.v       # Consciousness states (v11.4, state interpolation)
 │   ├── clock_enable_generator.v  # FAST_SIM-aware 4kHz clock (v6.0)
 │   ├── pink_noise_generator.v    # 1/f^φ noise (v7.2, √Fibonacci-weighted)
-│   ├── output_mixer.v            # DAC output mixing (v7.3, envelope modulation)
+│   ├── output_mixer.v            # DAC output mixing (v7.17, distributed SIE boost)
 │   ├── energy_landscape.v        # v11.1b: φⁿ forces + rational resonance + multi-catastrophe
 │   ├── quarter_integer_detector.v # v11.0: Position classification and stability
 │   ├── sin_quarter_lut.v         # v11.0: 256-entry quarter-wave sine LUT
@@ -77,7 +77,7 @@ fpga/
 │   ├── kuramoto_order_parameter.v # v11.3: Population synchronization metric
 │   ├── boundary_generator.v      # v11.3: Nonlinear mixing for boundary frequencies
 │   ├── bicoherence_monitor.v     # v11.3: Three-frequency coupling detection
-│   ├── coupling_mode_controller.v # v11.3: Modulatory ↔ harmonic mode switching
+│   ├── coupling_mode_controller.v # v1.1: State-driven modulatory ↔ harmonic mode
 │   └── harmonic_spacing_index.v  # v11.3: φⁿ ratio deviation monitoring
 ├── tb/                           # Testbenches (37 files)
 │   ├── tb_full_system_fast.v     # Full system integration (v6.5, 15 tests)
@@ -103,6 +103,8 @@ fpga/
 │   ├── tb_bicoherence_monitor.v  # v11.3: Bicoherence tests (6 tests)
 │   ├── tb_coupling_mode_controller.v # v11.3: Mode switching tests (8 tests)
 │   ├── tb_harmonic_spacing_index.v # v11.3: HSI tests (8 tests)
+│   ├── tb_state_interpolation.v  # v11.4: State transition tests (10 tests)
+│   ├── tb_state_transition_spectrogram.v # v11.4b: 100s spectrogram test
 │   ├── tb_learning_fast.v        # CA3 learning test (v2.1, 8 tests)
 │   ├── tb_hopf_oscillator.v      # Hopf oscillator unit test
 │   ├── tb_state_transitions.v    # State machine test (12 tests)
@@ -112,10 +114,12 @@ fpga/
 │   ├── visualize_*.py            # Python visualization
 │   ├── dac_spectrogram.py        # v10.2: DAC output spectrogram analysis
 │   ├── analyze_eeg_comparison.py # v10.0: Comprehensive EEG analysis
+│   ├── state_transition_spectrogram.py # v11.4: State transition analysis
 │   └── run_vivado_*.tcl          # Vivado TCL scripts
 ├── docs/                         # Specifications
 │   ├── FPGA_SPECIFICATION_V8.md  # Base architecture spec (v8.0)
-│   ├── SPEC_v11.3_UPDATE.md      # Current version (v11.3 SIE Dynamics)
+│   ├── SPEC_v12.0_UPDATE.md      # Current version (v12.0 Unified State Dynamics)
+│   ├── SPEC_v11.3_UPDATE.md      # Previous (v11.3 SIE Dynamics)
 │   ├── SPEC_v11.2_UPDATE.md      # DAC anti-clipping
 │   ├── SPEC_v11.1_UPDATE.md      # Unified Boundary-Attractor
 │   ├── SPEC_v11.0_UPDATE.md      # Active φⁿ Dynamics
@@ -164,11 +168,13 @@ fpga/
 
 | Code | State | Description | Key Changes |
 |------|-------|-------------|-------------|
-| 0 | NORMAL | Baseline | All MU = 4 |
-| 1 | ANESTHESIA | Propofol-like | L6 high, L4/L2/3 weak |
-| 2 | PSYCHEDELIC | Enhanced binding | L4/L2/3 enhanced, L6 reduced |
-| 3 | FLOW | Motor-optimized | L5a/L5b enhanced |
-| 4 | MEDITATION | Theta coherence | L5a/L5b/L4/L2/3 reduced |
+| 0 | NORMAL | Baseline | All MU = 3 (v11.2) |
+| 1 | ANESTHESIA | Propofol-like | L6=6 high, L4/L2/3 weak |
+| 2 | PSYCHEDELIC | Enhanced binding | L4/L2/3=6 enhanced, L6=1 reduced |
+| 3 | FLOW | Motor-optimized | L5a/L5b=6 enhanced |
+| 4 | MEDITATION | Theta coherence | θ/L6=6, L5a/L5b/L4=1, L2/3=2 |
+
+**v11.4 State Transitions:** Smooth interpolation via `transition_duration` input (0=instant).
 
 ### Scaffold vs Plastic Layers (v8.0)
 
@@ -293,10 +299,27 @@ fpga/
 | N_4_1_HIGH | 48497 | 2.96 | 4:1 catastrophe zone upper (v11.1b) |
 | K_CATASTROPHE_3_1 | 16384 | 1.0 | 3:1 repulsion strength (v11.1b) |
 | K_CATASTROPHE_4_1 | 12288 | 0.75 | 4:1 repulsion strength (v11.1b) |
+| ENVELOPE_MIN_THETA | 11469 | 0.7 | Theta envelope lower bound (v11.4) |
+| ENVELOPE_MAX_THETA | 21299 | 1.3 | Theta envelope upper bound (v11.4) |
+| MU_DIV3 | 5461 | 0.333 | MU amplitude scaling divisor (v11.4) |
+| TRANSITION_DURATION | 80000 | 20s | Default state transition cycles (v11.4) |
+| SIE_ENHANCE_F0_v12 | 21299 | 1.3× | Distributed f₀ enhancement (v11.5) |
+| SIE_ENHANCE_F1_v12 | 19661 | 1.2× | Distributed f₁ enhancement (v11.5) |
+| SIE_BOOST_RANGE | 6554 | 0.4 | Mixer boost range 1.0→1.4 (v11.5) |
+| KURAMOTO_R_ENTRY | 8192 | 0.5 | HARMONIC mode entry threshold (v1.1) |
+| KURAMOTO_R_EXIT | 6554 | 0.4 | HARMONIC mode exit threshold (v1.1) |
+| BOUNDARY_THRESH | 4096 | 0.25 | Boundary power threshold (v1.1) |
 
 ## Current Specification
 
-See [docs/SPEC_v11.3_UPDATE.md](docs/SPEC_v11.3_UPDATE.md) for the latest v11.3 architecture with:
+See [docs/SPEC_v12.0_UPDATE.md](docs/SPEC_v12.0_UPDATE.md) for the latest v12.0 architecture with:
+- **State Transition Interpolation** (v11.4): Smooth consciousness state changes over configurable duration
+- **Distributed SIE Architecture** (v11.5): Option C distributed boost (6.8 dB total) prevents stacking
+- **Parameterized Envelope Bounds** (v11.4): Theta ±30% [0.7,1.3], cortical ±50% [0.5,1.5]
+- **MU-Based Amplitude Scaling** (v11.4): State-dependent layer output amplitudes
+- **State-Driven Coupling Mode** (v1.1): MEDITATION forces HARMONIC coupling automatically
+
+Previous architecture features (v11.3):
 - **Kuramoto Order Parameter** (v11.3): Population synchronization R ∈ [0,1] from 6 oscillators
 - **Boundary Generators** (v11.3): Nonlinear mixing creates θ/α (7.49 Hz), α/β₁, β₁/β₂ boundaries
 - **Bicoherence Monitor** (v11.3): Detects nonlinear three-frequency interactions
@@ -354,7 +377,7 @@ Base specification: [docs/FPGA_SPECIFICATION_V8.md](docs/FPGA_SPECIFICATION_V8.m
 
 ## Testing
 
-All testbenches should pass. Key tests (355+ total):
+All testbenches should pass. Key tests (365+ total):
 - `tb_full_system_fast`: 15/15 tests - full integration (v6.5)
 - `tb_theta_phase_multiplexing`: 19/19 tests - theta phase (v8.3)
 - `tb_scaffold_architecture`: 14/14 tests - scaffold layers (v8.0)
@@ -384,6 +407,8 @@ All testbenches should pass. Key tests (355+ total):
 - `tb_bicoherence_monitor`: 6/6 tests - Bicoherence detection (v11.3)
 - `tb_coupling_mode_controller`: 8/8 tests - Mode switching (v11.3)
 - `tb_harmonic_spacing_index`: 8/8 tests - φⁿ ratio tracking (v11.3)
+- `tb_state_interpolation`: 10/10 tests - state transition interpolation (v11.4)
+- `tb_state_transition_spectrogram`: Visual - 100s spectrogram validation (v11.4b)
 - `tb_multi_harmonic_sr`: 17/17 tests - multi-harmonic SR
 - `tb_learning_fast`: 8/8 tests - CA3 Hebbian learning (v2.1)
 - `tb_sr_coupling`: 12/12 tests - SR coupling

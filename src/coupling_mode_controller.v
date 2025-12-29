@@ -1,5 +1,5 @@
 //=============================================================================
-// Coupling Mode Controller - v1.0
+// Coupling Mode Controller - v1.1
 //
 // Dynamically switches between two coupling regimes based on system state:
 //
@@ -19,9 +19,15 @@
 //   - Duration: ~500ms (configurable)
 //
 // State Transitions:
-//   MODULATORY → TRANSITION: kuramoto_R > 0.7 AND boundary_power > threshold
+//   MODULATORY → TRANSITION: state_driven OR (kuramoto_R > 0.5 AND boundary_power > 0.25)
 //   TRANSITION → HARMONIC: after transition duration
-//   HARMONIC → MODULATORY: kuramoto_R < 0.5 OR sie_decay_phase
+//   HARMONIC → MODULATORY: kuramoto_R < 0.4 (unless state_driven)
+//
+// v1.1 CHANGES (State-Driven Mode):
+// - Added state_select input for consciousness state
+// - MEDITATION state (4) directly forces HARMONIC mode
+// - Lowered thresholds: R 0.7→0.5, boundary 0.5→0.25
+// - Prevents horizontal bands by varying mix with state
 //
 // v1.0: Initial implementation with three-state machine
 //=============================================================================
@@ -35,6 +41,9 @@ module coupling_mode_controller #(
     input  wire clk,
     input  wire rst,
     input  wire clk_en,
+
+    // v1.1: Consciousness state for state-driven mode
+    input  wire [2:0] state_select,                  // Consciousness state (0-4)
 
     // Synchronization metrics
     input  wire signed [WIDTH-1:0] kuramoto_R,       // Order parameter [0, 1.0]
@@ -65,10 +74,13 @@ localparam signed [WIDTH-1:0] GAIN_FULL = 18'sd16384;     // 1.0
 localparam signed [WIDTH-1:0] GAIN_HALF = 18'sd8192;      // 0.5
 localparam signed [WIDTH-1:0] GAIN_WEAK = 18'sd2048;      // 0.125
 
-// Default thresholds (Q14)
-localparam signed [WIDTH-1:0] DEFAULT_R_HIGH = 18'sd11469;    // 0.7
-localparam signed [WIDTH-1:0] DEFAULT_R_LOW = 18'sd8192;      // 0.5
-localparam signed [WIDTH-1:0] DEFAULT_BOUNDARY = 18'sd8192;   // 0.5
+// Default thresholds (Q14) - v1.1: Lowered for more responsive transitions
+localparam signed [WIDTH-1:0] DEFAULT_R_HIGH = 18'sd8192;     // 0.5 (was 0.7)
+localparam signed [WIDTH-1:0] DEFAULT_R_LOW = 18'sd6554;      // 0.4 (was 0.5)
+localparam signed [WIDTH-1:0] DEFAULT_BOUNDARY = 18'sd4096;   // 0.25 (was 0.5)
+
+// v1.1: Consciousness state codes
+localparam [2:0] STATE_MEDITATION = 3'd4;
 
 // SIE phases (from sr_ignition_controller.v)
 localparam [2:0] SIE_BASELINE    = 3'd0;
@@ -88,9 +100,17 @@ wire signed [WIDTH-1:0] eff_r_high = (r_high_thresh == 0) ? DEFAULT_R_HIGH : r_h
 wire signed [WIDTH-1:0] eff_r_low = (r_low_thresh == 0) ? DEFAULT_R_LOW : r_low_thresh;
 wire signed [WIDTH-1:0] eff_boundary = (boundary_thresh == 0) ? DEFAULT_BOUNDARY : boundary_thresh;
 
-// Transition detection
-wire enter_harmonic_condition = (kuramoto_R > eff_r_high) && (boundary_power > eff_boundary);
-wire exit_harmonic_condition = (kuramoto_R < eff_r_low) || (sie_phase == SIE_DECAY);
+// v1.1: State-driven mode forcing
+// MEDITATION state directly forces HARMONIC mode for visible spectral differentiation
+wire state_driven_harmonic = (state_select == STATE_MEDITATION);
+
+// Transition detection - v1.1: Added state_driven_harmonic to entry condition
+wire metrics_enter_harmonic = (kuramoto_R > eff_r_high) && (boundary_power > eff_boundary);
+wire enter_harmonic_condition = state_driven_harmonic || metrics_enter_harmonic;
+
+// Exit condition - v1.1: Don't exit if state_driven (only exit when state changes)
+wire exit_harmonic_condition = !state_driven_harmonic &&
+                               ((kuramoto_R < eff_r_low) || (sie_phase == SIE_DECAY));
 
 // SIE active phases (ignition through propagation)
 wire sie_active = (sie_phase >= SIE_IGNITION) && (sie_phase <= SIE_PROPAGATION);

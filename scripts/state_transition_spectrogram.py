@@ -49,7 +49,8 @@ def main():
     fs = 1000  # 1 kHz sample rate
     dac_values = df['dac_output'].values
     phases = df['phase'].values
-    mu_values = df['mu_l5b'].values
+    # v11.4: Changed from mu_l5b to state_select
+    state_values = df['state_select'].values if 'state_select' in df.columns else df.get('mu_l5b', np.zeros(len(df))).values
 
     # Convert 12-bit DAC to float [-1, 1]
     dac_float = (dac_values.astype(float) - 2048) / 2048
@@ -126,23 +127,23 @@ def main():
     plt.colorbar(im, ax=ax1, label='Power (dB)', shrink=0.8)
 
     #=========================================================================
-    # Plot 2: MU Value Timeline
+    # Plot 2: State Select Timeline
     #=========================================================================
     ax2 = axes[1]
 
-    time_axis = np.arange(len(mu_values)) / 1000  # Convert to seconds
-    ax2.plot(time_axis, mu_values, 'b-', linewidth=1.5, label='mu_l5b (L5b growth rate)')
-    ax2.fill_between(time_axis, 0, mu_values, alpha=0.3)
+    time_axis = np.arange(len(state_values)) / 1000  # Convert to seconds
+    ax2.plot(time_axis, state_values, 'b-', linewidth=1.5, label='state_select (0=NORMAL, 4=MEDITATION)')
+    ax2.fill_between(time_axis, 0, state_values, alpha=0.3)
 
     # Phase boundary markers
     for i, start in enumerate(phase_times[1:-1], 1):
         ax2.axvline(start, color='red', linestyle='--', alpha=0.6, linewidth=1)
 
     ax2.set_xlabel('Time (s)', fontsize=12)
-    ax2.set_ylabel('MU Value', fontsize=12)
-    ax2.set_title('Growth Rate (μ) Parameter Over Time', fontsize=12)
+    ax2.set_ylabel('State', fontsize=12)
+    ax2.set_title('State Select (0=NORMAL, 4=MEDITATION)', fontsize=12)
     ax2.set_xlim(0, 100)
-    ax2.set_ylim(0, 5)
+    ax2.set_ylim(-0.5, 5)
     ax2.legend(loc='upper right')
     ax2.grid(True, alpha=0.3)
 

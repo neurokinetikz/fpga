@@ -29,7 +29,12 @@
 module amplitude_envelope_generator #(
     parameter WIDTH = 18,
     parameter FRAC = 14,
-    parameter FAST_SIM = 0
+    parameter FAST_SIM = 0,
+    // v11.4: Parameterized envelope bounds for per-oscillator customization
+    // Cortical default: [0.5, 1.5] for ±50% alpha waxing/waning
+    // Thalamus theta: [0.7, 1.3] for ±30% (more stable pacemaker)
+    parameter signed [WIDTH-1:0] ENVELOPE_MIN = 18'sd8192,   // 0.5 default
+    parameter signed [WIDTH-1:0] ENVELOPE_MAX = 18'sd24576   // 1.5 default
 )(
     input  wire clk,
     input  wire rst,
@@ -43,10 +48,9 @@ module amplitude_envelope_generator #(
 
 //-----------------------------------------------------------------------------
 // Constants (Q14 format)
+// Note: ENVELOPE_MIN and ENVELOPE_MAX are now module parameters (v11.4)
 //-----------------------------------------------------------------------------
 localparam signed [WIDTH-1:0] ENVELOPE_MEAN = 18'sd16384;   // 1.0 (equilibrium)
-localparam signed [WIDTH-1:0] ENVELOPE_MIN  = 18'sd8192;    // 0.5 (lower bound)
-localparam signed [WIDTH-1:0] ENVELOPE_MAX  = 18'sd24576;   // 1.5 (upper bound)
 
 // Mean-reversion rate alpha = dt/tau
 // For tau = 3s at 4kHz: alpha = 1/(3*4000) = 0.000083 → ~1.4 in Q14

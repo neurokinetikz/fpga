@@ -1,8 +1,15 @@
 //=============================================================================
-// Schumann Resonance Ignition Controller v1.1
+// Schumann Resonance Ignition Controller v1.3
 //
 // Implements six-phase SIE (Schumann Ignition Event) state machine based on
 // empirical EEG observations (neurokinetikz 2019-2025).
+//
+// v1.3 CHANGES (v7.16): Further softened bursts
+// - GAIN_COHERENCE adjusted to 0.40 (was 0.50 in v7.15) for ~3 dB softer bursts
+//
+// v1.2 CHANGES (v7.15): Softer ignition bursts
+// - GAIN_COHERENCE raised from 0.20 to 0.50 for ~6 dB bursts (was >10 dB)
+// - Real SIEs show 4-5× power increase (~6-7 dB), not >10 dB
 //
 // v1.1 CHANGES: GAIN_BASELINE = 0 for coherence-gated behavior
 // - SR only influences brain oscillators during detected ignition events
@@ -78,9 +85,10 @@ localparam signed [WIDTH-1:0] COHERENCE_THRESH = 18'sd9830;
 localparam signed [WIDTH-1:0] PLV_BASELINE = 18'sd7373;    // 0.45
 localparam signed [WIDTH-1:0] PLV_PEAK = 18'sd13107;       // 0.80
 
-// Gain values - v1.1: ZERO baseline for coherence-gated behavior
-localparam signed [WIDTH-1:0] GAIN_BASELINE = 18'sd0;      // 0 - NO baseline gain (was 0.10)
-localparam signed [WIDTH-1:0] GAIN_COHERENCE = 18'sd3277;  // 0.20 (slight rise in coherence phase)
+// Gain values - v1.3: ZERO baseline + softer ignitions (v7.16)
+// v1.3: GAIN_COHERENCE = 0.40 for ~3 dB softer bursts than v7.15
+localparam signed [WIDTH-1:0] GAIN_BASELINE = 18'sd0;      // 0 - NO baseline gain
+localparam signed [WIDTH-1:0] GAIN_COHERENCE = 18'sd6554;  // 0.40 (v7.16: was 0.50, further softened)
 localparam signed [WIDTH-1:0] GAIN_PEAK = 18'sd16384;      // 1.00 (full scale during peak)
 localparam signed [WIDTH-1:0] GAIN_PROPAGATION = 18'sd9830; // 0.60 (sustained but lower)
 

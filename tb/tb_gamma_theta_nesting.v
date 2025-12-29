@@ -83,10 +83,11 @@ wire signed [WIDTH-1:0] omega_dt_active = dut.col_motor.omega_eff_l23;
 
 // v10.0: Base OMEGA_DT values and drift tolerance
 // Fast gamma: 1681 (65.3 Hz), Slow gamma: 1039 (40.36 Hz)
-// Drift can be ±0.5 Hz ≈ ±15 OMEGA_DT units
+// v3.3: Tolerance reverted after cortical_frequency_drift jitter fix
+// drift ±0.5 Hz (±13) + jitter ±0.2 Hz (±5) = ±0.7 Hz total (±18 units)
 localparam signed [WIDTH-1:0] OMEGA_FAST = 18'sd1681;
 localparam signed [WIDTH-1:0] OMEGA_SLOW = 18'sd1039;
-localparam signed [WIDTH-1:0] OMEGA_DRIFT_TOL = 18'sd20;  // ±0.5 Hz tolerance
+localparam signed [WIDTH-1:0] OMEGA_DRIFT_TOL = 18'sd20;  // ±0.7 Hz drift+jitter tolerance
 
 // Fast clock: 10ns period (100 MHz)
 initial begin

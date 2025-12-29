@@ -1,7 +1,7 @@
 # φⁿ Neural Processor - Comprehensive System Description
 
-**Version:** 11.3 (SIE Dynamics & Population Metrics)
-**Date:** 2025-12-28
+**Version:** 12.0 (Unified State Dynamics)
+**Date:** 2025-12-29
 **Based on:** Complete analysis of all 29 source modules (~7,500 lines of Verilog)
 
 ---
@@ -9,6 +9,13 @@
 ## Executive Summary
 
 The φⁿ Neural Processor is an FPGA implementation of 21 coupled nonlinear oscillators organized as a thalamo-cortical network. The system models biological neural rhythms using golden ratio (φ ≈ 1.618) frequency relationships, implements associative memory through theta-gated Hebbian learning, and exhibits stochastic resonance sensitivity to weak external electromagnetic fields.
+
+**Version 12.0** implements Unified State Dynamics:
+- **State Transition Interpolation** (v11.4): Smooth consciousness state changes via linear interpolation over configurable duration
+- **Distributed SIE Architecture** (v11.5): Option C distributed boost (6.8 dB total) prevents cascade stacking
+- **Parameterized Envelope Bounds** (v11.4): Theta ±30% [0.7,1.3] for stable pacemaker, cortical ±50% [0.5,1.5]
+- **MU-Based Amplitude Scaling** (v11.4): Layer outputs scale with state-dependent MU values
+- **State-Driven Coupling Mode** (v1.1): MEDITATION forces HARMONIC coupling automatically
 
 **Version 11.3** implements comprehensive SIE Dynamics monitoring and control:
 - **Kuramoto Order Parameter**: Population synchronization R ∈ [0,1] from 6 oscillators
@@ -987,34 +994,60 @@ Matrix + FB1 + FB2 ─┼──▶ SST+ IIR (tau=25ms) ──▶ ─ = sst_effec
 
 ---
 
-## 8. Consciousness State System (config_controller.v, v8.0)
+## 8. Consciousness State System (config_controller.v, v11.4)
 
 ### 8.1 Five States
 
 | Code | State | Description | Neural Signature |
 |------|-------|-------------|------------------|
-| 0 | **NORMAL** | Balanced waking | All bands active, MU=4 |
+| 0 | **NORMAL** | Balanced waking | All bands active, MU=3 (v11.2) |
 | 1 | **ANESTHESIA** | Propofol-like | Alpha dominant, gamma suppressed |
 | 2 | **PSYCHEDELIC** | Enhanced binding | High gamma entropy, reduced alpha |
 | 3 | **FLOW** | Motor-optimized | Enhanced beta, reduced alpha |
-| 4 | **MEDITATION** | Theta coherence | Theta dominant, reduced beta |
+| 4 | **MEDITATION** | Theta coherence | θ/α dominant, β/γ suppressed (v11.3) |
 
-### 8.2 MU Parameter Settings
+### 8.2 MU Parameter Settings (v11.3 Enhanced Differentiation)
 
 | State | Theta | L6 | L5b | L5a | L4 | L2/3 |
 |-------|-------|-----|-----|-----|-----|------|
-| NORMAL | 4 | 4 | 4 | 4 | 4 | 4 |
+| NORMAL | 3 | 3 | 3 | 3 | 3 | 3 |
 | ANESTHESIA | 2 | 6 | 2 | 2 | 1 | 1 |
-| PSYCHEDELIC | 4 | 2 | 4 | 4 | 6 | 6 |
+| PSYCHEDELIC | 4 | 1 | 4 | 4 | 6 | 6 |
 | FLOW | 4 | 2 | 6 | 6 | 4 | 4 |
-| MEDITATION | 4 | 4 | 2 | 2 | 2 | 2 |
+| MEDITATION | 6 | 6 | 1 | 1 | 1 | 2 |
 
 ### 8.3 MU Parameter Effects
 
-- **MU = 1**: Weak oscillation, susceptible to extinction
-- **MU = 2**: Stable but reduced amplitude
+- **MU = 1**: Weak oscillation, susceptible to extinction (0.33× amplitude)
+- **MU = 2**: Stable but reduced amplitude (0.67× amplitude)
+- **MU = 3**: Moderate operation (v11.2 NORMAL baseline)
 - **MU = 4**: Normal operation, amplitude stabilizes at r ≈ 1
-- **MU = 6**: Enhanced amplitude, faster recovery from perturbation
+- **MU = 6**: Enhanced amplitude, faster recovery from perturbation (2× amplitude)
+
+### 8.4 State Transition Interpolation (v11.4)
+
+Smooth transitions between consciousness states via linear interpolation:
+
+**New I/O Ports:**
+- `transition_duration[15:0]`: 0=instant (backward compatible), else cycles to ramp
+- `transitioning`: High during active transition
+- `transition_progress[15:0]`: 0→65535 ramp position
+- `transition_from[2:0]`, `transition_to[2:0]`: Source and target states
+
+**Interpolated Parameters:**
+- All MU values (signed lerp)
+- Ca²⁺ threshold (signed lerp)
+- SIE phase durations (unsigned lerp)
+
+**Duration Examples:**
+| Cycles | Time at 4 kHz | Use Case |
+|--------|---------------|----------|
+| 0 (→1) | ~0.25 ms | Instant (v11.3 behavior) |
+| 40000 | 10 seconds | Quick transition |
+| 80000 | 20 seconds | Full meditation ramp |
+
+**Shadow Register Behavior:**
+When a state change is requested during an active transition, the system captures current interpolated values as the new start point and begins ramping toward the new target.
 
 ---
 
@@ -1248,9 +1281,35 @@ Features:
 - Natural temporal variation
 ```
 
+### 10.5 Distributed SIE Architecture (v11.5)
+
+To prevent boost stacking artifacts, SIE enhancement is distributed across the processing chain:
+
+**Problem (v11.3):**
+Multiple cascade stages each applied multiplicative gains:
+- Signal-level: `sie_theta_boost × sie_alpha_boost` (2× each)
+- Mixer: `sie_boost` (up to 2×)
+- Thalamus enhancement: (up to 4-5×)
+- Total potential: 32× (15 dB) → DAC clipping
+
+**Solution (v11.5 - Option C):**
+
+| Stage | v11.3 | v11.5 | dB |
+|-------|-------|-------|-----|
+| sie_theta_boost | 2.0× | 1.0× (disabled) | 0 |
+| sie_alpha_boost | 2.0× | 1.0× (disabled) | 0 |
+| Mixer sie_boost | 1.0-2.0× | 1.0-1.4× | +2.9 |
+| Thalamus f₀ | 4.0× | 1.3× | +2.3 |
+| Thalamus f₁ | 5.0× | 1.2× | +1.6 |
+| **Total** | **~32×** | **~2.2×** | **6.8** |
+
+**Empirical Match:** 6.8 dB matches observed 4-5× SIE power increase without exceeding DAC headroom.
+
+**f₀ > f₁ Hierarchy:** Preserved (1.3× > 1.2×) per SR harmonic observations where lower harmonics show stronger coherence response.
+
 ---
 
-## 11. Top-Level Integration (phi_n_neural_processor.v, v10.2)
+## 11. Top-Level Integration (phi_n_neural_processor.v, v11.5)
 
 ### 11.1 Complete Signal Flow
 
@@ -1433,7 +1492,13 @@ phi_n_neural_processor (top) - v11.0
 
 | Version | Date | Key Changes |
 |---------|------|-------------|
-| **v11.0** | **2025-12-28** | **Active φⁿ Dynamics: Self-organizing frequencies via energy landscape** |
+| **v12.0** | **2025-12-29** | **Unified State Dynamics: Smooth transitions + distributed SIE** |
+| v11.5 | 2025-12-29 | Distributed SIE Boost (Option C): mixer(2.9) + f₀(2.3) + f₁(1.6) = 6.8 dB |
+| v11.4 | 2025-12-29 | State Transition Interpolation: Linear lerp of MU, Ca²⁺, SIE timing |
+| v11.3 | 2025-12-28 | SIE Dynamics: Kuramoto R, boundaries, bicoherence, mode controller, HSI |
+| v11.2 | 2025-12-28 | DAC Anti-Clipping: MU_MODERATE (3), soft limiter at ±0.75 |
+| v11.1 | 2025-12-28 | Unified Boundary-Attractor: Farey χ(r), rational forces, PAC strength |
+| v11.0 | 2025-12-28 | Active φⁿ Dynamics: Self-organizing frequencies via energy landscape |
 | v10.5 | 2025-12-28 | Quarter-Integer φⁿ Theory: 2:1 Harmonic Catastrophe, f₁ at φ^1.25 |
 | v10.4 | 2025-12-28 | Geophysical SR Integration: Q-factor modeling, amplitude hierarchy, mode-selective SIE |
 | v10.3 | 2025-12-27 | 1/f^φ Spectral Slope: √Fibonacci-weighted pink noise (v7.2) |
@@ -1471,10 +1536,12 @@ phi_n_neural_processor (top) - v11.0
 | 8 | v10.0-10.3 | EEG Realism (envelopes, jitter, SIE) | ✅ Complete |
 | 9 | v10.4 | Geophysical SR Integration (Q-factor, amplitude hierarchy) | ✅ Complete |
 | 10 | v10.5 | Quarter-Integer φⁿ Theory (2:1 catastrophe) | ✅ Complete |
-| 11 | v11.0 | Active φⁿ Dynamics (energy landscape, forces) | ✅ Complete |
-| 12 | v11.1+ | ACh Neuromodulation | Planned |
-| 13 | v11.2+ | NE Neuromodulation | Planned |
-| 14 | v11.3+ | Slow Oscillations (<1 Hz) | Planned |
-| 15 | v11.4+ | Sleep Spindles (11-16 Hz) | Planned |
-| 16 | v11.5+ | Multiple Gamma Sub-bands | Planned |
-| 17 | v11.6+ | Lognormal Synaptic Weights | Planned |
+| 11 | v11.0-11.3 | Active φⁿ Dynamics + SIE Dynamics | ✅ Complete |
+| 12 | v11.4 | State Transition Interpolation | ✅ Complete |
+| 13 | v11.5 | Distributed SIE Architecture | ✅ Complete |
+| 14 | v12.0 | Unified State Dynamics | ✅ Complete |
+| 15 | v12.1+ | ACh Neuromodulation | Planned |
+| 16 | v12.2+ | NE Neuromodulation | Planned |
+| 17 | v12.3+ | Slow Oscillations (<1 Hz) | Planned |
+| 18 | v12.4+ | Sleep Spindles (11-16 Hz) | Planned |
+| 19 | v12.5+ | Multiple Gamma Sub-bands | Planned |

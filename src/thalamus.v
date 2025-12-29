@@ -1,5 +1,18 @@
 //=============================================================================
-// Thalamus Module - v10.5 with Quarter-Integer φⁿ Theory
+// Thalamus Module - v11.5 with Distributed SIE Boost
+//
+// v11.5 CHANGES (Option C Distributed SIE Reduction):
+// - SIE_ENHANCE_F0 reduced from 4.0× to 1.3× (+2.3 dB contribution)
+// - SIE_ENHANCE_F1 reduced from 5.0× to 1.2× (+1.6 dB contribution)
+// - Part of distributed 6.8 dB target matching empirical SIE power increase
+// - f₀ > f₁ hierarchy preserved (1.3× > 1.2×) per SR harmonic observations
+//
+// v11.4 CHANGES (Theta Envelope Modulation):
+// - Theta amplitude envelope now uses ±30% [0.7, 1.3] range (was default ±50%)
+// - Rationale: Medial septum pacemaker is more stable than cortical oscillators
+// - Theta provides timing reference for gamma-theta nesting → tighter bounds
+// - Creates spectral sidebands at ±0.3 Hz via Ornstein-Uhlenbeck process
+// - amplitude_envelope_generator now parameterized with ENVELOPE_MIN/MAX
 //
 // v10.5 CHANGES (Quarter-Integer φⁿ Theory):
 // - f₁ "bridging mode mystery" RESOLVED: f₁ is φ^1.25 (quarter-integer fallback)
@@ -193,8 +206,8 @@ localparam signed [WIDTH-1:0] SR_BASELINE_GAIN = 18'sd16384;
 // Higher modes (f₂, f₃, f₄) are "protected", respond only 1.2×
 // Applied during SIE events when gain_envelope is active
 //-----------------------------------------------------------------------------
-localparam signed [WIDTH-1:0] SIE_ENHANCE_F0 = 18'sd44237;  // 2.7× (responsive)
-localparam signed [WIDTH-1:0] SIE_ENHANCE_F1 = 18'sd49152;  // 3.0× (bridging, most responsive)
+localparam signed [WIDTH-1:0] SIE_ENHANCE_F0 = 18'sd21299;  // 1.3× (v11.5: Option C, +2.3 dB)
+localparam signed [WIDTH-1:0] SIE_ENHANCE_F1 = 18'sd19661;  // 1.2× (v11.5: Option C, +1.6 dB)
 localparam signed [WIDTH-1:0] SIE_ENHANCE_F2 = 18'sd20480;  // 1.25× (anchor, protected)
 localparam signed [WIDTH-1:0] SIE_ENHANCE_F3 = 18'sd19661;  // 1.2× (protected)
 localparam signed [WIDTH-1:0] SIE_ENHANCE_F4 = 18'sd19661;  // 1.2× (protected)
@@ -325,20 +338,32 @@ assign theta_entrain_input = entrain_product >>> FRAC;
 
 wire signed [WIDTH-1:0] theta_x_int, theta_y_int, theta_amp_int;
 
-// v10.1: Amplitude envelope for theta (slow stochastic modulation)
+//-----------------------------------------------------------------------------
+// Theta Amplitude Envelope (v11.4)
+// Creates spectral sidebands via slow μ modulation (Ornstein-Uhlenbeck process)
+//
+// Theta envelope: ±30% [0.7, 1.3] (tighter than cortical ±50% [0.5, 1.5])
+// Rationale: Medial septum pacemaker is more stable than cortical oscillators.
+// Theta provides the timing reference for gamma-theta nesting, so it needs
+// tighter amplitude bounds to maintain consistent phase relationships.
+//
+// τ ≈ 3 seconds creates ~0.3 Hz modulation → spectral sidebands at ±0.3 Hz
+//-----------------------------------------------------------------------------
 wire signed [WIDTH-1:0] theta_envelope;
 wire signed [2*WIDTH-1:0] mu_theta_mod_full;
 wire signed [WIDTH-1:0] mu_theta_mod;
 
 amplitude_envelope_generator #(
     .WIDTH(WIDTH),
-    .FRAC(FRAC)
+    .FRAC(FRAC),
+    .ENVELOPE_MIN(18'sd11469),  // 0.7 (tighter than cortical 0.5)
+    .ENVELOPE_MAX(18'sd21299)   // 1.3 (tighter than cortical 1.5)
 ) env_theta (
     .clk(clk),
     .rst(rst),
     .clk_en(clk_en),
-    .seed(16'hF0A5),  // Unique seed for theta
-    .tau_inv(18'sd1),  // 3 second time constant
+    .seed(16'h7E47),           // Unique seed for theta (0x7E47)
+    .tau_inv(18'sd1),          // ~3 second timescale (tau_inv = 16384/(tau*4000))
     .envelope(theta_envelope)
 );
 
@@ -640,12 +665,21 @@ assign matrix_gated_full = l5b_avg * theta_gate;
 assign matrix_output = matrix_gated_full >>> FRAC;
 
 //-----------------------------------------------------------------------------
+// v11.4: MU-based amplitude scaling for theta
+// Scale theta output by mu_dt/3 for state-dependent amplitude
+//-----------------------------------------------------------------------------
+localparam signed [WIDTH-1:0] MU_DIV3 = 18'sd5461;  // 1/3 in Q14
+
+wire signed [2*WIDTH-1:0] theta_x_scale_full = theta_x_int * (mu_dt * MU_DIV3);
+wire signed [2*WIDTH-1:0] theta_y_scale_full = theta_y_int * (mu_dt * MU_DIV3);
+
+//-----------------------------------------------------------------------------
 // Output Assignments
 //-----------------------------------------------------------------------------
 
-// Theta outputs
-assign theta_x = theta_x_int;
-assign theta_y = theta_y_int;
+// Theta outputs (v11.4: MU-scaled)
+assign theta_x = theta_x_scale_full >>> FRAC;
+assign theta_y = theta_y_scale_full >>> FRAC;
 assign theta_amplitude = theta_amp_int;
 
 // f₀ outputs (v7.2 compatibility)

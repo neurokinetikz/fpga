@@ -2,7 +2,7 @@
 
 A biologically-realistic neural oscillator system implemented in Verilog for FPGA, featuring golden ratio (φ) frequency architecture, complete interneuron microcircuits, and Schumann Resonance coupling.
 
-**Current Version:** v11.0 (Active φⁿ Dynamics)
+**Current Version:** v12.0 (Unified State Dynamics)
 **Target Platform:** Digilent Zybo Z7-20 (Xilinx Zynq-7020)
 
 ---
@@ -32,12 +32,17 @@ This project implements a comprehensive thalamo-cortical neural architecture wit
 - **Consciousness state transitions**: Normal, Anesthesia, Psychedelic, Flow, Meditation
 - **State-dependent Ca²⁺ threshold** (v9.5): Lower in PSYCHEDELIC (more Ca²⁺ spikes), higher in ANESTHESIA
 
-### Active φⁿ Dynamics (v11.0)
+### Unified State Dynamics (v12.0)
+- **State transition interpolation** (v11.4): Smooth consciousness state changes via linear interpolation
+- **Distributed SIE architecture** (v11.5): Option C distributed boost (6.8 dB total) prevents stacking
+- **Parameterized envelope bounds** (v11.4): Theta ±30% [0.7,1.3], cortical ±50% [0.5,1.5]
+- **MU-based amplitude scaling** (v11.4): State-dependent layer output amplitudes
+- **State-driven coupling mode** (v1.1): MEDITATION forces HARMONIC coupling automatically
+
+### Active φⁿ Dynamics (v11.0-11.3)
 - **Self-organizing frequencies**: Oscillators find stable φⁿ positions via energy landscape
-- **Energy landscape**: E(n) = -A×cos(2πn) with attractors at half-integers, repulsion at integers
-- **Force-based drift**: Restoring forces push oscillators toward stable positions
+- **SIE dynamics monitoring**: Kuramoto R, boundary generators, bicoherence, mode controller
 - **2:1 Harmonic Catastrophe avoidance**: f₁ automatically retreats from n=1.5 to n=1.25
-- **Position classification**: INTEGER_BOUNDARY, HALF_INTEGER, QUARTER_INTEGER, NEAR_CATASTROPHE
 - **Dynamic SIE enhancement**: Computed from stability metric (replaces hardcoded values)
 - **ENABLE_ADAPTIVE parameter**: Backward-compatible mode switch (0=static, 1=adaptive)
 
@@ -47,7 +52,7 @@ This project implements a comprehensive thalamo-cortical neural architecture wit
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────┐
-│                     φⁿ NEURAL PROCESSOR v11.0                                │
+│                     φⁿ NEURAL PROCESSOR v12.0                                │
 │                                                                              │
 │  ┌─────────────────────────────────────────────────────────────────────────┐ │
 │  │ SCHUMANN RESONANCE SYSTEM                                               │ │
@@ -263,11 +268,13 @@ The system supports 5 consciousness states via `state_select[2:0]`:
 
 | Code | State | Key Changes | Ca²⁺ Threshold | Biological Model |
 |------|-------|-------------|----------------|------------------|
-| 0 | **Normal** | All MU = 4 | 0.5 | Balanced waking state |
-| 1 | **Anesthesia** | L6 high, L4/L2/3 suppressed | 0.75 | Propofol-like alpha dominance |
-| 2 | **Psychedelic** | L4/L2/3 enhanced, L6 reduced | 0.25 | Enhanced gamma entropy |
-| 3 | **Flow** | L5a/L5b enhanced | 0.5 | Motor-optimized state |
-| 4 | **Meditation** | Beta reduced, theta coherent | 0.5 | SR-sensitive, theta coherence |
+| 0 | **Normal** | All MU = 3 (v11.2) | 0.5 | Balanced waking state |
+| 1 | **Anesthesia** | L6=6, L4/L2/3 suppressed | 0.75 | Propofol-like alpha dominance |
+| 2 | **Psychedelic** | L4/L2/3=6, L6=1 | 0.25 | Enhanced gamma entropy |
+| 3 | **Flow** | L5a/L5b=6 enhanced | 0.5 | Motor-optimized state |
+| 4 | **Meditation** | θ/L6=6, β/γ suppressed | 0.375 | SR-sensitive, theta coherence |
+
+**State Transitions (v11.4):** The `transition_duration` input enables smooth interpolation between states. Setting it to 0 preserves instant transitions (backward compatible). A value of 80000 creates a 20-second ramp at 4 kHz.
 
 **State-Dependent Ca²⁺ Dynamics (v9.5):** The dendritic Ca²⁺ spike threshold varies by state. Lower thresholds in PSYCHEDELIC produce more Ca²⁺ spikes and BAC firing, enabling enhanced associative processing. Higher thresholds in ANESTHESIA suppress Ca²⁺ spikes, reducing consciousness.
 
@@ -292,35 +299,48 @@ Based on Dupret et al. 2025 findings:
 
 ```
 fpga/
-├── src/                              # Verilog source modules (23 files)
-│   ├── phi_n_neural_processor.v      # Top-level (v11.0, active φⁿ dynamics)
+├── src/                              # Verilog source modules (29 files)
+│   ├── phi_n_neural_processor.v      # Top-level (v11.5, distributed SIE boost)
 │   ├── hopf_oscillator.v             # Core oscillator (dx/dt = μx - ωy - r²x)
 │   ├── hopf_oscillator_stochastic.v  # Stochastic variant with noise
-│   ├── cortical_column.v             # 6-layer cortical model (v10.0, freq drift)
+│   ├── cortical_column.v             # 6-layer cortical model (v11.4, MU scaling)
 │   ├── dendritic_compartment.v       # Two-compartment dendritic model (v9.5)
 │   ├── layer1_minimal.v              # L1 with VIP+ + L6 input (v9.6)
 │   ├── pv_interneuron.v              # PV+ basket cell dynamics (v9.2)
-│   ├── thalamus.v                    # Theta + SR + matrix + L6 inhib (v10.5)
+│   ├── thalamus.v                    # Theta + SR + matrix (v11.5, distributed SIE)
 │   ├── ca3_phase_memory.v            # Hebbian phase memory (v8.0)
 │   ├── sr_harmonic_bank.v            # 5-harmonic SR bank (v7.7, dynamic SIE)
 │   ├── sr_noise_generator.v          # Per-harmonic stochastic noise
 │   ├── sr_frequency_drift.v          # v2.0: Faster update, wider drift
 │   ├── sr_ignition_controller.v      # v10.0: Six-phase SIE state machine
-│   ├── amplitude_envelope_generator.v # v10.0: O-U process for alpha breathing
+│   ├── amplitude_envelope_generator.v # v11.4: O-U with parameterized bounds
 │   ├── cortical_frequency_drift.v    # v3.0: Force-based adaptive drift
-│   ├── config_controller.v           # Consciousness states (v10.0, SIE timing)
+│   ├── config_controller.v           # Consciousness (v11.4, state interpolation)
 │   ├── clock_enable_generator.v      # FAST_SIM-aware 4kHz clock
 │   ├── pink_noise_generator.v        # 1/f^φ noise (v7.2, √Fibonacci-weighted)
-│   ├── output_mixer.v                # DAC output mixing (v7.3)
-│   ├── energy_landscape.v            # v11.0: φⁿ energy potential and forces
+│   ├── output_mixer.v                # DAC output (v7.17, distributed SIE boost)
+│   ├── energy_landscape.v            # v11.1b: φⁿ forces + rational resonance
 │   ├── quarter_integer_detector.v    # v11.0: Position classification
 │   ├── sin_quarter_lut.v             # v11.0: 256-entry quarter-wave sine LUT
-│   └── coupling_susceptibility.v     # v11.0: χ(r) coupling susceptibility
+│   ├── coupling_susceptibility.v     # v11.1a: Farey χ(r) with 55 rationals
+│   ├── kuramoto_order_parameter.v    # v11.3: Population synchronization
+│   ├── boundary_generator.v          # v11.3: Nonlinear mixing
+│   ├── bicoherence_monitor.v         # v11.3: Three-frequency coupling
+│   ├── coupling_mode_controller.v    # v1.1: State-driven mode switching
+│   └── harmonic_spacing_index.v      # v11.3: φⁿ ratio tracking
 │
-├── tb/                               # Testbenches (37 files, 287+ tests)
+├── tb/                               # Testbenches (39 files, 365+ tests)
 │   ├── tb_full_system_fast.v         # Full integration (15 tests)
-│   ├── tb_coupling_susceptibility.v  # χ(r) coupling validation (10 tests) - v11.0
-│   ├── tb_energy_landscape.v         # Force direction/magnitude (12 tests) - v11.0
+│   ├── tb_state_interpolation.v      # State transition interpolation (10 tests) - v11.4
+│   ├── tb_state_transition_spectrogram.v # 100s spectrogram validation - v11.4b
+│   ├── tb_kuramoto_order.v           # Kuramoto order parameter (7 tests) - v11.3
+│   ├── tb_boundary_generator.v       # Boundary mixing (7 tests) - v11.3
+│   ├── tb_bicoherence_monitor.v      # Bicoherence detection (6 tests) - v11.3
+│   ├── tb_coupling_mode_controller.v # Mode switching (8 tests) - v11.3
+│   ├── tb_harmonic_spacing_index.v   # φⁿ ratio tracking (8 tests) - v11.3
+│   ├── tb_pac_strength.v             # PAC strength (10 tests) - v11.1c
+│   ├── tb_coupling_susceptibility.v  # Farey χ(r) coupling (20 tests) - v11.1a
+│   ├── tb_energy_landscape.v         # Forces + rational resonance (24 tests) - v11.1b
 │   ├── tb_quarter_integer_detector.v # Position classification (8 tests) - v11.0
 │   ├── tb_self_organization.v        # Full integration validation (10 tests) - v11.0
 │   ├── tb_phi_n_sr_relationships.v   # φⁿ Q-factor hierarchy (10 tests) - v10.4
@@ -353,10 +373,11 @@ fpga/
 │
 ├── docs/                             # Specifications
 │   ├── FPGA_SPECIFICATION_V8.md      # Base architecture spec
-│   ├── SPEC_v11.0_UPDATE.md          # Current version (Active φⁿ Dynamics)
+│   ├── SPEC_v12.0_UPDATE.md          # Current version (Unified State Dynamics)
+│   ├── SPEC_v11.3_UPDATE.md          # SIE Dynamics & Population Metrics
+│   ├── SPEC_v11.0_UPDATE.md          # Active φⁿ Dynamics
 │   ├── SPEC_v10.5_UPDATE.md          # Quarter-Integer φⁿ Theory
 │   ├── SPEC_v10.4_UPDATE.md          # φⁿ Geophysical SR Integration
-│   ├── SPEC_v9.6_UPDATE.md           # Extended L6 connectivity
 │   └── SYSTEM_DESCRIPTION.md         # Comprehensive system description
 │
 ├── CLAUDE.md                         # Development workflow & quick reference
@@ -403,6 +424,15 @@ fpga/
 | CATASTROPHE_N_MAX | 25395 | 1.55 | 2:1 danger zone upper bound (v11.0) |
 | SIE_BASE_ENHANCE | 19661 | 1.2× | Dynamic SIE minimum (v11.0) |
 | SIE_K_INSTABILITY | 29491 | 1.8× | SIE instability scaling (v11.0) |
+| ENVELOPE_MIN_THETA | 11469 | 0.7 | Theta envelope lower bound (v11.4) |
+| ENVELOPE_MAX_THETA | 21299 | 1.3 | Theta envelope upper bound (v11.4) |
+| MU_DIV3 | 5461 | 0.333 | MU scaling divisor (v11.4) |
+| TRANSITION_DURATION | 80000 | 20s | Default state transition cycles (v11.4) |
+| SIE_ENHANCE_F0_v12 | 21299 | 1.3× | Distributed f₀ enhancement (v11.5) |
+| SIE_ENHANCE_F1_v12 | 19661 | 1.2× | Distributed f₁ enhancement (v11.5) |
+| SIE_MIXER_MAX | 22938 | 1.4× | Mixer boost ceiling (v11.5) |
+| KURAMOTO_R_ENTRY | 8192 | 0.5 | HARMONIC mode entry threshold (v1.1) |
+| KURAMOTO_R_EXIT | 6554 | 0.4 | HARMONIC mode exit threshold (v1.1) |
 
 ### Simulation Parameters
 - **Update rate:** 4 kHz oscillator dynamics
@@ -416,7 +446,13 @@ fpga/
 
 | Version | Date | Key Features |
 |---------|------|--------------|
-| **v11.0** | 2025-12-28 | Active φⁿ Dynamics: self-organizing frequencies via energy landscape |
+| **v12.0** | 2025-12-29 | Unified State Dynamics: smooth transitions + distributed SIE architecture |
+| v11.5 | 2025-12-29 | Distributed SIE Boost (Option C): 6.8 dB across mixer/f₀/f₁ |
+| v11.4 | 2025-12-29 | State Transition Interpolation: lerp functions, parameterized envelopes |
+| v11.3 | 2025-12-28 | SIE Dynamics & Population Metrics: Kuramoto R, bicoherence, boundaries |
+| v11.2 | 2025-12-28 | DAC Anti-Clipping: MU_MODERATE (3) for NORMAL, soft limiter |
+| v11.1 | 2025-12-28 | Unified Boundary-Attractor: Farey χ(r), rational resonance, PAC strength |
+| v11.0 | 2025-12-28 | Active φⁿ Dynamics: self-organizing frequencies via energy landscape |
 | v10.5 | 2025-12-28 | Quarter-Integer φⁿ Theory: f₁ as φ^1.25 fallback due to 2:1 catastrophe |
 | v10.4 | 2025-12-28 | φⁿ Geophysical SR Integration: Q-factor modeling, amplitude hierarchy |
 | v10.3 | 2025-12-27 | 1/f^φ Spectral Slope: √Fibonacci-weighted pink noise (v7.2) |
@@ -450,12 +486,20 @@ All testbenches should pass. Run the full test suite:
 make iverilog-all
 ```
 
-### Test Summary (~287 tests)
+### Test Summary (~365 tests)
 
 | Testbench | Tests | Version | Feature |
 |-----------|-------|---------|---------|
-| tb_coupling_susceptibility | 10 | v11.0 | χ(r) coupling validation |
-| tb_energy_landscape | 12 | v11.0 | Force direction/magnitude |
+| tb_state_interpolation | 10 | v11.4 | State transition interpolation |
+| tb_state_transition_spectrogram | Visual | v11.4b | 100s spectrogram validation |
+| tb_kuramoto_order | 7 | v11.3 | Kuramoto order parameter |
+| tb_boundary_generator | 7 | v11.3 | Boundary frequency mixing |
+| tb_bicoherence_monitor | 6 | v11.3 | Bicoherence detection |
+| tb_coupling_mode_controller | 8 | v11.3 | Mode switching |
+| tb_harmonic_spacing_index | 8 | v11.3 | φⁿ ratio tracking |
+| tb_pac_strength | 10 | v11.1c | Phase-amplitude coupling |
+| tb_coupling_susceptibility | 20 | v11.1a | Farey χ(r) coupling |
+| tb_energy_landscape | 24 | v11.1b | Forces + rational resonance |
 | tb_quarter_integer_detector | 8 | v11.0 | Position classification |
 | tb_self_organization | 10 | v11.0 | Full integration validation |
 | tb_phi_n_sr_relationships | 10 | v10.4 | φⁿ Q-factor hierarchy |
@@ -488,7 +532,9 @@ make iverilog-all
 
 | Document | Description |
 |----------|-------------|
-| [docs/SPEC_v11.0_UPDATE.md](docs/SPEC_v11.0_UPDATE.md) | Current v11.0 Active φⁿ Dynamics spec |
+| [docs/SPEC_v12.0_UPDATE.md](docs/SPEC_v12.0_UPDATE.md) | **Current v12.0 Unified State Dynamics spec** |
+| [docs/SPEC_v11.3_UPDATE.md](docs/SPEC_v11.3_UPDATE.md) | v11.3 SIE Dynamics & Population Metrics |
+| [docs/SPEC_v11.0_UPDATE.md](docs/SPEC_v11.0_UPDATE.md) | v11.0 Active φⁿ Dynamics |
 | [docs/SPEC_v10.5_UPDATE.md](docs/SPEC_v10.5_UPDATE.md) | Quarter-Integer φⁿ Theory |
 | [docs/SPEC_v10.4_UPDATE.md](docs/SPEC_v10.4_UPDATE.md) | φⁿ Geophysical SR Integration |
 | [docs/FPGA_SPECIFICATION_V8.md](docs/FPGA_SPECIFICATION_V8.md) | Base architecture specification |
@@ -499,13 +545,15 @@ make iverilog-all
 
 ## Future Roadmap
 
-| Phase | Version | Feature |
-|-------|---------|---------|
-| 12 | v11.1+ | Neuromodulation (ACh, NE, DA) |
-| 13 | v11.2+ | Slow oscillations (<1 Hz) and delta |
-| 14 | v11.3+ | Sleep spindles (11-16 Hz) |
-| 15 | v11.4+ | Multiple gamma sub-bands |
-| 16 | v11.5+ | Synaptic realism (lognormal weights) |
+| Phase | Version | Feature | Status |
+|-------|---------|---------|--------|
+| 11 | v11.0-v11.3 | Active φⁿ Dynamics, SIE metrics | **Complete** |
+| 12 | v11.4-v12.0 | Unified State Dynamics (transitions + distributed SIE) | **Complete** |
+| 13 | v12.1+ | Neuromodulation (ACh, NE, DA) | Planned |
+| 14 | v12.2+ | Slow oscillations (<1 Hz) and delta | Planned |
+| 15 | v12.3+ | Sleep spindles (11-16 Hz) | Planned |
+| 16 | v12.4+ | Multiple gamma sub-bands | Planned |
+| 17 | v12.5+ | Synaptic realism (lognormal weights) | Planned |
 
 ---
 

@@ -36,6 +36,9 @@ module config_controller #(
     input  wire clk_en,
     input  wire [2:0] state_select,
 
+    // v11.4: Transition control - 0 = instant (backward compatible)
+    input  wire [15:0] transition_duration,
+
     output reg signed [WIDTH-1:0] mu_dt_theta,
     output reg signed [WIDTH-1:0] mu_dt_l6,
     output reg signed [WIDTH-1:0] mu_dt_l5b,
@@ -60,7 +63,13 @@ module config_controller #(
     output reg [15:0] sie_phase4_dur,   // Plateau phase duration
     output reg [15:0] sie_phase5_dur,   // Propagation phase duration
     output reg [15:0] sie_phase6_dur,   // Decay phase duration
-    output reg [15:0] sie_refractory    // Refractory period (no re-ignition)
+    output reg [15:0] sie_refractory,   // Refractory period (no re-ignition)
+
+    // v11.4: Transition status outputs
+    output reg        transitioning,           // High during active transition
+    output reg [15:0] transition_progress,     // 0-65535 ramp position
+    output reg [2:0]  transition_from,         // Source state
+    output reg [2:0]  transition_to            // Target state
 );
 
 localparam [2:0] STATE_NORMAL     = 3'd0;
@@ -92,126 +101,243 @@ assign scaffold_l5b = 1'b1;  // L5b is always scaffold
 assign plastic_l23  = 1'b1;  // L2/3 is always plastic
 assign plastic_l6   = 1'b1;  // L6 is always plastic
 
+//=============================================================================
+// v11.4: State Transition Interpolation
+// Linear interpolation between states for smooth transitions
+//=============================================================================
+
+// Internal state tracking
+reg [2:0] current_state;           // Confirmed current state
+reg [15:0] ramp_counter;           // Position in transition
+
+// Shadow registers: start values for interpolation
+reg signed [WIDTH-1:0] mu_start_theta, mu_start_l6, mu_start_l5b;
+reg signed [WIDTH-1:0] mu_start_l5a, mu_start_l4, mu_start_l23;
+reg signed [WIDTH-1:0] ca_thresh_start;
+reg [15:0] sie_start_p2, sie_start_p3, sie_start_p4;
+reg [15:0] sie_start_p5, sie_start_p6, sie_start_refr;
+
+// Target values based on state_select (combinational lookup)
+reg signed [WIDTH-1:0] mu_tgt_theta, mu_tgt_l6, mu_tgt_l5b;
+reg signed [WIDTH-1:0] mu_tgt_l5a, mu_tgt_l4, mu_tgt_l23;
+reg signed [WIDTH-1:0] ca_tgt;
+reg [15:0] sie_tgt_p2, sie_tgt_p3, sie_tgt_p4;
+reg [15:0] sie_tgt_p5, sie_tgt_p6, sie_tgt_refr;
+
+always @(*) begin
+    case (state_select)
+        STATE_NORMAL: begin
+            mu_tgt_theta = MU_MODERATE; mu_tgt_l6 = MU_MODERATE;
+            mu_tgt_l5b = MU_MODERATE;   mu_tgt_l5a = MU_MODERATE;
+            mu_tgt_l4 = MU_MODERATE;    mu_tgt_l23 = MU_MODERATE;
+            ca_tgt = CA_THRESH_NORMAL;
+            sie_tgt_p2 = 16'd14000; sie_tgt_p3 = 16'd10000;
+            sie_tgt_p4 = 16'd10000; sie_tgt_p5 = 16'd36000;
+            sie_tgt_p6 = 16'd16000; sie_tgt_refr = 16'd40000;
+        end
+        STATE_ANESTHESIA: begin
+            mu_tgt_theta = MU_HALF;     mu_tgt_l6 = MU_ENHANCED;
+            mu_tgt_l5b = MU_HALF;       mu_tgt_l5a = MU_HALF;
+            mu_tgt_l4 = MU_WEAK;        mu_tgt_l23 = MU_WEAK;
+            ca_tgt = CA_THRESH_ANESTHESIA;
+            sie_tgt_p2 = 16'd20000; sie_tgt_p3 = 16'd8000;
+            sie_tgt_p4 = 16'd8000;  sie_tgt_p5 = 16'd24000;
+            sie_tgt_p6 = 16'd20000; sie_tgt_refr = 16'd60000;
+        end
+        STATE_PSYCHEDELIC: begin
+            mu_tgt_theta = MU_FULL;     mu_tgt_l6 = MU_HALF;
+            mu_tgt_l5b = MU_FULL;       mu_tgt_l5a = MU_FULL;
+            mu_tgt_l4 = MU_ENHANCED;    mu_tgt_l23 = MU_ENHANCED;
+            ca_tgt = CA_THRESH_PSYCHEDELIC;
+            sie_tgt_p2 = 16'd16000; sie_tgt_p3 = 16'd12000;
+            sie_tgt_p4 = 16'd16000; sie_tgt_p5 = 16'd48000;
+            sie_tgt_p6 = 16'd20000; sie_tgt_refr = 16'd24000;
+        end
+        STATE_FLOW: begin
+            mu_tgt_theta = MU_FULL;     mu_tgt_l6 = MU_HALF;
+            mu_tgt_l5b = MU_ENHANCED;   mu_tgt_l5a = MU_ENHANCED;
+            mu_tgt_l4 = MU_FULL;        mu_tgt_l23 = MU_FULL;
+            ca_tgt = CA_THRESH_FLOW;
+            sie_tgt_p2 = 16'd12000; sie_tgt_p3 = 16'd8000;
+            sie_tgt_p4 = 16'd8000;  sie_tgt_p5 = 16'd32000;
+            sie_tgt_p6 = 16'd12000; sie_tgt_refr = 16'd48000;
+        end
+        STATE_MEDITATION: begin
+            mu_tgt_theta = MU_ENHANCED; mu_tgt_l6 = MU_ENHANCED;
+            mu_tgt_l5b = MU_WEAK;       mu_tgt_l5a = MU_WEAK;
+            mu_tgt_l4 = MU_WEAK;        mu_tgt_l23 = MU_HALF;
+            ca_tgt = CA_THRESH_MEDITATION;
+            sie_tgt_p2 = 16'd16000; sie_tgt_p3 = 16'd12000;
+            sie_tgt_p4 = 16'd12000; sie_tgt_p5 = 16'd40000;
+            sie_tgt_p6 = 16'd20000; sie_tgt_refr = 16'd32000;
+        end
+        default: begin
+            mu_tgt_theta = MU_FULL;     mu_tgt_l6 = MU_FULL;
+            mu_tgt_l5b = MU_FULL;       mu_tgt_l5a = MU_FULL;
+            mu_tgt_l4 = MU_FULL;        mu_tgt_l23 = MU_FULL;
+            ca_tgt = CA_THRESH_NORMAL;
+            sie_tgt_p2 = 16'd14000; sie_tgt_p3 = 16'd10000;
+            sie_tgt_p4 = 16'd10000; sie_tgt_p5 = 16'd36000;
+            sie_tgt_p6 = 16'd16000; sie_tgt_refr = 16'd40000;
+        end
+    endcase
+end
+
+// Linear interpolation functions
+// lerp_signed: Returns start + (end - start) * t / duration
+// Note: Must cast unsigned t and duration to signed to handle negative delta
+function signed [WIDTH-1:0] lerp_signed;
+    input signed [WIDTH-1:0] start_val;
+    input signed [WIDTH-1:0] end_val;
+    input [15:0] t;
+    input [15:0] duration;
+    reg signed [WIDTH+16:0] delta;
+    reg signed [WIDTH+16:0] scaled;
+    reg signed [WIDTH+16:0] result;
+    begin
+        delta = end_val - start_val;
+        // Cast t to signed (with leading 0) to preserve sign in multiplication
+        scaled = delta * $signed({1'b0, t});
+        result = start_val + scaled / $signed({1'b0, duration});
+        lerp_signed = result[WIDTH-1:0];
+    end
+endfunction
+
+// lerp_unsigned: Unsigned version for SIE timing parameters
+function [15:0] lerp_unsigned;
+    input [15:0] start_val;
+    input [15:0] end_val;
+    input [15:0] t;
+    input [15:0] duration;
+    reg [31:0] delta;
+    reg [31:0] result;
+    begin
+        if (end_val >= start_val) begin
+            delta = end_val - start_val;
+            result = start_val + (delta * t) / duration;
+        end else begin
+            delta = start_val - end_val;
+            result = start_val - (delta * t) / duration;
+        end
+        lerp_unsigned = result[15:0];
+    end
+endfunction
+
+// State change detection (restart from current if mid-transition)
+wire state_changed = (state_select != transition_to);
+// Handle undefined/unconnected transition_duration (defaults to instant: 1 cycle)
+// Note: ^val === 1'bx detects any 'x' bits in the value
+wire [15:0] ramp_dur = (transition_duration == 16'd0 || ^transition_duration === 1'bx) ? 16'd1 : transition_duration;
+
 always @(posedge clk or posedge rst) begin
     if (rst) begin
-        mu_dt_theta <= MU_MODERATE;  // v11.1: reduced from MU_FULL to prevent clipping
+        // Reset all outputs to NORMAL
+        mu_dt_theta <= MU_MODERATE;
         mu_dt_l6    <= MU_MODERATE;
         mu_dt_l5b   <= MU_MODERATE;
         mu_dt_l5a   <= MU_MODERATE;
         mu_dt_l4    <= MU_MODERATE;
         mu_dt_l23   <= MU_MODERATE;
         ca_threshold <= CA_THRESH_NORMAL;
-        // v10.0: SIE timing reset (NORMAL state defaults)
-        sie_phase2_dur <= 16'd14000;  // 3.5s coherence-first
-        sie_phase3_dur <= 16'd10000;  // 2.5s ignition
-        sie_phase4_dur <= 16'd10000;  // 2.5s plateau
-        sie_phase5_dur <= 16'd36000;  // 9s propagation (PAC window)
-        sie_phase6_dur <= 16'd16000;  // 4s decay
-        sie_refractory <= 16'd40000;  // 10s refractory
+        sie_phase2_dur <= 16'd14000;
+        sie_phase3_dur <= 16'd10000;
+        sie_phase4_dur <= 16'd10000;
+        sie_phase5_dur <= 16'd36000;
+        sie_phase6_dur <= 16'd16000;
+        sie_refractory <= 16'd40000;
+
+        // Reset transition state
+        transitioning <= 1'b0;
+        ramp_counter <= 16'd0;
+        current_state <= STATE_NORMAL;
+        transition_from <= STATE_NORMAL;
+        transition_to <= STATE_NORMAL;
+        transition_progress <= 16'd0;
+
+        // Reset shadow registers
+        mu_start_theta <= MU_MODERATE;
+        mu_start_l6 <= MU_MODERATE;
+        mu_start_l5b <= MU_MODERATE;
+        mu_start_l5a <= MU_MODERATE;
+        mu_start_l4 <= MU_MODERATE;
+        mu_start_l23 <= MU_MODERATE;
+        ca_thresh_start <= CA_THRESH_NORMAL;
+        sie_start_p2 <= 16'd14000;
+        sie_start_p3 <= 16'd10000;
+        sie_start_p4 <= 16'd10000;
+        sie_start_p5 <= 16'd36000;
+        sie_start_p6 <= 16'd16000;
+        sie_start_refr <= 16'd40000;
+
     end else if (clk_en) begin
-        case (state_select)
-            STATE_NORMAL: begin
-                // v11.1: Reduced from MU_FULL (4) to MU_MODERATE (3) to prevent DAC clipping
-                // Amplitude: sqrt(3) ≈ 1.73 instead of 2.0, still distinct from MEDITATION
-                mu_dt_theta  <= MU_MODERATE;
-                mu_dt_l6     <= MU_MODERATE;
-                mu_dt_l5b    <= MU_MODERATE;
-                mu_dt_l5a    <= MU_MODERATE;
-                mu_dt_l4     <= MU_MODERATE;
-                mu_dt_l23    <= MU_MODERATE;
-                ca_threshold <= CA_THRESH_NORMAL;  // 0.5 - balanced
-                // SIE timing: ~21.5s event + 10s refractory
-                sie_phase2_dur <= 16'd14000;  // 3.5s coherence-first
-                sie_phase3_dur <= 16'd10000;  // 2.5s ignition
-                sie_phase4_dur <= 16'd10000;  // 2.5s plateau
-                sie_phase5_dur <= 16'd36000;  // 9s propagation
-                sie_phase6_dur <= 16'd16000;  // 4s decay
-                sie_refractory <= 16'd40000;  // 10s refractory
+        if (state_changed) begin
+            // NEW TRANSITION: Capture current values as start point
+            mu_start_theta <= mu_dt_theta;
+            mu_start_l6 <= mu_dt_l6;
+            mu_start_l5b <= mu_dt_l5b;
+            mu_start_l5a <= mu_dt_l5a;
+            mu_start_l4 <= mu_dt_l4;
+            mu_start_l23 <= mu_dt_l23;
+            ca_thresh_start <= ca_threshold;
+            sie_start_p2 <= sie_phase2_dur;
+            sie_start_p3 <= sie_phase3_dur;
+            sie_start_p4 <= sie_phase4_dur;
+            sie_start_p5 <= sie_phase5_dur;
+            sie_start_p6 <= sie_phase6_dur;
+            sie_start_refr <= sie_refractory;
+
+            // Start transition
+            transition_from <= transition_to;  // From wherever we are
+            transition_to <= state_select;
+            transitioning <= 1'b1;
+            ramp_counter <= 16'd0;
+            transition_progress <= 16'd0;
+
+        end else if (transitioning) begin
+            if (ramp_counter >= ramp_dur) begin
+                // TRANSITION COMPLETE: Snap to final values
+                mu_dt_theta <= mu_tgt_theta;
+                mu_dt_l6 <= mu_tgt_l6;
+                mu_dt_l5b <= mu_tgt_l5b;
+                mu_dt_l5a <= mu_tgt_l5a;
+                mu_dt_l4 <= mu_tgt_l4;
+                mu_dt_l23 <= mu_tgt_l23;
+                ca_threshold <= ca_tgt;
+                sie_phase2_dur <= sie_tgt_p2;
+                sie_phase3_dur <= sie_tgt_p3;
+                sie_phase4_dur <= sie_tgt_p4;
+                sie_phase5_dur <= sie_tgt_p5;
+                sie_phase6_dur <= sie_tgt_p6;
+                sie_refractory <= sie_tgt_refr;
+
+                transitioning <= 1'b0;
+                current_state <= transition_to;
+                transition_progress <= 16'hFFFF;
+
+            end else begin
+                // INTERPOLATING: Apply lerp to all parameters
+                ramp_counter <= ramp_counter + 1'b1;
+                transition_progress <= (ramp_counter * 16'hFFFF) / ramp_dur;
+
+                // MU values (signed lerp)
+                mu_dt_theta <= lerp_signed(mu_start_theta, mu_tgt_theta, ramp_counter, ramp_dur);
+                mu_dt_l6    <= lerp_signed(mu_start_l6, mu_tgt_l6, ramp_counter, ramp_dur);
+                mu_dt_l5b   <= lerp_signed(mu_start_l5b, mu_tgt_l5b, ramp_counter, ramp_dur);
+                mu_dt_l5a   <= lerp_signed(mu_start_l5a, mu_tgt_l5a, ramp_counter, ramp_dur);
+                mu_dt_l4    <= lerp_signed(mu_start_l4, mu_tgt_l4, ramp_counter, ramp_dur);
+                mu_dt_l23   <= lerp_signed(mu_start_l23, mu_tgt_l23, ramp_counter, ramp_dur);
+                ca_threshold <= lerp_signed(ca_thresh_start, ca_tgt, ramp_counter, ramp_dur);
+
+                // SIE timing (unsigned lerp)
+                sie_phase2_dur <= lerp_unsigned(sie_start_p2, sie_tgt_p2, ramp_counter, ramp_dur);
+                sie_phase3_dur <= lerp_unsigned(sie_start_p3, sie_tgt_p3, ramp_counter, ramp_dur);
+                sie_phase4_dur <= lerp_unsigned(sie_start_p4, sie_tgt_p4, ramp_counter, ramp_dur);
+                sie_phase5_dur <= lerp_unsigned(sie_start_p5, sie_tgt_p5, ramp_counter, ramp_dur);
+                sie_phase6_dur <= lerp_unsigned(sie_start_p6, sie_tgt_p6, ramp_counter, ramp_dur);
+                sie_refractory <= lerp_unsigned(sie_start_refr, sie_tgt_refr, ramp_counter, ramp_dur);
             end
-            STATE_ANESTHESIA: begin
-                mu_dt_theta  <= MU_HALF;
-                mu_dt_l6     <= MU_ENHANCED;
-                mu_dt_l5b    <= MU_HALF;
-                mu_dt_l5a    <= MU_HALF;
-                mu_dt_l4     <= MU_WEAK;
-                mu_dt_l23    <= MU_WEAK;
-                ca_threshold <= CA_THRESH_ANESTHESIA;  // 0.75 - fewer Ca2+ spikes
-                // SIE timing: reduced/suppressed events (longer refractory)
-                sie_phase2_dur <= 16'd20000;  // 5s coherence (sluggish)
-                sie_phase3_dur <= 16'd8000;   // 2s ignition (weak)
-                sie_phase4_dur <= 16'd8000;   // 2s plateau
-                sie_phase5_dur <= 16'd24000;  // 6s propagation (reduced)
-                sie_phase6_dur <= 16'd20000;  // 5s decay (prolonged)
-                sie_refractory <= 16'd60000;  // 15s refractory (suppressed)
-            end
-            STATE_PSYCHEDELIC: begin
-                mu_dt_theta  <= MU_FULL;
-                mu_dt_l6     <= MU_HALF;
-                mu_dt_l5b    <= MU_FULL;
-                mu_dt_l5a    <= MU_FULL;
-                mu_dt_l4     <= MU_ENHANCED;
-                mu_dt_l23    <= MU_ENHANCED;
-                ca_threshold <= CA_THRESH_PSYCHEDELIC;  // 0.25 - more Ca2+ spikes
-                // SIE timing: ~28s event + 6s refractory (extended propagation, short gap)
-                sie_phase2_dur <= 16'd16000;  // 4s coherence
-                sie_phase3_dur <= 16'd12000;  // 3s ignition (intense)
-                sie_phase4_dur <= 16'd16000;  // 4s plateau (sustained peak)
-                sie_phase5_dur <= 16'd48000;  // 12s propagation (extended PAC)
-                sie_phase6_dur <= 16'd20000;  // 5s decay
-                sie_refractory <= 16'd24000;  // 6s refractory (frequent events)
-            end
-            STATE_FLOW: begin
-                mu_dt_theta  <= MU_FULL;
-                mu_dt_l6     <= MU_HALF;
-                mu_dt_l5b    <= MU_ENHANCED;
-                mu_dt_l5a    <= MU_ENHANCED;
-                mu_dt_l4     <= MU_FULL;
-                mu_dt_l23    <= MU_FULL;
-                ca_threshold <= CA_THRESH_FLOW;  // 0.5 - balanced
-                // SIE timing: ~18s event + 12s refractory (shorter events, longer gaps)
-                sie_phase2_dur <= 16'd12000;  // 3s coherence (quick)
-                sie_phase3_dur <= 16'd8000;   // 2s ignition
-                sie_phase4_dur <= 16'd8000;   // 2s plateau
-                sie_phase5_dur <= 16'd32000;  // 8s propagation
-                sie_phase6_dur <= 16'd12000;  // 3s decay
-                sie_refractory <= 16'd48000;  // 12s refractory (task focus)
-            end
-            STATE_MEDITATION: begin
-                // v11.1a: Enhanced spectral differentiation from NORMAL
-                // MEDITATION: prominent theta/alpha peaks, suppressed beta/gamma
-                // Creates >3dB difference in target bands vs NORMAL state
-                mu_dt_theta  <= MU_ENHANCED; // 6 - strong theta peak (key signature)
-                mu_dt_l6     <= MU_ENHANCED; // 6 - strong alpha peak
-                mu_dt_l5b    <= MU_WEAK;     // 1 - suppressed high beta
-                mu_dt_l5a    <= MU_WEAK;     // 1 - suppressed low beta
-                mu_dt_l4     <= MU_WEAK;     // 1 - sensory withdrawal (minimal gamma)
-                mu_dt_l23    <= MU_HALF;     // 2 - moderate gamma (some internal activity)
-                ca_threshold <= CA_THRESH_MEDITATION;  // 0.375 - enhanced top-down
-                // SIE timing: ~25s event + 8s refractory (enhanced, prominent events)
-                sie_phase2_dur <= 16'd16000;  // 4s coherence (extended awareness)
-                sie_phase3_dur <= 16'd12000;  // 3s ignition
-                sie_phase4_dur <= 16'd12000;  // 3s plateau (sustained)
-                sie_phase5_dur <= 16'd40000;  // 10s propagation (enhanced PAC)
-                sie_phase6_dur <= 16'd20000;  // 5s decay (slow return)
-                sie_refractory <= 16'd32000;  // 8s refractory (moderate frequency)
-            end
-            default: begin
-                mu_dt_theta  <= MU_FULL;
-                mu_dt_l6     <= MU_FULL;
-                mu_dt_l5b    <= MU_FULL;
-                mu_dt_l5a    <= MU_FULL;
-                mu_dt_l4     <= MU_FULL;
-                mu_dt_l23    <= MU_FULL;
-                ca_threshold <= CA_THRESH_NORMAL;  // 0.5 - balanced
-                // SIE timing: same as NORMAL
-                sie_phase2_dur <= 16'd14000;
-                sie_phase3_dur <= 16'd10000;
-                sie_phase4_dur <= 16'd10000;
-                sie_phase5_dur <= 16'd36000;
-                sie_phase6_dur <= 16'd16000;
-                sie_refractory <= 16'd40000;
-            end
-        endcase
+        end
+        // else: stable state, no changes
     end
 end
 

@@ -650,14 +650,39 @@ hopf_oscillator #(.WIDTH(WIDTH), .FRAC(FRAC)) osc_l23 (
     .x(l23_x_int), .y(l23_y_int), .amplitude(l23_amp)
 );
 
-assign l23_x = l23_x_int;
-assign l23_y = l23_y_int;
-assign l5b_x = l5b_x_int;
-assign l5b_y = l5b_y_int;  // v11.1a: Added for Kuramoto R
-assign l5a_x = l5a_x_int;
-assign l5a_y = l5a_y_int;  // v11.1a: Added for Kuramoto R
-assign l6_x  = l6_x_int;
-assign l6_y  = l6_y_int;
-assign l4_x  = l4_x_int;
+//=============================================================================
+// v11.4: MU-based amplitude scaling
+// The Hopf oscillator maintains constant amplitude (~1.0) regardless of MU.
+// To achieve state-dependent amplitude, we scale outputs by MU/MU_BASELINE.
+// MU_BASELINE = 3 (MU_MODERATE). Scale factor = MU * 5461 >>> 14 ≈ MU/3
+// This gives: MU=6 → 2x amplitude, MU=1 → 0.33x amplitude
+//=============================================================================
+localparam signed [WIDTH-1:0] MU_DIV3 = 18'sd5461;  // 1/3 in Q14 (16384/3)
+
+// Compute scaled outputs: output = (oscillator * mu_dt * MU_DIV3) >>> FRAC
+// For MU=3: scale = 3 * 5461 / 16384 = 1.0
+// For MU=6: scale = 6 * 5461 / 16384 = 2.0
+// For MU=1: scale = 1 * 5461 / 16384 = 0.33
+
+wire signed [2*WIDTH-1:0] l6_scale_full  = l6_x_int  * (mu_dt_l6  * MU_DIV3);
+wire signed [2*WIDTH-1:0] l5b_scale_full = l5b_x_int * (mu_dt_l5b * MU_DIV3);
+wire signed [2*WIDTH-1:0] l5a_scale_full = l5a_x_int * (mu_dt_l5a * MU_DIV3);
+wire signed [2*WIDTH-1:0] l4_scale_full  = l4_x_int  * (mu_dt_l4  * MU_DIV3);
+wire signed [2*WIDTH-1:0] l23_scale_full = l23_x_int * (mu_dt_l23 * MU_DIV3);
+
+// Y outputs for Kuramoto R calculation
+wire signed [2*WIDTH-1:0] l6_y_scale_full  = l6_y_int  * (mu_dt_l6  * MU_DIV3);
+wire signed [2*WIDTH-1:0] l5b_y_scale_full = l5b_y_int * (mu_dt_l5b * MU_DIV3);
+wire signed [2*WIDTH-1:0] l5a_y_scale_full = l5a_y_int * (mu_dt_l5a * MU_DIV3);
+
+assign l6_x  = l6_scale_full  >>> FRAC;
+assign l6_y  = l6_y_scale_full >>> FRAC;
+assign l5b_x = l5b_scale_full >>> FRAC;
+assign l5b_y = l5b_y_scale_full >>> FRAC;
+assign l5a_x = l5a_scale_full >>> FRAC;
+assign l5a_y = l5a_y_scale_full >>> FRAC;
+assign l4_x  = l4_scale_full  >>> FRAC;
+assign l23_x = l23_scale_full >>> FRAC;
+assign l23_y = l23_y_int;  // L23 y not scaled (not used in Kuramoto R)
 
 endmodule
