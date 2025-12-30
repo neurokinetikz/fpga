@@ -5,19 +5,19 @@ State Transition Spectrogram Generator
 Generates a spectrogram visualization from the state transition DAC output,
 showing smooth NORMAL ↔ MEDITATION transitions with MU interpolation.
 
-Timeline (600 seconds):
-- Phase 0 (0-120s):     NORMAL baseline
-- Phase 1 (120-240s):   Smooth transition NORMAL → MEDITATION
-- Phase 2 (240-360s):   MEDITATION steady-state
-- Phase 3 (360-480s):   Smooth transition MEDITATION → NORMAL
-- Phase 4 (480-600s):   NORMAL steady-state
+Timeline (100 seconds):
+- Phase 0 (0-20s):     NORMAL baseline
+- Phase 1 (20-40s):    Smooth transition NORMAL → MEDITATION
+- Phase 2 (40-60s):    MEDITATION steady-state
+- Phase 3 (60-80s):    Smooth transition MEDITATION → NORMAL
+- Phase 4 (80-100s):   NORMAL steady-state
 
 Expected observations:
-- Theta (5.89 Hz) and alpha (9.53 Hz): stable throughout (MU unchanged)
+- Theta (5.89 Hz) and alpha (9.53 Hz): BOOSTED in MEDITATION (MU=6)
 - Beta (15.42 Hz, 24.94 Hz) and gamma (40.36 Hz):
-  - Full power in NORMAL phases (0-120s, 480-600s)
-  - Reduced amplitude (~50%) in MEDITATION phase (240-360s)
-  - Smooth gradient during transitions (120-240s, 360-480s)
+  - Full power in NORMAL phases (0-20s, 80-100s) with MU=3
+  - Reduced amplitude in MEDITATION phase (40-60s) with MU=1
+  - Smooth gradient during transitions (20-40s, 60-80s)
 - 1/f^φ pink noise background: continuous throughout
 
 Usage:
@@ -72,7 +72,7 @@ def main():
     #=========================================================================
     # Plot 1: Main Spectrogram with Phase Annotations
     #=========================================================================
-    fig, axes = plt.subplots(2, 1, figsize=(20, 10), height_ratios=[3, 1])
+    fig, axes = plt.subplots(2, 1, figsize=(14, 10), height_ratios=[3, 1])
 
     ax1 = axes[0]
 
@@ -101,7 +101,7 @@ def main():
             ax1.text(10, freq + 1.5, label, color='white', fontsize=8, alpha=0.8)
 
     # Phase boundary markers
-    phase_times = [0, 120, 240, 360, 480, 600]
+    phase_times = [0, 20, 40, 60, 80, 100]
     phase_names = ['NORMAL', 'N→M', 'MEDITATION', 'M→N', 'NORMAL']
     phase_colors = ['#00ff00', '#ffff00', '#0080ff', '#ffff00', '#00ff00']
 
@@ -120,8 +120,8 @@ def main():
     ax1.set_xlabel('Time (s)', fontsize=12)
     ax1.set_ylabel('Frequency (Hz)', fontsize=12)
     ax1.set_title('State Transition Spectrogram: NORMAL ↔ MEDITATION\n'
-                  '(MU interpolation over 120-second transitions)', fontsize=14)
-    ax1.set_xlim(0, 600)
+                  '(MU interpolation over 20-second transitions)', fontsize=14)
+    ax1.set_xlim(0, 100)
     ax1.set_ylim(0, 80)
 
     plt.colorbar(im, ax=ax1, label='Power (dB)', shrink=0.8)
@@ -142,16 +142,16 @@ def main():
     ax2.set_xlabel('Time (s)', fontsize=12)
     ax2.set_ylabel('State', fontsize=12)
     ax2.set_title('State Select (0=NORMAL, 4=MEDITATION)', fontsize=12)
-    ax2.set_xlim(0, 600)
+    ax2.set_xlim(0, 100)
     ax2.set_ylim(-0.5, 5)
     ax2.legend(loc='upper right')
     ax2.grid(True, alpha=0.3)
 
-    # Add annotations for MU levels
-    ax2.axhline(4, color='green', linestyle=':', alpha=0.5, linewidth=1)
-    ax2.axhline(2, color='blue', linestyle=':', alpha=0.5, linewidth=1)
-    ax2.text(30, 4.2, 'NORMAL (μ=4)', color='green', fontsize=9)
-    ax2.text(270, 2.2, 'MEDITATION (μ=2)', color='blue', fontsize=9)
+    # Add state level annotations
+    ax2.axhline(0, color='green', linestyle=':', alpha=0.5, linewidth=1)
+    ax2.axhline(4, color='blue', linestyle=':', alpha=0.5, linewidth=1)
+    ax2.text(5, 0.3, 'NORMAL (state=0)', color='green', fontsize=9)
+    ax2.text(45, 4.3, 'MEDITATION (state=4)', color='blue', fontsize=9)
 
     plt.tight_layout()
 
@@ -162,7 +162,7 @@ def main():
     #=========================================================================
     # Plot 3: Band Power Time Series
     #=========================================================================
-    fig2, ax3 = plt.subplots(figsize=(20, 6))
+    fig2, ax3 = plt.subplots(figsize=(14, 6))
 
     # Define frequency bands
     bands = {
@@ -188,7 +188,7 @@ def main():
     ax3.set_xlabel('Time (s)', fontsize=12)
     ax3.set_ylabel('Band Power (dB)', fontsize=12)
     ax3.set_title('Band Power Over Time During State Transitions', fontsize=14)
-    ax3.set_xlim(0, 600)
+    ax3.set_xlim(0, 100)
     ax3.legend(loc='upper right')
     ax3.grid(True, alpha=0.3)
 

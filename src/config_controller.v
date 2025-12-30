@@ -317,7 +317,9 @@ always @(posedge clk or posedge rst) begin
             end else begin
                 // INTERPOLATING: Apply lerp to all parameters
                 ramp_counter <= ramp_counter + 1'b1;
-                transition_progress <= (ramp_counter * 16'hFFFF) / ramp_dur;
+                // v11.4 FIX: Use 32-bit arithmetic to prevent overflow
+                // ramp_counter * 65535 can exceed 16 bits, causing wrap-around
+                transition_progress <= ({16'd0, ramp_counter} * 32'd65535) / {16'd0, ramp_dur};
 
                 // MU values (signed lerp)
                 mu_dt_theta <= lerp_signed(mu_start_theta, mu_tgt_theta, ramp_counter, ramp_dur);

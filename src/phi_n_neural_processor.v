@@ -1,5 +1,11 @@
 //=============================================================================
-// Top-Level Module - v11.5 with Distributed SIE Boost
+// Top-Level Module - v11.5.1 with Energy Landscape v11.2
+//
+// v11.5.1 CHANGES (Energy Landscape v11.2 Integration):
+// - Wired omega_dt_packed for ratio-based catastrophe detection
+// - Wired omega_correction_packed for escape mechanism
+// - Added near_harmonic_3_2 and near_harmonic_5_4 danger flags
+// - omega_corr signals connected to cortical_frequency_drift
 //
 // v11.5 CHANGES (Option C Distributed SIE Reduction):
 // - DISABLED sie_theta_boost and sie_alpha_boost (set to constant 1.0×)
@@ -240,6 +246,16 @@ module phi_n_neural_processor #(
 localparam signed [WIDTH-1:0] ONE_THIRD = 18'sd5461;
 localparam signed [WIDTH-1:0] K_PHASE = 18'sd328;   // 0.02 - phase coupling (minimal for frequency separation)
 
+// OMEGA_DT values for oscillator frequencies (used by energy_landscape, pac_strength, etc.)
+localparam signed [WIDTH-1:0] OMEGA_DT_THETA      = 18'sd152;   // 5.89 Hz
+localparam signed [WIDTH-1:0] OMEGA_DT_ALPHA      = 18'sd245;   // 9.53 Hz
+localparam signed [WIDTH-1:0] OMEGA_DT_BETA_LOW   = 18'sd397;   // 15.42 Hz
+localparam signed [WIDTH-1:0] OMEGA_DT_BETA_HIGH  = 18'sd642;   // 24.94 Hz
+localparam signed [WIDTH-1:0] OMEGA_DT_GAMMA      = 18'sd817;   // 31.73 Hz
+localparam signed [WIDTH-1:0] OMEGA_DT_GAMMA_FAST = 18'sd1040;  // 40.36 Hz
+localparam signed [WIDTH-1:0] OMEGA_DT_SR_F0      = 18'sd196;   // 7.6 Hz
+localparam signed [WIDTH-1:0] OMEGA_DT_SR_F2      = 18'sd514;   // 20 Hz
+
 wire clk_4khz_en, clk_100khz_en;
 
 clock_enable_generator #(
@@ -304,6 +320,9 @@ wire signed [WIDTH-1:0] cortical_jitter_l4, cortical_jitter_l23;
 // v11.0: Forward declarations for force signals (defined later by energy_landscape)
 wire signed [WIDTH-1:0] force_l6, force_l5a, force_l5b, force_l4, force_l23;
 
+// v11.2: Forward declarations for omega_corr signals (from energy_landscape escape mechanism)
+wire signed [WIDTH-1:0] omega_corr_l6, omega_corr_l5a, omega_corr_l5b, omega_corr_l4, omega_corr_l23;
+
 cortical_frequency_drift #(
     .WIDTH(WIDTH),
     .FRAC(FRAC),
@@ -319,6 +338,12 @@ cortical_frequency_drift #(
     .force_l5b(force_l5b),
     .force_l4(force_l4),
     .force_l23(force_l23),
+    // v11.2: Omega correction inputs from escape mechanism
+    .omega_corr_l6(omega_corr_l6),
+    .omega_corr_l5a(omega_corr_l5a),
+    .omega_corr_l5b(omega_corr_l5b),
+    .omega_corr_l4(omega_corr_l4),
+    .omega_corr_l23(omega_corr_l23),
     // Slow drift outputs
     .drift_l6(cortical_drift_l6),
     .drift_l5a(cortical_drift_l5a),
@@ -383,6 +408,24 @@ assign drift_cortical_packed = {
 wire signed [NUM_CORTICAL_LAYERS*WIDTH-1:0] force_cortical_packed;
 wire signed [NUM_CORTICAL_LAYERS*WIDTH-1:0] energy_cortical_packed;
 wire [NUM_CORTICAL_LAYERS-1:0] near_harmonic_2_1_cortical;
+wire [NUM_CORTICAL_LAYERS-1:0] near_harmonic_3_1_cortical;
+wire [NUM_CORTICAL_LAYERS-1:0] near_harmonic_4_1_cortical;
+wire [NUM_CORTICAL_LAYERS-1:0] near_harmonic_3_2_cortical;  // v11.2
+wire [NUM_CORTICAL_LAYERS-1:0] near_harmonic_5_4_cortical;  // v11.2
+
+// v11.2: Omega correction from escape mechanism
+wire signed [NUM_CORTICAL_LAYERS*WIDTH-1:0] omega_correction_packed;
+
+// v11.2: Pack OMEGA_DT values for ratio-based detection
+// Order: L6, L5a, L5b, L4, L23 (matches n_cortical_packed order)
+wire signed [NUM_CORTICAL_LAYERS*WIDTH-1:0] omega_dt_cortical_packed;
+assign omega_dt_cortical_packed = {
+    OMEGA_DT_GAMMA_FAST,  // L2/3: 40.36 Hz
+    OMEGA_DT_GAMMA,       // L4:   31.73 Hz
+    OMEGA_DT_BETA_HIGH,   // L5b:  24.94 Hz
+    OMEGA_DT_BETA_LOW,    // L5a:  15.42 Hz
+    OMEGA_DT_ALPHA        // L6:   9.53 Hz
+};
 
 // Unpack forces for cortical_frequency_drift (connects to forward-declared wires)
 assign force_l6  = force_cortical_packed[0*WIDTH +: WIDTH];
@@ -390,6 +433,13 @@ assign force_l5a = force_cortical_packed[1*WIDTH +: WIDTH];
 assign force_l5b = force_cortical_packed[2*WIDTH +: WIDTH];
 assign force_l4  = force_cortical_packed[3*WIDTH +: WIDTH];
 assign force_l23 = force_cortical_packed[4*WIDTH +: WIDTH];
+
+// v11.2: Unpack omega_correction for escape mechanism (connects to forward-declared wires)
+assign omega_corr_l6  = omega_correction_packed[0*WIDTH +: WIDTH];
+assign omega_corr_l5a = omega_correction_packed[1*WIDTH +: WIDTH];
+assign omega_corr_l5b = omega_correction_packed[2*WIDTH +: WIDTH];
+assign omega_corr_l4  = omega_correction_packed[3*WIDTH +: WIDTH];
+assign omega_corr_l23 = omega_correction_packed[4*WIDTH +: WIDTH];
 
 energy_landscape #(
     .WIDTH(WIDTH),
@@ -402,9 +452,22 @@ energy_landscape #(
     .clk_en(clk_4khz_en),
     .n_packed(n_cortical_packed),
     .drift_packed(drift_cortical_packed),
+    // v11.2: Omega values for ratio-based catastrophe detection
+    .omega_dt_packed(omega_dt_cortical_packed),
+    .omega_dt_reference(OMEGA_DT_THETA),  // Reference = theta (5.89 Hz)
+    // Force outputs
     .force_packed(force_cortical_packed),
+    // v11.2: Escape mechanism output
+    .omega_correction_packed(omega_correction_packed),
+    // Energy output
     .energy_packed(energy_cortical_packed),
-    .near_harmonic_2_1(near_harmonic_2_1_cortical)
+    // Catastrophe flags
+    .near_harmonic_2_1(near_harmonic_2_1_cortical),
+    .near_harmonic_3_1(near_harmonic_3_1_cortical),
+    .near_harmonic_4_1(near_harmonic_4_1_cortical),
+    // v11.2: Extended danger flags
+    .near_harmonic_3_2(near_harmonic_3_2_cortical),
+    .near_harmonic_5_4(near_harmonic_5_4_cortical)
 );
 
 // Quarter-integer position detector for cortical layers
@@ -965,16 +1028,6 @@ wire signed [WIDTH-1:0] sr_f2_amp = sr_amplitude_packed_int[3*WIDTH-1:2*WIDTH]; 
 wire [WIDTH-1:0] amp_sr_f0_est = (sr_f0_amp[WIDTH-1]) ? (~sr_f0_amp + 1) : sr_f0_amp;
 wire [WIDTH-1:0] amp_sr_f2_est = (sr_f2_amp[WIDTH-1]) ? (~sr_f2_amp + 1) : sr_f2_amp;
 
-// Fixed OMEGA_DT values (from architecture - these could also be dynamic)
-localparam [WIDTH-1:0] OMEGA_DT_THETA      = 18'd152;   // 5.89 Hz
-localparam [WIDTH-1:0] OMEGA_DT_ALPHA      = 18'd245;   // 9.53 Hz
-localparam [WIDTH-1:0] OMEGA_DT_BETA_LOW   = 18'd397;   // 15.42 Hz
-localparam [WIDTH-1:0] OMEGA_DT_BETA_HIGH  = 18'd642;   // 24.94 Hz
-localparam [WIDTH-1:0] OMEGA_DT_GAMMA      = 18'd817;   // 31.73 Hz
-localparam [WIDTH-1:0] OMEGA_DT_GAMMA_FAST = 18'd1040;  // 40.36 Hz
-localparam [WIDTH-1:0] OMEGA_DT_SR_F0      = 18'd196;   // 7.6 Hz
-localparam [WIDTH-1:0] OMEGA_DT_SR_F2      = 18'd514;   // 20 Hz
-
 // PAC strength outputs (internal wires)
 wire [WIDTH-1:0] pac_theta_alpha_int;
 wire [WIDTH-1:0] pac_theta_beta_low_int;
@@ -1200,18 +1253,25 @@ wire mode_transition_active;
 coupling_mode_controller #(
     .WIDTH(WIDTH),
     .FRAC(FRAC),
-    .TRANSITION_CYCLES(2000)  // ~500ms at 4 kHz
+    .TRANSITION_CYCLES(2000),  // ~500ms at 4 kHz
+    .DEBOUNCE_CYCLES(2000)     // v1.2: 500ms debounce
 ) coupling_ctrl (
     .clk(clk),
     .rst(rst),
     .clk_en(clk_4khz_en),
     .state_select(state_select),            // v1.1: State-driven mode
+    .transition_progress(state_transition_progress_int),  // v1.2: From config_controller
+    .transition_duration(transition_duration),            // v1.2: From top-level input
+    // v1.2b: State transition tracking for gain interpolation
+    .transitioning(state_transitioning_int),
+    .state_transition_from(state_transition_from_int),
+    .state_transition_to(state_transition_to_int),
     .kuramoto_R(kuramoto_R),
     .boundary_power(total_boundary_power),
     .sie_phase(sie_ignition_phase),
-    .r_high_thresh(18'sd0),     // Use default: 0.5 (lowered from 0.7)
-    .r_low_thresh(18'sd0),      // Use default: 0.4 (lowered from 0.5)
-    .boundary_thresh(18'sd0),   // Use default: 0.25 (lowered from 0.5)
+    .r_high_thresh(18'sd0),     // Use default: 0.55 (v1.2 wider hysteresis)
+    .r_low_thresh(18'sd0),      // Use default: 0.35 (v1.2 wider hysteresis)
+    .boundary_thresh(18'sd0),   // Use default: 0.30 entry, 0.15 exit (v1.2)
     .coupling_mode(coupling_mode),
     .pac_gain(pac_gain),
     .harmonic_gain(harmonic_gain),
@@ -1271,6 +1331,18 @@ assign boosted_alpha_full = motor_l6_x * sie_alpha_boost;
 assign boosted_theta = boosted_theta_full >>> FRAC;
 assign boosted_alpha = boosted_alpha_full >>> FRAC;
 
+// v7.20: Enable continuous gains during MEDITATION state transitions
+// This synchronizes mixer weight changes with MU amplitude interpolation
+localparam [2:0] STATE_MEDITATION_LOCAL = 3'd4;
+wire use_continuous_gains = state_transitioning_int &&
+    ((state_transition_to_int == STATE_MEDITATION_LOCAL) ||
+     (state_transition_from_int == STATE_MEDITATION_LOCAL));
+
+// v7.20: Debug outputs from mixer (internal wires, not exposed to top-level)
+wire signed [WIDTH-1:0] mixer_debug_mode_blend;
+wire signed [WIDTH-1:0] mixer_debug_pink_weight;
+wire signed [WIDTH-1:0] mixer_debug_osc_scale;
+
 output_mixer #(.WIDTH(WIDTH), .FRAC(FRAC)) mixer (
     .clk(clk),
     .rst(rst),
@@ -1293,8 +1365,17 @@ output_mixer #(.WIDTH(WIDTH), .FRAC(FRAC)) mixer (
     // v7.14: Smooth state transitions
     .transition_progress(state_transition_progress_int),
     .state_select(state_select),
+    // v7.20: Continuous gain inputs from coupling_mode_controller v1.2b
+    .pac_gain(pac_gain),
+    .harmonic_gain(harmonic_gain),
+    .use_continuous_gains(use_continuous_gains),
+    // Outputs
     .mixed_output(mixed_output),
-    .dac_output(dac_output)
+    .dac_output(dac_output),
+    // v7.20: Debug outputs
+    .debug_mode_blend(mixer_debug_mode_blend),
+    .debug_pink_weight(mixer_debug_pink_weight),
+    .debug_osc_scale(mixer_debug_osc_scale)
 );
 
 assign debug_motor_l23 = motor_l23_x;

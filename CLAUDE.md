@@ -4,7 +4,7 @@
 
 This is an FPGA implementation of a biologically-realistic neural oscillator system based on the **φⁿ (golden ratio) frequency architecture** with Schumann Resonance coupling. The system implements 21 Hopf oscillators organized into a thalamo-cortical architecture for neural signal processing and consciousness state modeling.
 
-**Current Version:** v12.0 (Unified State Dynamics)
+**Current Version:** v12.1 (Synchronized State Transitions)
 **Target Platform:** Digilent Zybo Z7-20 (Xilinx Zynq-7020)
 
 ## Quick Start
@@ -50,7 +50,7 @@ make clean             # Clean generated files
 ```
 fpga/
 ├── src/                          # Verilog source modules (29 files)
-│   ├── phi_n_neural_processor.v  # Top-level (v11.5, distributed SIE boost)
+│   ├── phi_n_neural_processor.v  # Top-level (v11.5.1, energy landscape wiring)
 │   ├── hopf_oscillator.v         # Core oscillator (v6.0, dx/dt = μx - ωy - r²x)
 │   ├── hopf_oscillator_stochastic.v # Stochastic variant with noise input
 │   ├── ca3_phase_memory.v        # Hebbian phase memory (v8.0, theta-gated)
@@ -64,12 +64,12 @@ fpga/
 │   ├── sr_frequency_drift.v      # v2.0: Faster update, wider drift ranges
 │   ├── sr_ignition_controller.v  # v10.0: Six-phase SIE state machine
 │   ├── amplitude_envelope_generator.v # v11.4: O-U process with parameterized bounds
-│   ├── cortical_frequency_drift.v # v3.0: Force-based adaptive drift
+│   ├── cortical_frequency_drift.v # v3.4: Force-based drift + escape mechanism
 │   ├── config_controller.v       # Consciousness states (v11.4, state interpolation)
 │   ├── clock_enable_generator.v  # FAST_SIM-aware 4kHz clock (v6.0)
 │   ├── pink_noise_generator.v    # 1/f^φ noise (v7.2, √Fibonacci-weighted)
-│   ├── output_mixer.v            # DAC output mixing (v7.17, distributed SIE boost)
-│   ├── energy_landscape.v        # v11.1b: φⁿ forces + rational resonance + multi-catastrophe
+│   ├── output_mixer.v            # DAC output mixing (v7.20, continuous gain blending)
+│   ├── energy_landscape.v        # v11.2: Ratio-based catastrophe + escape mechanism
 │   ├── quarter_integer_detector.v # v11.0: Position classification and stability
 │   ├── sin_quarter_lut.v         # v11.0: 256-entry quarter-wave sine LUT
 │   ├── coupling_susceptibility.v # v11.1a: Farey χ(r) with 55 rationals + φⁿ boundaries
@@ -77,7 +77,7 @@ fpga/
 │   ├── kuramoto_order_parameter.v # v11.3: Population synchronization metric
 │   ├── boundary_generator.v      # v11.3: Nonlinear mixing for boundary frequencies
 │   ├── bicoherence_monitor.v     # v11.3: Three-frequency coupling detection
-│   ├── coupling_mode_controller.v # v1.1: State-driven modulatory ↔ harmonic mode
+│   ├── coupling_mode_controller.v # v1.2b: Synchronized gain interpolation
 │   └── harmonic_spacing_index.v  # v11.3: φⁿ ratio deviation monitoring
 ├── tb/                           # Testbenches (37 files)
 │   ├── tb_full_system_fast.v     # Full system integration (v6.5, 15 tests)
@@ -104,7 +104,7 @@ fpga/
 │   ├── tb_coupling_mode_controller.v # v11.3: Mode switching tests (8 tests)
 │   ├── tb_harmonic_spacing_index.v # v11.3: HSI tests (8 tests)
 │   ├── tb_state_interpolation.v  # v11.4: State transition tests (10 tests)
-│   ├── tb_state_transition_spectrogram.v # v11.4b: 100s spectrogram test
+│   ├── tb_state_transition_spectrogram.v # v12.1: 100s spectrogram with debug columns
 │   ├── tb_learning_fast.v        # CA3 learning test (v2.1, 8 tests)
 │   ├── tb_hopf_oscillator.v      # Hopf oscillator unit test
 │   ├── tb_state_transitions.v    # State machine test (12 tests)
@@ -118,7 +118,8 @@ fpga/
 │   └── run_vivado_*.tcl          # Vivado TCL scripts
 ├── docs/                         # Specifications
 │   ├── FPGA_SPECIFICATION_V8.md  # Base architecture spec (v8.0)
-│   ├── SPEC_v12.0_UPDATE.md      # Current version (v12.0 Unified State Dynamics)
+│   ├── SPEC_v12.1_UPDATE.md      # Current version (v12.1 Synchronized State Transitions)
+│   ├── SPEC_v12.0_UPDATE.md      # Previous (v12.0 Unified State Dynamics)
 │   ├── SPEC_v11.3_UPDATE.md      # Previous (v11.3 SIE Dynamics)
 │   ├── SPEC_v11.2_UPDATE.md      # DAC anti-clipping
 │   ├── SPEC_v11.1_UPDATE.md      # Unified Boundary-Attractor
@@ -309,10 +310,21 @@ fpga/
 | KURAMOTO_R_ENTRY | 8192 | 0.5 | HARMONIC mode entry threshold (v1.1) |
 | KURAMOTO_R_EXIT | 6554 | 0.4 | HARMONIC mode exit threshold (v1.1) |
 | BOUNDARY_THRESH | 4096 | 0.25 | Boundary power threshold (v1.1) |
+| GAIN_RAMP_STEP | 7 | 0.0004 | Non-meditation gain step (v1.2b) |
+| TRANSITION_GATE_25PCT | 16384 | 25% | State-gated forcing threshold (v1.2) |
+| GAIN_LOW | 2048 | 0.125 | Minimum harmonic_gain (v7.20) |
+| GAIN_RANGE | 14336 | 0.875 | Gain normalization range (v7.20) |
 
 ## Current Specification
 
-See [docs/SPEC_v12.0_UPDATE.md](docs/SPEC_v12.0_UPDATE.md) for the latest v12.0 architecture with:
+See [docs/SPEC_v12.1_UPDATE.md](docs/SPEC_v12.1_UPDATE.md) for the latest v12.1 architecture with:
+- **Synchronized Gain Interpolation** (v1.2b): PAC/harmonic gains interpolate with MU during MEDITATION transitions
+- **Continuous Gain Blending** (v7.20): Output mixer uses harmonic_gain for artifact-free weight interpolation
+- **Debug Outputs** (v7.20): mode_blend, pink_weight, osc_scale signals for transition monitoring
+- **Ratio-Based Catastrophe Detection** (v11.2): Escape mechanism pushes oscillators toward φⁿ attractors
+- **Overflow Fixes**: 32-bit arithmetic in config_controller and coupling_mode_controller
+
+Previous architecture features (v12.0):
 - **State Transition Interpolation** (v11.4): Smooth consciousness state changes over configurable duration
 - **Distributed SIE Architecture** (v11.5): Option C distributed boost (6.8 dB total) prevents stacking
 - **Parameterized Envelope Bounds** (v11.4): Theta ±30% [0.7,1.3], cortical ±50% [0.5,1.5]
@@ -408,7 +420,7 @@ All testbenches should pass. Key tests (365+ total):
 - `tb_coupling_mode_controller`: 8/8 tests - Mode switching (v11.3)
 - `tb_harmonic_spacing_index`: 8/8 tests - φⁿ ratio tracking (v11.3)
 - `tb_state_interpolation`: 10/10 tests - state transition interpolation (v11.4)
-- `tb_state_transition_spectrogram`: Visual - 100s spectrogram validation (v11.4b)
+- `tb_state_transition_spectrogram`: Visual - 100s spectrogram validation (v12.1, 12 debug columns)
 - `tb_multi_harmonic_sr`: 17/17 tests - multi-harmonic SR
 - `tb_learning_fast`: 8/8 tests - CA3 Hebbian learning (v2.1)
 - `tb_sr_coupling`: 12/12 tests - SR coupling

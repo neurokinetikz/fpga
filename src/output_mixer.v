@@ -1,6 +1,14 @@
 //=============================================================================
-// Output Mixer - v7.19
+// Output Mixer - v7.20
 // Per-band amplitude envelope modulation for EEG-realistic spectral dynamics
+//
+// v7.20 CHANGES (Continuous Gain Interpolation):
+// - Added pac_gain/harmonic_gain inputs from coupling_mode_controller v1.2b
+// - Added use_continuous_gains flag for MEDITATION state transitions
+// - When enabled: mode_blend = normalize(harmonic_gain) for smooth interpolation
+// - Pink weight and osc_scale lerp with mode_blend, synchronized with MU
+// - Eliminates transient artifacts (alpha dip at N→M, spike at M→N)
+// - Added debug outputs: debug_mode_blend, debug_pink_weight, debug_osc_scale
 //
 // v7.19 CHANGES (Even Darker Baseline - Round 2):
 // - OSC_SCALE_MODULATORY reduced from 0.5× to 0.25× (-6 dB, -12 dB total from v7.17)
@@ -111,8 +119,18 @@ module output_mixer #(
     input  wire [15:0] transition_progress,  // From config_controller (0-65535)
     input  wire [2:0]  state_select,         // Current/target consciousness state
 
+    // v7.20: Continuous gain inputs from coupling_mode_controller v1.2b
+    input  wire signed [WIDTH-1:0] pac_gain,      // Q14: 0.125 (HARMONIC) to 1.0 (MODULATORY)
+    input  wire signed [WIDTH-1:0] harmonic_gain, // Q14: 1.0 (HARMONIC) to 0.125 (MODULATORY)
+    input  wire use_continuous_gains,             // Enable continuous blending during transitions
+
     output reg signed [WIDTH-1:0] mixed_output,
-    output wire [11:0] dac_output
+    output wire [11:0] dac_output,
+
+    // v7.20: Debug outputs for gain interpolation verification
+    output wire signed [WIDTH-1:0] debug_mode_blend,
+    output wire signed [WIDTH-1:0] debug_pink_weight,
+    output wire signed [WIDTH-1:0] debug_osc_scale
 );
 
 //-----------------------------------------------------------------------------
@@ -157,6 +175,50 @@ localparam signed [WIDTH-1:0] ENVELOPE_UNITY = 18'sd16384;
 // v7.1: Soft limiter thresholds (Q14)
 localparam signed [WIDTH-1:0] SOFT_THRESH = 18'sd12288;   // 0.75 in Q14
 localparam signed [WIDTH-1:0] SOFT_LIMIT  = 18'sd16384;   // 1.0 in Q14 (max output)
+
+//-----------------------------------------------------------------------------
+// v7.20: Continuous Gain Interpolation (from coupling_mode_controller v1.2b)
+// When use_continuous_gains=1, mode_blend is derived from harmonic_gain
+// mode_blend = 0.0 → MODULATORY weights, mode_blend = 1.0 → HARMONIC weights
+// This synchronizes mixing weight changes with MU amplitude interpolation
+//-----------------------------------------------------------------------------
+localparam signed [WIDTH-1:0] GAIN_LOW = 18'sd2048;     // 0.125 (harmonic_gain at MODULATORY)
+localparam signed [WIDTH-1:0] GAIN_RANGE = 18'sd14336;  // 0.875 (1.0 - 0.125)
+localparam signed [WIDTH-1:0] ONE_Q14 = 18'sd16384;     // 1.0
+
+// Normalize harmonic_gain to [0, 1] range for blending
+// mode_blend = (harmonic_gain - GAIN_LOW) / GAIN_RANGE
+wire signed [WIDTH-1:0] gain_shifted = harmonic_gain - GAIN_LOW;
+wire signed [2*WIDTH-1:0] blend_full = (gain_shifted <<< FRAC) / GAIN_RANGE;
+wire signed [WIDTH-1:0] mode_blend_raw = blend_full[WIDTH-1:0];
+
+// Clamp to [0, 1] range
+wire signed [WIDTH-1:0] mode_blend_clamped =
+    (mode_blend_raw < 0) ? 18'sd0 :
+    (mode_blend_raw > ONE_Q14) ? ONE_Q14 : mode_blend_raw;
+
+// Interpolate pink_weight: MODULATORY + blend × (HARMONIC - MODULATORY)
+// pink_delta = 0.85 - 0.98 = -0.13 (pink decreases in HARMONIC)
+wire signed [2*WIDTH-1:0] pink_delta_cont = W_PINK_HARMONIC - W_PINK_MODULATORY;
+wire signed [2*WIDTH-1:0] pink_interp_cont = (pink_delta_cont * mode_blend_clamped) >>> FRAC;
+wire signed [WIDTH-1:0] pink_weight_continuous = W_PINK_MODULATORY + pink_interp_cont[WIDTH-1:0];
+
+// Interpolate osc_scale: MODULATORY + blend × (HARMONIC - MODULATORY)
+// osc_delta = 0.35 - 0.25 = 0.10 (osc increases in HARMONIC)
+wire signed [2*WIDTH-1:0] osc_delta_cont = OSC_SCALE_HARMONIC - OSC_SCALE_MODULATORY;
+wire signed [2*WIDTH-1:0] osc_interp_cont = (osc_delta_cont * mode_blend_clamped) >>> FRAC;
+wire signed [WIDTH-1:0] osc_scale_continuous = OSC_SCALE_MODULATORY + osc_interp_cont[WIDTH-1:0];
+
+// v7.20: Effective weights with continuous/discrete mux
+// When use_continuous_gains=1: use continuous interpolation from harmonic_gain
+// When use_continuous_gains=0: use discrete state-based interpolation (v7.14 behavior)
+wire signed [WIDTH-1:0] W_PINK_FINAL;
+wire signed [WIDTH-1:0] OSC_SCALE_FINAL;
+
+// Debug outputs
+assign debug_mode_blend = mode_blend_clamped;
+assign debug_pink_weight = W_PINK_FINAL;
+assign debug_osc_scale = OSC_SCALE_FINAL;
 
 //-----------------------------------------------------------------------------
 // v7.14: State-Based Weight Selection with Smooth Interpolation
@@ -209,6 +271,12 @@ assign osc_interp = (osc_delta * $signed({1'b0, transition_progress})) >>> 16;
 assign W_PINK_EFF = w_pink_start + pink_interp[WIDTH-1:0];
 assign OSC_SCALE = osc_scale_start + osc_interp[WIDTH-1:0];
 
+// v7.20: Final weight selection mux
+// use_continuous_gains=1: use harmonic_gain-based interpolation (synchronized with MU)
+// use_continuous_gains=0: use discrete state-based interpolation (v7.14 behavior)
+assign W_PINK_FINAL = use_continuous_gains ? pink_weight_continuous : W_PINK_EFF;
+assign OSC_SCALE_FINAL = use_continuous_gains ? osc_scale_continuous : OSC_SCALE;
+
 // Update shadow registers on state change
 always @(posedge clk or posedge rst) begin
     if (rst) begin
@@ -259,10 +327,10 @@ wire signed [2*WIDTH-1:0] scaled_w_theta_full, scaled_w_alpha_full;
 wire signed [2*WIDTH-1:0] scaled_w_beta_full, scaled_w_gamma_full;
 wire signed [WIDTH-1:0] W_THETA, W_ALPHA, W_BETA, W_GAMMA;
 
-assign scaled_w_theta_full = W_THETA_BASE * OSC_SCALE;
-assign scaled_w_alpha_full = W_ALPHA_BASE * OSC_SCALE;
-assign scaled_w_beta_full  = W_BETA_BASE  * OSC_SCALE;
-assign scaled_w_gamma_full = W_GAMMA_BASE * OSC_SCALE;
+assign scaled_w_theta_full = W_THETA_BASE * OSC_SCALE_FINAL;  // v7.20: use FINAL for mux
+assign scaled_w_alpha_full = W_ALPHA_BASE * OSC_SCALE_FINAL;
+assign scaled_w_beta_full  = W_BETA_BASE  * OSC_SCALE_FINAL;
+assign scaled_w_gamma_full = W_GAMMA_BASE * OSC_SCALE_FINAL;
 
 assign W_THETA = scaled_w_theta_full >>> FRAC;
 assign W_ALPHA = scaled_w_alpha_full >>> FRAC;
@@ -295,7 +363,7 @@ assign term_theta = mod_theta * W_THETA;
 assign term_alpha = mod_alpha * W_ALPHA;
 assign term_beta  = mod_beta  * W_BETA;
 assign term_gamma = mod_gamma * W_GAMMA;
-assign term_noise = pink_noise * W_PINK_EFF;  // v7.12: Use mode-dependent weight (not suppressed)
+assign term_noise = pink_noise * W_PINK_FINAL;  // v7.20: Use FINAL for mux (continuous/discrete)
 
 // Sum all weighted terms
 assign sum_full = term_theta + term_alpha + term_beta + term_gamma + term_noise;

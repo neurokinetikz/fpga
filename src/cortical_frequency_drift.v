@@ -1,5 +1,5 @@
 //=============================================================================
-// Cortical Frequency Drift Generator - v3.3
+// Cortical Frequency Drift Generator - v3.4
 //
 // Models frequency variability in cortical oscillators for EEG-realistic output.
 // Three components work together:
@@ -18,6 +18,11 @@
 //    - Receives force from energy_landscape.v
 //    - Guides oscillators toward φⁿ half-integer attractors
 //    - Force added to drift update with gain K_FORCE
+//
+// v3.4 CHANGES:
+// - Added omega_correction inputs from energy_landscape.v escape mechanism
+// - Direct frequency correction when oscillator enters catastrophe zone
+// - omega_corr added to drift update (no additional scaling)
 //
 // v3.3 CHANGES:
 // - CRITICAL FIX: Reduced jitter from ±4 Hz to ±0.2 Hz
@@ -76,7 +81,15 @@ module cortical_frequency_drift #(
     input  wire signed [WIDTH-1:0] force_l5a,     // L5a restoring force
     input  wire signed [WIDTH-1:0] force_l5b,     // L5b restoring force
     input  wire signed [WIDTH-1:0] force_l4,      // L4 restoring force
-    input  wire signed [WIDTH-1:0] force_l23      // L2/3 restoring force
+    input  wire signed [WIDTH-1:0] force_l23,     // L2/3 restoring force
+
+    // v11.2: Omega correction inputs from energy_landscape.v escape mechanism
+    // Direct frequency correction to escape catastrophe zones
+    input  wire signed [WIDTH-1:0] omega_corr_l6,   // L6 escape correction
+    input  wire signed [WIDTH-1:0] omega_corr_l5a,  // L5a escape correction
+    input  wire signed [WIDTH-1:0] omega_corr_l5b,  // L5b escape correction
+    input  wire signed [WIDTH-1:0] omega_corr_l4,   // L4 escape correction
+    input  wire signed [WIDTH-1:0] omega_corr_l23   // L2/3 escape correction
 );
 
 //-----------------------------------------------------------------------------
@@ -188,6 +201,17 @@ assign force_contrib_l5b = ENABLE_ADAPTIVE ? ((K_FORCE * force_l5b) >>> FRAC) : 
 assign force_contrib_l4  = ENABLE_ADAPTIVE ? ((K_FORCE * force_l4)  >>> FRAC) : 18'sd0;
 assign force_contrib_l23 = ENABLE_ADAPTIVE ? ((K_FORCE * force_l23) >>> FRAC) : 18'sd0;
 
+//-----------------------------------------------------------------------------
+// v11.2: Omega Correction Contributions
+// Direct escape corrections from energy_landscape when in catastrophe zone
+// No additional scaling - omega_corr is already in OMEGA_DT units
+//-----------------------------------------------------------------------------
+wire signed [WIDTH-1:0] omega_corr_contrib_l6  = ENABLE_ADAPTIVE ? omega_corr_l6  : 18'sd0;
+wire signed [WIDTH-1:0] omega_corr_contrib_l5a = ENABLE_ADAPTIVE ? omega_corr_l5a : 18'sd0;
+wire signed [WIDTH-1:0] omega_corr_contrib_l5b = ENABLE_ADAPTIVE ? omega_corr_l5b : 18'sd0;
+wire signed [WIDTH-1:0] omega_corr_contrib_l4  = ENABLE_ADAPTIVE ? omega_corr_l4  : 18'sd0;
+wire signed [WIDTH-1:0] omega_corr_contrib_l23 = ENABLE_ADAPTIVE ? omega_corr_l23 : 18'sd0;
+
 // Temporary variables for next_drift computation (Verilog-2001 compliance)
 reg signed [WIDTH-1:0] next_drift_l6, next_drift_l5a, next_drift_l5b;
 reg signed [WIDTH-1:0] next_drift_l4, next_drift_l23;
@@ -202,9 +226,9 @@ always @(posedge clk or posedge rst) begin
         drift_l6_reg <= 18'sd0;
     end else if (clk_en && update_tick) begin
         lfsr_l6 <= {lfsr_l6[14:0], fb_l6};
-        // v3.0: Base step + force contribution, then clamp
-        next_drift_l6 = dir_l6 ? (drift_l6_reg + step_l6 + force_contrib_l6)
-                               : (drift_l6_reg - step_l6 + force_contrib_l6);
+        // v3.0: Base step + force contribution + v11.2 omega correction, then clamp
+        next_drift_l6 = dir_l6 ? (drift_l6_reg + step_l6 + force_contrib_l6 + omega_corr_contrib_l6)
+                               : (drift_l6_reg - step_l6 + force_contrib_l6 + omega_corr_contrib_l6);
         if (next_drift_l6 > DRIFT_MAX)
             drift_l6_reg <= DRIFT_MAX;
         else if (next_drift_l6 < -DRIFT_MAX)
@@ -224,8 +248,8 @@ always @(posedge clk or posedge rst) begin
         drift_l5a_reg <= 18'sd0;
     end else if (clk_en && update_tick) begin
         lfsr_l5a <= {lfsr_l5a[14:0], fb_l5a};
-        next_drift_l5a = dir_l5a ? (drift_l5a_reg + step_l5a + force_contrib_l5a)
-                                 : (drift_l5a_reg - step_l5a + force_contrib_l5a);
+        next_drift_l5a = dir_l5a ? (drift_l5a_reg + step_l5a + force_contrib_l5a + omega_corr_contrib_l5a)
+                                 : (drift_l5a_reg - step_l5a + force_contrib_l5a + omega_corr_contrib_l5a);
         if (next_drift_l5a > DRIFT_MAX)
             drift_l5a_reg <= DRIFT_MAX;
         else if (next_drift_l5a < -DRIFT_MAX)
@@ -245,8 +269,8 @@ always @(posedge clk or posedge rst) begin
         drift_l5b_reg <= 18'sd0;
     end else if (clk_en && update_tick) begin
         lfsr_l5b <= {lfsr_l5b[14:0], fb_l5b};
-        next_drift_l5b = dir_l5b ? (drift_l5b_reg + step_l5b + force_contrib_l5b)
-                                 : (drift_l5b_reg - step_l5b + force_contrib_l5b);
+        next_drift_l5b = dir_l5b ? (drift_l5b_reg + step_l5b + force_contrib_l5b + omega_corr_contrib_l5b)
+                                 : (drift_l5b_reg - step_l5b + force_contrib_l5b + omega_corr_contrib_l5b);
         if (next_drift_l5b > DRIFT_MAX)
             drift_l5b_reg <= DRIFT_MAX;
         else if (next_drift_l5b < -DRIFT_MAX)
@@ -266,8 +290,8 @@ always @(posedge clk or posedge rst) begin
         drift_l4_reg <= 18'sd0;
     end else if (clk_en && update_tick) begin
         lfsr_l4 <= {lfsr_l4[14:0], fb_l4};
-        next_drift_l4 = dir_l4 ? (drift_l4_reg + step_l4 + force_contrib_l4)
-                               : (drift_l4_reg - step_l4 + force_contrib_l4);
+        next_drift_l4 = dir_l4 ? (drift_l4_reg + step_l4 + force_contrib_l4 + omega_corr_contrib_l4)
+                               : (drift_l4_reg - step_l4 + force_contrib_l4 + omega_corr_contrib_l4);
         if (next_drift_l4 > DRIFT_MAX)
             drift_l4_reg <= DRIFT_MAX;
         else if (next_drift_l4 < -DRIFT_MAX)
@@ -287,8 +311,8 @@ always @(posedge clk or posedge rst) begin
         drift_l23_reg <= 18'sd0;
     end else if (clk_en && update_tick) begin
         lfsr_l23 <= {lfsr_l23[14:0], fb_l23};
-        next_drift_l23 = dir_l23 ? (drift_l23_reg + step_l23 + force_contrib_l23)
-                                 : (drift_l23_reg - step_l23 + force_contrib_l23);
+        next_drift_l23 = dir_l23 ? (drift_l23_reg + step_l23 + force_contrib_l23 + omega_corr_contrib_l23)
+                                 : (drift_l23_reg - step_l23 + force_contrib_l23 + omega_corr_contrib_l23);
         if (next_drift_l23 > DRIFT_MAX)
             drift_l23_reg <= DRIFT_MAX;
         else if (next_drift_l23 < -DRIFT_MAX)
