@@ -1,8 +1,15 @@
 //=============================================================================
-// Schumann Resonance Ignition Controller v1.3
+// Schumann Resonance Ignition Controller v1.4
 //
 // Implements six-phase SIE (Schumann Ignition Event) state machine based on
 // empirical EEG observations (neurokinetikz 2019-2025).
+//
+// v1.4 CHANGES (v12.2 Dual Alignment Ignition):
+// - Added alignment_factor and crystallinity inputs from phi_n_alignment_detector
+// - Added ENABLE_ALIGNMENT parameter (default 0 for backward compatibility)
+// - When ENABLE_ALIGNMENT=1: effective_threshold = base × (1.5 - 0.5 × alignment)
+//   High alignment → lower threshold → easier ignition
+// - When ENABLE_ALIGNMENT=0: uses fixed COHERENCE_THRESH (v12.1 behavior)
 //
 // v1.3 CHANGES (v7.16): Further softened bursts
 // - GAIN_COHERENCE adjusted to 0.40 (was 0.50 in v7.15) for ~3 dB softer bursts
@@ -37,7 +44,8 @@
 
 module sr_ignition_controller #(
     parameter WIDTH = 18,
-    parameter FRAC = 14
+    parameter FRAC = 14,
+    parameter ENABLE_ALIGNMENT = 0   // v1.4: 0=v12.1 behavior, 1=alignment modulation
 )(
     input  wire clk,
     input  wire rst,
@@ -48,6 +56,11 @@ module sr_ignition_controller #(
 
     // Beta quiet input (from sr_harmonic_bank)
     input  wire beta_quiet,
+
+    // v1.4: Alignment inputs from phi_n_alignment_detector
+    // Only used when ENABLE_ALIGNMENT=1
+    input  wire signed [WIDTH-1:0] alignment_factor,  // [0,1] Q14, peaks when sqrt(θ*α)=SR1
+    input  wire signed [WIDTH-1:0] crystallinity,     // [0,1] Q14, closeness of α/θ to φ
 
     // Phase timing inputs (from config_controller, in 4kHz cycles)
     input  wire [15:0] phase2_dur,   // Coherence-first duration (~14000 = 3.5s)
@@ -93,6 +106,27 @@ localparam signed [WIDTH-1:0] GAIN_PEAK = 18'sd16384;      // 1.00 (full scale d
 localparam signed [WIDTH-1:0] GAIN_PROPAGATION = 18'sd9830; // 0.60 (sustained but lower)
 
 //-----------------------------------------------------------------------------
+// v1.4: Alignment-Modulated Threshold (only when ENABLE_ALIGNMENT=1)
+//
+// High alignment → lower threshold → easier ignition
+// threshold_scale = 1.5 - 0.5 × alignment_factor
+//   - alignment = 0 → scale = 1.5 → threshold = 0.75 × 1.5 = 1.125 (harder)
+//   - alignment = 1 → scale = 1.0 → threshold = 0.75 × 1.0 = 0.75 (nominal)
+//
+// In Q14: scale = 24576 - (alignment × 8192) >>> FRAC
+// effective_threshold = (COHERENCE_THRESH × threshold_scale) >>> FRAC
+//-----------------------------------------------------------------------------
+wire signed [2*WIDTH-1:0] alignment_product;
+wire signed [WIDTH-1:0] threshold_scale;
+wire signed [2*WIDTH-1:0] thresh_product;
+wire signed [WIDTH-1:0] effective_threshold;
+
+assign alignment_product = alignment_factor * 18'sd8192;
+assign threshold_scale = 18'sd24576 - (alignment_product >>> FRAC);
+assign thresh_product = COHERENCE_THRESH * threshold_scale;
+assign effective_threshold = ENABLE_ALIGNMENT ? (thresh_product >>> FRAC) : COHERENCE_THRESH;
+
+//-----------------------------------------------------------------------------
 // Envelope Rate Constants (for smooth transitions)
 // These determine how fast the envelopes ramp up/down
 //-----------------------------------------------------------------------------
@@ -132,6 +166,7 @@ always @(posedge clk or posedge rst) begin
             //------------------------------------------------------------------
             // PHASE 0: BASELINE
             // Wait for trigger conditions: coherence > threshold AND beta_quiet
+            // v1.4: Uses effective_threshold (alignment-modulated when enabled)
             //------------------------------------------------------------------
             PHASE_BASELINE: begin
                 ignition_active <= 1'b0;
@@ -140,7 +175,8 @@ always @(posedge clk or posedge rst) begin
                 phase_counter <= 16'd0;
 
                 // Check trigger conditions
-                if (coherence_in > COHERENCE_THRESH && beta_quiet) begin
+                // v1.4: effective_threshold is alignment-modulated when ENABLE_ALIGNMENT=1
+                if (coherence_in > effective_threshold && beta_quiet) begin
                     ignition_phase <= PHASE_COHERENCE;
                     coherence_triggered <= 1'b1;
                     ignition_active <= 1'b1;

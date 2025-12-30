@@ -1,5 +1,14 @@
 //=============================================================================
-// Top-Level Module - v11.5.1 with Energy Landscape v11.2
+// Top-Level Module - v11.6 with Dual Alignment Ignition (v12.2)
+//
+// v11.6 CHANGES (Dual Alignment Ignition - v12.2):
+// - Added ENABLE_ALIGNMENT parameter (default 0 for backward compatibility)
+// - Added RANDOM_INIT parameter for stochastic startup
+// - Instantiated thalamic_frequency_drift for theta frequency drift
+// - Instantiated phi_n_alignment_detector for boundary alignment computation
+// - Wired alignment_factor and crystallinity to ignition controller
+// - Updated thalamus with theta_drift and theta_jitter inputs
+// - Updated OMEGA_DT constants to derive from SR1 = 7.75 Hz × φⁿ
 //
 // v11.5.1 CHANGES (Energy Landscape v11.2 Integration):
 // - Wired omega_dt_packed for ratio-based catastrophe detection
@@ -186,7 +195,9 @@ module phi_n_neural_processor #(
     parameter NUM_HARMONICS = 5,  // v7.3: Number of SR harmonics
     parameter SR_STOCHASTIC_ENABLE = 1,  // Enable stochastic noise in SR oscillators
     parameter SR_DRIFT_ENABLE = 1,  // v8.2: Enable SR frequency drift (realistic variation)
-    parameter ENABLE_ADAPTIVE = 0  // v11.0: Enable active φⁿ dynamics (self-organizing)
+    parameter ENABLE_ADAPTIVE = 0,  // v11.0: Enable active φⁿ dynamics (self-organizing)
+    parameter ENABLE_ALIGNMENT = 0,  // v11.6: Enable alignment-modulated ignition threshold
+    parameter RANDOM_INIT = 1        // v11.6: Enable random initialization for stochastic startup
 )(
     input  wire clk,
     input  wire rst,
@@ -246,15 +257,16 @@ module phi_n_neural_processor #(
 localparam signed [WIDTH-1:0] ONE_THIRD = 18'sd5461;
 localparam signed [WIDTH-1:0] K_PHASE = 18'sd328;   // 0.02 - phase coupling (minimal for frequency separation)
 
-// OMEGA_DT values for oscillator frequencies (used by energy_landscape, pac_strength, etc.)
-localparam signed [WIDTH-1:0] OMEGA_DT_THETA      = 18'sd152;   // 5.89 Hz
-localparam signed [WIDTH-1:0] OMEGA_DT_ALPHA      = 18'sd245;   // 9.53 Hz
-localparam signed [WIDTH-1:0] OMEGA_DT_BETA_LOW   = 18'sd397;   // 15.42 Hz
-localparam signed [WIDTH-1:0] OMEGA_DT_BETA_HIGH  = 18'sd642;   // 24.94 Hz
-localparam signed [WIDTH-1:0] OMEGA_DT_GAMMA      = 18'sd817;   // 31.73 Hz
-localparam signed [WIDTH-1:0] OMEGA_DT_GAMMA_FAST = 18'sd1040;  // 40.36 Hz
-localparam signed [WIDTH-1:0] OMEGA_DT_SR_F0      = 18'sd196;   // 7.6 Hz
-localparam signed [WIDTH-1:0] OMEGA_DT_SR_F2      = 18'sd514;   // 20 Hz
+// v11.6: OMEGA_DT values derived from SR1 = 7.75 Hz × φⁿ (Dual Alignment Ignition)
+// Formula: OMEGA_DT = round(2π × f_hz × 0.00025 × 16384) = round(25.736 × f_hz)
+localparam signed [WIDTH-1:0] OMEGA_DT_THETA      = 18'sd157;   // 6.09 Hz  (φ^-0.5, v12.2: was 5.89)
+localparam signed [WIDTH-1:0] OMEGA_DT_ALPHA      = 18'sd254;   // 9.86 Hz  (φ^+0.5, v12.2: was 9.53)
+localparam signed [WIDTH-1:0] OMEGA_DT_BETA_LOW   = 18'sd410;   // 15.95 Hz (φ^1.5, v12.2: was 15.42)
+localparam signed [WIDTH-1:0] OMEGA_DT_BETA_HIGH  = 18'sd664;   // 25.81 Hz (φ^2.5, v12.2: was 24.94)
+localparam signed [WIDTH-1:0] OMEGA_DT_GAMMA      = 18'sd845;   // 32.83 Hz (φ^3, v12.2: was 31.73)
+localparam signed [WIDTH-1:0] OMEGA_DT_GAMMA_FAST = 18'sd1075;  // 41.76 Hz (φ^3.5, v12.2: was 40.36)
+localparam signed [WIDTH-1:0] OMEGA_DT_SR_F0      = 18'sd199;   // 7.75 Hz  (SR1 base, v12.2: was 7.6)
+localparam signed [WIDTH-1:0] OMEGA_DT_SR_F2      = 18'sd514;   // 20 Hz (unchanged)
 
 wire clk_4khz_en, clk_100khz_en;
 
@@ -288,21 +300,47 @@ sr_noise_generator #(
 // v8.2: SR Frequency Drift Generator
 // Models realistic hours-scale frequency drift observed in real SR monitoring
 // Natural detuning between SR and neural frequencies prevents unrealistic coherence
+// v11.6: Added RANDOM_INIT and omega_dt_f0_actual output for alignment detector
 //-----------------------------------------------------------------------------
 wire signed [NUM_HARMONICS*WIDTH-1:0] sr_omega_dt_packed;
 wire signed [NUM_HARMONICS*WIDTH-1:0] sr_drift_offset_packed;
+wire signed [WIDTH-1:0] omega_dt_sr_f0_actual;  // v11.6: For alignment detector
 
 sr_frequency_drift #(
     .WIDTH(WIDTH),
     .FRAC(FRAC),
     .NUM_HARMONICS(NUM_HARMONICS),
-    .FAST_SIM(FAST_SIM)
+    .FAST_SIM(FAST_SIM),
+    .RANDOM_INIT(RANDOM_INIT)  // v11.6: Random initialization
 ) sr_drift_gen (
     .clk(clk),
     .rst(rst),
     .clk_en(clk_4khz_en),
     .omega_dt_packed(sr_omega_dt_packed),
-    .drift_offset_packed(sr_drift_offset_packed)
+    .drift_offset_packed(sr_drift_offset_packed),
+    .omega_dt_f0_actual(omega_dt_sr_f0_actual)  // v11.6: For alignment detector
+);
+
+//-----------------------------------------------------------------------------
+// v11.6: Thalamic Frequency Drift Generator (NEW for Dual Alignment Ignition)
+// Adds bounded random walk drift to theta oscillator for alignment computation
+// Theta is the only thalamic oscillator that needs drift for the alignment detector
+//-----------------------------------------------------------------------------
+wire signed [WIDTH-1:0] theta_drift, theta_jitter;
+wire signed [WIDTH-1:0] omega_dt_theta_actual;  // For alignment detector
+
+thalamic_frequency_drift #(
+    .WIDTH(WIDTH),
+    .FRAC(FRAC),
+    .FAST_SIM(FAST_SIM),
+    .RANDOM_INIT(RANDOM_INIT)
+) theta_drift_gen (
+    .clk(clk),
+    .rst(rst),
+    .clk_en(clk_4khz_en),
+    .theta_drift(theta_drift),
+    .theta_jitter(theta_jitter),
+    .omega_dt_theta_actual(omega_dt_theta_actual)
 );
 
 //-----------------------------------------------------------------------------
@@ -316,6 +354,7 @@ wire signed [WIDTH-1:0] cortical_drift_l6, cortical_drift_l5a, cortical_drift_l5
 wire signed [WIDTH-1:0] cortical_drift_l4, cortical_drift_l23;
 wire signed [WIDTH-1:0] cortical_jitter_l6, cortical_jitter_l5a, cortical_jitter_l5b;
 wire signed [WIDTH-1:0] cortical_jitter_l4, cortical_jitter_l23;
+wire signed [WIDTH-1:0] omega_dt_l6_actual;  // v11.6: For alignment detector
 
 // v11.0: Forward declarations for force signals (defined later by energy_landscape)
 wire signed [WIDTH-1:0] force_l6, force_l5a, force_l5b, force_l4, force_l23;
@@ -327,7 +366,8 @@ cortical_frequency_drift #(
     .WIDTH(WIDTH),
     .FRAC(FRAC),
     .FAST_SIM(FAST_SIM),
-    .ENABLE_ADAPTIVE(ENABLE_ADAPTIVE)  // v11.0: Enable force-based corrections
+    .ENABLE_ADAPTIVE(ENABLE_ADAPTIVE),  // v11.0: Enable force-based corrections
+    .RANDOM_INIT(RANDOM_INIT)           // v11.6: Random initialization
 ) cortical_drift_gen (
     .clk(clk),
     .rst(rst),
@@ -355,7 +395,9 @@ cortical_frequency_drift #(
     .jitter_l5a(cortical_jitter_l5a),
     .jitter_l5b(cortical_jitter_l5b),
     .jitter_l4(cortical_jitter_l4),
-    .jitter_l23(cortical_jitter_l23)
+    .jitter_l23(cortical_jitter_l23),
+    // v11.6: L6 actual frequency for alignment detector
+    .omega_dt_l6_actual(omega_dt_l6_actual)
 );
 
 // v10.2: Combined frequency offset = slow drift + fast jitter
@@ -491,6 +533,36 @@ quarter_integer_detector #(
     .is_half_integer(cortical_is_half_integer),
     .is_quarter_integer(cortical_is_quarter_integer),
     .is_near_catastrophe()
+);
+
+//-----------------------------------------------------------------------------
+// v11.6: φⁿ Alignment Detector (NEW for Dual Alignment Ignition)
+// Computes alignment metrics between internal boundary √(θ×α) and SR1
+// When alignment is high, ignition sensitivity increases (threshold lowers)
+//-----------------------------------------------------------------------------
+wire signed [WIDTH-1:0] internal_boundary;
+wire signed [WIDTH-1:0] sr_detuning;
+wire signed [WIDTH-1:0] alignment_factor;
+wire signed [WIDTH-1:0] crystallinity;
+wire signed [WIDTH-1:0] ignition_sensitivity;
+
+phi_n_alignment_detector #(
+    .WIDTH(WIDTH),
+    .FRAC(FRAC)
+) alignment_det (
+    .clk(clk),
+    .rst(rst),
+    .clk_en(clk_4khz_en),
+    // Actual drifting frequencies
+    .omega_theta_actual(omega_dt_theta_actual),  // From thalamic_frequency_drift
+    .omega_alpha_actual(omega_dt_l6_actual),     // From cortical_frequency_drift
+    .omega_sr_f0_actual(omega_dt_sr_f0_actual),  // From sr_frequency_drift
+    // Outputs
+    .internal_boundary(internal_boundary),
+    .detuning(sr_detuning),
+    .alignment_factor(alignment_factor),
+    .crystallinity(crystallinity),
+    .ignition_sensitivity(ignition_sensitivity)
 );
 
 //-----------------------------------------------------------------------------
@@ -635,7 +707,8 @@ wire beta_quiet_int;
 
 sr_ignition_controller #(
     .WIDTH(WIDTH),
-    .FRAC(FRAC)
+    .FRAC(FRAC),
+    .ENABLE_ALIGNMENT(ENABLE_ALIGNMENT)  // v11.6: Enable alignment-modulated threshold
 ) ignition_ctrl (
     .clk(clk),
     .rst(rst),
@@ -646,6 +719,10 @@ sr_ignition_controller #(
 
     // Beta quiet input (from thalamus SR bank)
     .beta_quiet(beta_quiet_int),
+
+    // v11.6: Alignment inputs from phi_n_alignment_detector
+    .alignment_factor(alignment_factor),
+    .crystallinity(crystallinity),
 
     // Phase timing (from config_controller)
     .phase2_dur(sie_phase2_dur),
@@ -675,6 +752,10 @@ thalamus #(
     .sensory_input(sensory_input),
     .l6_alpha_feedback(l6_alpha_feedback),
     .mu_dt(mu_dt_theta),
+
+    // v11.6: Theta drift inputs from thalamic_frequency_drift
+    .theta_drift(theta_drift),
+    .theta_jitter(theta_jitter),
 
     // v8.2: Drifting omega_dt values for realistic SR frequency variation
     .omega_dt_packed(sr_omega_dt_packed),

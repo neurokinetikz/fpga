@@ -4,7 +4,7 @@
 
 This is an FPGA implementation of a biologically-realistic neural oscillator system based on the **φⁿ (golden ratio) frequency architecture** with Schumann Resonance coupling. The system implements 21 Hopf oscillators organized into a thalamo-cortical architecture for neural signal processing and consciousness state modeling.
 
-**Current Version:** v12.1 (Synchronized State Transitions)
+**Current Version:** v12.2 (Dual Alignment Ignition)
 **Target Platform:** Digilent Zybo Z7-20 (Xilinx Zynq-7020)
 
 ## Quick Start
@@ -49,22 +49,24 @@ make clean             # Clean generated files
 
 ```
 fpga/
-├── src/                          # Verilog source modules (29 files)
-│   ├── phi_n_neural_processor.v  # Top-level (v11.5.1, energy landscape wiring)
+├── src/                          # Verilog source modules (31 files)
+│   ├── phi_n_neural_processor.v  # Top-level (v11.6, dual alignment ignition)
 │   ├── hopf_oscillator.v         # Core oscillator (v6.0, dx/dt = μx - ωy - r²x)
 │   ├── hopf_oscillator_stochastic.v # Stochastic variant with noise input
 │   ├── ca3_phase_memory.v        # Hebbian phase memory (v8.0, theta-gated)
-│   ├── thalamus.v                # Theta + SR + matrix (v11.5, distributed SIE)
-│   ├── cortical_column.v         # 6-layer cortical model (v11.4, MU scaling)
+│   ├── thalamus.v                # Theta + SR + matrix (v11.6, alignment drift)
+│   ├── thalamic_frequency_drift.v # v1.0: Theta frequency drift for alignment
+│   ├── cortical_column.v         # 6-layer cortical model (v12.2, φⁿ×7.75 Hz)
+│   ├── phi_n_alignment_detector.v # v1.0: √(θ×α) = SR1 alignment detection
 │   ├── dendritic_compartment.v   # v9.5: Two-compartment dendritic model
 │   ├── layer1_minimal.v          # Layer 1 with L6 input (v9.6)
 │   ├── pv_interneuron.v          # PV+ basket cell dynamics (v9.2)
 │   ├── sr_harmonic_bank.v        # 5-harmonic SR bank (v7.7, dynamic SIE from stability)
 │   ├── sr_noise_generator.v      # Per-harmonic stochastic noise (5 LFSRs)
-│   ├── sr_frequency_drift.v      # v2.0: Faster update, wider drift ranges
-│   ├── sr_ignition_controller.v  # v10.0: Six-phase SIE state machine
+│   ├── sr_frequency_drift.v      # v2.1: f₀=7.75 Hz, tightened drift ±0.5 Hz
+│   ├── sr_ignition_controller.v  # v1.4: Alignment-modulated threshold
 │   ├── amplitude_envelope_generator.v # v11.4: O-U process with parameterized bounds
-│   ├── cortical_frequency_drift.v # v3.4: Force-based drift + escape mechanism
+│   ├── cortical_frequency_drift.v # v3.5: Per-layer drift matching SR harmonics
 │   ├── config_controller.v       # Consciousness states (v11.4, state interpolation)
 │   ├── clock_enable_generator.v  # FAST_SIM-aware 4kHz clock (v6.0)
 │   ├── pink_noise_generator.v    # 1/f^φ noise (v7.2, √Fibonacci-weighted)
@@ -118,7 +120,8 @@ fpga/
 │   └── run_vivado_*.tcl          # Vivado TCL scripts
 ├── docs/                         # Specifications
 │   ├── FPGA_SPECIFICATION_V8.md  # Base architecture spec (v8.0)
-│   ├── SPEC_v12.1_UPDATE.md      # Current version (v12.1 Synchronized State Transitions)
+│   ├── SPEC_v12.2_UPDATE.md      # Current version (v12.2 Dual Alignment Ignition)
+│   ├── SPEC_v12.1_UPDATE.md      # Previous (v12.1 Synchronized State Transitions)
 │   ├── SPEC_v12.0_UPDATE.md      # Previous (v12.0 Unified State Dynamics)
 │   ├── SPEC_v11.3_UPDATE.md      # Previous (v11.3 SIE Dynamics)
 │   ├── SPEC_v11.2_UPDATE.md      # DAC anti-clipping
@@ -139,31 +142,31 @@ fpga/
 - Range: [-8.0, +7.99994]
 - Unity (1.0) = 16384
 
-### 21 Hopf Oscillators at φⁿ Frequencies
+### 21 Hopf Oscillators at φⁿ Frequencies (v12.2: Base = 7.75 Hz)
 
 | Location | Frequency | φⁿ | OMEGA_DT | Purpose |
 |----------|-----------|-----|----------|---------|
-| Thalamus Theta | 5.89 Hz | φ⁻⁰·⁵ | 152 | Learn/recall gating |
-| SR f₀ | 7.6 Hz | — | 196 | Schumann fundamental |
+| Thalamus Theta | 6.09 Hz | φ⁻⁰·⁵ | 157 | Learn/recall gating |
+| SR f₀ | 7.75 Hz | — | 199 | Schumann fundamental |
 | SR f₁ | 13.75 Hz | — | 354 | Alpha-band coupling |
 | SR f₂ | 20 Hz | — | 514 | Low beta coupling |
 | SR f₃ | 25 Hz | — | 643 | High beta coupling |
 | SR f₄ | 32 Hz | — | 823 | Gamma coupling |
-| Cortex L6 ×3 | 9.53 Hz | φ⁰·⁵ | 245 | Alpha, gain control |
-| Cortex L5a ×3 | 15.42 Hz | φ¹·⁵ | 397 | Low beta, motor |
-| Cortex L5b ×3 | 24.94 Hz | φ²·⁵ | 642 | High beta, feedback |
-| Cortex L4 ×3 | 31.73 Hz | φ³ | 817 | Thalamocortical |
-| Cortex L2/3 ×3 | 40.36/65.3 Hz | φ³·⁵/φ⁴·⁵ | 1040/1681 | Gamma (switches with theta) |
+| Cortex L6 ×3 | 9.86 Hz | φ⁰·⁵ | 254 | Alpha, gain control |
+| Cortex L5a ×3 | 15.95 Hz | φ¹·⁵ | 410 | Low beta, motor |
+| Cortex L5b ×3 | 25.81 Hz | φ²·⁵ | 664 | High beta, feedback |
+| Cortex L4 ×3 | 32.83 Hz | φ³ | 845 | Thalamocortical |
+| Cortex L2/3 ×3 | 41.76/67.6 Hz | φ³·⁵/φ⁴·⁵ | 1075/1740 | Gamma (switches with theta) |
 
-### SR Frequency-to-EEG-Band Mapping (v8.5)
+### SR Frequency-to-EEG-Band Mapping (v12.2: Tightened for Alignment)
 
 | SR Harmonic | Observed Frequency | Drift Range | Coherence Target |
 |-------------|-------------------|-------------|------------------|
-| f₀ | 7.6 Hz | ±0.6 Hz | theta (thalamus) |
-| f₁ | 13.75 Hz | ±0.75 Hz | alpha (L6) |
-| f₂ | 20 Hz | ±1 Hz | low_beta (L5a) |
+| f₀ | 7.75 Hz | ±0.5 Hz | theta/alpha boundary |
+| f₁ | 13.75 Hz | ±0.8 Hz | alpha (L6) |
+| f₂ | 20 Hz | ±1.0 Hz | low_beta (L5a) |
 | f₃ | 25 Hz | ±1.5 Hz | high_beta (L5b) |
-| f₄ | 32 Hz | ±2 Hz | gamma (L4) |
+| f₄ | 32 Hz | ±2.0 Hz | gamma (L4) |
 
 ### Consciousness States (state_select[2:0])
 
@@ -317,7 +320,15 @@ fpga/
 
 ## Current Specification
 
-See [docs/SPEC_v12.1_UPDATE.md](docs/SPEC_v12.1_UPDATE.md) for the latest v12.1 architecture with:
+See [docs/SPEC/UPDATES/SPEC_v12.2_UPDATE.md](docs/SPEC/UPDATES/SPEC_v12.2_UPDATE.md) for the latest v12.2 architecture with:
+- **Dual Alignment Ignition** (v12.2): Internal boundary √(θ×α) = SR1 = 7.75 Hz
+- **Alignment-Modulated Threshold** (v1.4): Ignition sensitivity increases when aligned
+- **Thalamic Frequency Drift** (v1.0): New theta drift module ±0.5 Hz for alignment
+- **Tightened SR Drift** (v2.1): f₀ ±0.5 Hz for impedance matching
+- **Per-Layer Cortical Drift** (v3.5): Layer-specific ranges match SR harmonics
+- **φⁿ × 7.75 Hz Base** (v12.2): All frequencies derived from SR1 center
+
+Previous architecture features (v12.1):
 - **Synchronized Gain Interpolation** (v1.2b): PAC/harmonic gains interpolate with MU during MEDITATION transitions
 - **Continuous Gain Blending** (v7.20): Output mixer uses harmonic_gain for artifact-free weight interpolation
 - **Debug Outputs** (v7.20): mode_blend, pink_weight, osc_scale signals for transition monitoring
@@ -333,7 +344,7 @@ Previous architecture features (v12.0):
 
 Previous architecture features (v11.3):
 - **Kuramoto Order Parameter** (v11.3): Population synchronization R ∈ [0,1] from 6 oscillators
-- **Boundary Generators** (v11.3): Nonlinear mixing creates θ/α (7.49 Hz), α/β₁, β₁/β₂ boundaries
+- **Boundary Generators** (v11.3): Nonlinear mixing creates θ/α (7.75 Hz), α/β₁, β₁/β₂ boundaries
 - **Bicoherence Monitor** (v11.3): Detects nonlinear three-frequency interactions
 - **Coupling Mode Controller** (v11.3): Automatic modulatory ↔ harmonic mode switching
 - **Harmonic Spacing Index** (v11.3): Monitors φⁿ ratio adherence with ΔHSI tracking

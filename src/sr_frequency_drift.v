@@ -1,27 +1,28 @@
 //=============================================================================
-// SR Frequency Drift Generator - v2.0
+// SR Frequency Drift Generator - v2.1
+//
+// v2.1 CHANGES (Dual Alignment Ignition - v12.2):
+// - Updated f₀ center: 7.6 → 7.75 Hz (exact SR1 from geophysical data)
+// - Tightened drift ranges for impedance matching with internal oscillators
+// - Added RANDOM_INIT parameter for stochastic startup alignment
+// - Added omega_dt_f0_actual output for alignment detector
 //
 // v2.0 CHANGES (Biological Realism - Phase 4):
 // - Faster UPDATE_PERIOD: 1500 → 400 cycles (~0.1s per step in FAST_SIM)
-// - Larger DRIFT_MAX bounds: 1.5× wider for visible spectrogram wobble
 // - Variable step sizes (1-4): Lévy flight-like for biological variability
-// - Creates visible ±1-2 Hz frequency wobble at seconds timescale
 //
-// Models realistic Schumann Resonance frequency drift based on observed data.
-// Each harmonic performs a bounded random walk within its natural variation range.
-//
-// OBSERVED SR FREQUENCIES (from real-time monitoring):
-//   f₀ = 7.6 Hz  ± 0.9 Hz   (range: 6.7-8.5 Hz)  v2.0: expanded from ±0.6
-//   f₁ = 13.75 Hz ± 1.1 Hz  (range: 12.6-14.9 Hz) v2.0: expanded from ±0.75
-//   f₂ = 20 Hz   ± 1.5 Hz   (range: 18.5-21.5 Hz) v2.0: expanded from ±1
-//   f₃ = 25 Hz   ± 2.25 Hz  (range: 22.75-27.25 Hz) v2.0: expanded from ±1.5
-//   f₄ = 32 Hz   ± 3.0 Hz   (range: 29-35 Hz)     v2.0: expanded from ±2
+// SR FREQUENCIES (v2.1 - tightened for phi^n alignment):
+//   f₀ = 7.75 Hz ± 0.5 Hz   (range: 7.25-8.25 Hz)  v2.1: tightened for alignment
+//   f₁ = 13.75 Hz ± 0.8 Hz  (range: 12.95-14.55 Hz) v2.1: tightened
+//   f₂ = 20 Hz   ± 1.0 Hz   (range: 19-21 Hz)      v2.1: tightened
+//   f₃ = 25 Hz   ± 1.5 Hz   (range: 23.5-26.5 Hz)  v2.1: tightened
+//   f₄ = 32 Hz   ± 2.0 Hz   (range: 30-34 Hz)      v2.1: tightened
 //
 // DRIFT MODEL:
 // - Bounded random walk with reflecting boundaries
 // - Update rate: ~0.1s (visible in spectrogram)
 // - Step size: 1-4 OMEGA_DT units per update (variable, Lévy flight-like)
-// - Produces visible seconds-scale wobble matching biological EEG
+// - Random initialization prevents startup alignment
 //=============================================================================
 `timescale 1ns / 1ps
 
@@ -29,7 +30,8 @@ module sr_frequency_drift #(
     parameter WIDTH = 18,
     parameter FRAC = 14,
     parameter NUM_HARMONICS = 5,
-    parameter FAST_SIM = 0
+    parameter FAST_SIM = 0,
+    parameter RANDOM_INIT = 1  // v2.1: Enable random start position
 )(
     input  wire clk,
     input  wire rst,
@@ -39,28 +41,33 @@ module sr_frequency_drift #(
     output wire signed [NUM_HARMONICS*WIDTH-1:0] omega_dt_packed,
 
     // Debug: current offset from center (signed)
-    output wire signed [NUM_HARMONICS*WIDTH-1:0] drift_offset_packed
+    output wire signed [NUM_HARMONICS*WIDTH-1:0] drift_offset_packed,
+
+    // v2.1: Actual f0 omega_dt for alignment detector
+    output wire signed [WIDTH-1:0] omega_dt_f0_actual
 );
 
 //-----------------------------------------------------------------------------
 // Center Frequencies (OMEGA_DT in Q14)
 // Formula: OMEGA_DT = round(2π × f_hz × dt × 2^14) where dt = 0.00025s
+// v2.1: f₀ updated to 7.75 Hz for exact phi^n alignment
 //-----------------------------------------------------------------------------
-localparam signed [WIDTH-1:0] OMEGA_CENTER_F0 = 18'sd196;   // 7.6 Hz
+localparam signed [WIDTH-1:0] OMEGA_CENTER_F0 = 18'sd199;   // 7.75 Hz (v2.1: was 7.6)
 localparam signed [WIDTH-1:0] OMEGA_CENTER_F1 = 18'sd354;   // 13.75 Hz
 localparam signed [WIDTH-1:0] OMEGA_CENTER_F2 = 18'sd514;   // 20 Hz
 localparam signed [WIDTH-1:0] OMEGA_CENTER_F3 = 18'sd643;   // 25 Hz
 localparam signed [WIDTH-1:0] OMEGA_CENTER_F4 = 18'sd823;   // 32 Hz
 
 //-----------------------------------------------------------------------------
-// Drift Ranges (±OMEGA_DT units) - v2.0: Expanded 1.5× for visible wobble
+// Drift Ranges (±OMEGA_DT units) - v2.1: Tightened for impedance matching
 // Converted from Hz: DRIFT_MAX = round(2π × Δf × dt × 2^14)
+// Matches internal oscillator drift ranges for alignment probability
 //-----------------------------------------------------------------------------
-localparam signed [WIDTH-1:0] DRIFT_MAX_F0 = 18'sd23;   // ±0.9 Hz → ±23 (was ±15)
-localparam signed [WIDTH-1:0] DRIFT_MAX_F1 = 18'sd28;   // ±1.1 Hz → ±28 (was ±19)
-localparam signed [WIDTH-1:0] DRIFT_MAX_F2 = 18'sd39;   // ±1.5 Hz → ±39 (was ±26)
-localparam signed [WIDTH-1:0] DRIFT_MAX_F3 = 18'sd58;   // ±2.25 Hz → ±58 (was ±39)
-localparam signed [WIDTH-1:0] DRIFT_MAX_F4 = 18'sd77;   // ±3.0 Hz → ±77 (was ±51)
+localparam signed [WIDTH-1:0] DRIFT_MAX_F0 = 18'sd13;   // ±0.5 Hz (v2.1: was ±0.9)
+localparam signed [WIDTH-1:0] DRIFT_MAX_F1 = 18'sd21;   // ±0.8 Hz (v2.1: was ±1.1)
+localparam signed [WIDTH-1:0] DRIFT_MAX_F2 = 18'sd26;   // ±1.0 Hz (v2.1: was ±1.5)
+localparam signed [WIDTH-1:0] DRIFT_MAX_F3 = 18'sd39;   // ±1.5 Hz (v2.1: was ±2.25)
+localparam signed [WIDTH-1:0] DRIFT_MAX_F4 = 18'sd51;   // ±2.0 Hz (v2.1: was ±3.0)
 
 //-----------------------------------------------------------------------------
 // Random Walk Update Period - v2.0: Faster for visible spectrogram wobble
@@ -144,12 +151,24 @@ wire signed [WIDTH-1:0] step_3 = {{(WIDTH-3){1'b0}}, step_bits_3, 1'b0} + 18'sd1
 wire signed [WIDTH-1:0] step_4 = {{(WIDTH-3){1'b0}}, step_bits_4, 1'b0} + 18'sd1;
 
 //-----------------------------------------------------------------------------
+// v2.1: Random Initialization Offsets
+// Use LFSR seed bits to compute initial position within drift bounds
+// Maps seed bits [15:11] (0-31) to [-DRIFT_MAX, +DRIFT_MAX]
+//-----------------------------------------------------------------------------
+wire signed [WIDTH-1:0] init_offset_0, init_offset_1, init_offset_2, init_offset_3, init_offset_4;
+assign init_offset_0 = RANDOM_INIT ? (((LFSR_SEED_0[15:11] - 5'd16) * DRIFT_MAX_F0) >>> 4) : 18'sd0;
+assign init_offset_1 = RANDOM_INIT ? (((LFSR_SEED_1[15:11] - 5'd16) * DRIFT_MAX_F1) >>> 4) : 18'sd0;
+assign init_offset_2 = RANDOM_INIT ? (((LFSR_SEED_2[15:11] - 5'd16) * DRIFT_MAX_F2) >>> 4) : 18'sd0;
+assign init_offset_3 = RANDOM_INIT ? (((LFSR_SEED_3[15:11] - 5'd16) * DRIFT_MAX_F3) >>> 4) : 18'sd0;
+assign init_offset_4 = RANDOM_INIT ? (((LFSR_SEED_4[15:11] - 5'd16) * DRIFT_MAX_F4) >>> 4) : 18'sd0;
+
+//-----------------------------------------------------------------------------
 // Random Walk Update Logic - Harmonic 0 (v2.0: variable step size)
 //-----------------------------------------------------------------------------
 always @(posedge clk or posedge rst) begin
     if (rst) begin
         lfsr_0 <= LFSR_SEED_0;
-        drift_0 <= 18'sd0;
+        drift_0 <= init_offset_0;  // v2.1: Random initial position
     end else if (clk_en && update_tick) begin
         lfsr_0 <= {lfsr_0[14:0], fb_0};
         if (dir_0) begin
@@ -172,7 +191,7 @@ end
 always @(posedge clk or posedge rst) begin
     if (rst) begin
         lfsr_1 <= LFSR_SEED_1;
-        drift_1 <= 18'sd0;
+        drift_1 <= init_offset_1;  // v2.1: Random initial position
     end else if (clk_en && update_tick) begin
         lfsr_1 <= {lfsr_1[14:0], fb_1};
         if (dir_1) begin
@@ -195,7 +214,7 @@ end
 always @(posedge clk or posedge rst) begin
     if (rst) begin
         lfsr_2 <= LFSR_SEED_2;
-        drift_2 <= 18'sd0;
+        drift_2 <= init_offset_2;  // v2.1: Random initial position
     end else if (clk_en && update_tick) begin
         lfsr_2 <= {lfsr_2[14:0], fb_2};
         if (dir_2) begin
@@ -218,7 +237,7 @@ end
 always @(posedge clk or posedge rst) begin
     if (rst) begin
         lfsr_3 <= LFSR_SEED_3;
-        drift_3 <= 18'sd0;
+        drift_3 <= init_offset_3;  // v2.1: Random initial position
     end else if (clk_en && update_tick) begin
         lfsr_3 <= {lfsr_3[14:0], fb_3};
         if (dir_3) begin
@@ -241,7 +260,7 @@ end
 always @(posedge clk or posedge rst) begin
     if (rst) begin
         lfsr_4 <= LFSR_SEED_4;
-        drift_4 <= 18'sd0;
+        drift_4 <= init_offset_4;  // v2.1: Random initial position
     end else if (clk_en && update_tick) begin
         lfsr_4 <= {lfsr_4[14:0], fb_4};
         if (dir_4) begin
@@ -272,5 +291,8 @@ wire signed [WIDTH-1:0] omega_4 = OMEGA_CENTER_F4 + drift_4;
 //-----------------------------------------------------------------------------
 assign omega_dt_packed = {omega_4, omega_3, omega_2, omega_1, omega_0};
 assign drift_offset_packed = {drift_4, drift_3, drift_2, drift_1, drift_0};
+
+// v2.1: Individual f0 output for alignment detector
+assign omega_dt_f0_actual = omega_0;
 
 endmodule

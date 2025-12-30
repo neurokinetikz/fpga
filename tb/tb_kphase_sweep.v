@@ -23,7 +23,7 @@ reg clk_en;
 // Theta oscillator
 wire signed [WIDTH-1:0] theta_x, theta_y, theta_amp;
 localparam signed [WIDTH-1:0] MU_DT = 18'sd4;      // 4 kHz update rate
-localparam signed [WIDTH-1:0] OMEGA_THETA = 18'sd152;  // 5.89 Hz at 4 kHz
+localparam signed [WIDTH-1:0] OMEGA_THETA = 18'sd157;  // 6.09 Hz at 4 kHz (v12.2: φ^-0.5 × 7.75)
 
 hopf_oscillator #(.WIDTH(WIDTH), .FRAC(FRAC)) theta_osc (
     .clk(clk), .rst(rst), .clk_en(clk_en),
@@ -33,7 +33,7 @@ hopf_oscillator #(.WIDTH(WIDTH), .FRAC(FRAC)) theta_osc (
 
 // Gamma oscillator (L2/3) with phase coupling
 wire signed [WIDTH-1:0] gamma_x, gamma_y, gamma_amp;
-localparam signed [WIDTH-1:0] OMEGA_GAMMA = 18'sd1039;  // 40.36 Hz at 4 kHz
+localparam signed [WIDTH-1:0] OMEGA_GAMMA = 18'sd1075;  // 41.76 Hz at 4 kHz (v12.2: φ^3.5 × 7.75)
 
 // Phase coupling computation
 wire signed [2*WIDTH-1:0] theta_scaled;
@@ -52,7 +52,7 @@ hopf_oscillator #(.WIDTH(WIDTH), .FRAC(FRAC)) gamma_osc (
 
 // Alpha oscillator (L6) with phase coupling
 wire signed [WIDTH-1:0] alpha_x, alpha_y, alpha_amp;
-localparam signed [WIDTH-1:0] OMEGA_ALPHA = 18'sd245;  // 9.53 Hz at 4 kHz
+localparam signed [WIDTH-1:0] OMEGA_ALPHA = 18'sd254;  // 9.86 Hz at 4 kHz (v12.2: φ^0.5 × 7.75)
 
 wire signed [WIDTH-1:0] phase_couple_alpha;
 assign phase_couple_alpha = pattern_in[1] ? theta_couple_base : -theta_couple_base;

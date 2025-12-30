@@ -14,7 +14,7 @@ reg clk, rst, clk_en;
 // Theta oscillator (simulates thalamus)
 wire signed [WIDTH-1:0] theta_x, theta_y, theta_amp;
 localparam signed [WIDTH-1:0] MU_DT = 18'sd4;      // 4 kHz update rate
-localparam signed [WIDTH-1:0] OMEGA_THETA = 18'sd152;  // 5.89 Hz at 4 kHz
+localparam signed [WIDTH-1:0] OMEGA_THETA = 18'sd157;  // 6.09 Hz at 4 kHz (v12.2: φ^-0.5 × 7.75)
 
 hopf_oscillator #(.WIDTH(WIDTH), .FRAC(FRAC)) theta_osc (
     .clk(clk), .rst(rst), .clk_en(clk_en),

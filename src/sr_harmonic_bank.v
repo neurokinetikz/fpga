@@ -21,12 +21,12 @@
 // v7.5: φⁿ Q-factor and amplitude hierarchy from geophysical SR data
 // v7.4: Support for external drifting omega_dt (realistic SR frequency variation)
 //
-// OBSERVED SR FREQUENCIES (from real-time monitoring):
-//   f₀ = 7.6 Hz  ± 0.6 Hz   → Theta band (5.89 Hz internal)
-//   f₁ = 13.75 Hz ± 0.75 Hz → Alpha (L6 ~9.53 Hz) [φ^1.25 quarter-integer mode]
-//   f₂ = 20 Hz   ± 1 Hz     → Beta (L5a ~15.42 Hz) [ANCHOR - highest Q]
-//   f₃ = 25 Hz   ± 1.5 Hz   → High Beta (L5b ~24.94 Hz)
-//   f₄ = 32 Hz   ± 2 Hz     → Consciousness gate (L4 ~31.73 Hz)
+// SR FREQUENCIES (v12.2 - exact φⁿ alignment):
+//   f₀ = 7.75 Hz ± 0.5 Hz   → Theta band (6.09 Hz internal = 7.75/√φ)
+//   f₁ = 13.75 Hz ± 0.8 Hz  → Alpha (L6 ~9.86 Hz = 7.75×√φ) [φ^1.25 quarter-integer mode]
+//   f₂ = 20 Hz   ± 1 Hz     → Beta (L5a ~15.95 Hz) [ANCHOR - highest Q]
+//   f₃ = 25 Hz   ± 1.5 Hz   → High Beta (L5b ~25.81 Hz)
+//   f₄ = 32 Hz   ± 2 Hz     → Consciousness gate (L4 ~32.83 Hz)
 //
 // GEOPHYSICAL φⁿ RELATIONSHIPS (Dec 2025 data):
 //   Q-factors: Q₀=7.5, Q₁=9.5, Q₂=15.5 (anchor), Q₃=8.5, Q₄=7.0
@@ -119,12 +119,12 @@ module sr_harmonic_bank #(
 // OMEGA_DT values for Schumann-aligned harmonics (Q14 format)
 // Formula: OMEGA_DT = round(2π × f_hz × dt × 2^14) where dt = 0.00025s (4 kHz)
 // Based on observed real-time SR monitoring data
-localparam signed [WIDTH-1:0] OMEGA_DT_F0 = 18'sd196;   // 7.6 Hz (observed SR fundamental)
+localparam signed [WIDTH-1:0] OMEGA_DT_F0 = 18'sd199;   // 7.75 Hz (v12.2: exact φⁿ base)
 localparam signed [WIDTH-1:0] OMEGA_DT_F1 = 18'sd354;   // 13.75 Hz (2nd SR mode)
     // v7.6 NOTE: f₁ is φ^1.25 × f₀ due to 2:1 Harmonic Catastrophe
     // φ^1.5 = 2.058 is unstable (too close to 2.0 harmonic ratio)
     // Quarter-integer fallback: n = (1.0 + 1.5)/2 = 1.25
-    // Theoretical: φ^1.25 × 7.6 = 1.8249 × 7.6 = 13.87 Hz
+    // Theoretical: φ^1.25 × 7.75 = 1.8249 × 7.75 = 14.14 Hz
     // Observed: 13.75 Hz (Tomsk 27-yr avg: 14.17 Hz) - confirms fallback mechanism
 localparam signed [WIDTH-1:0] OMEGA_DT_F2 = 18'sd514;   // 20 Hz (3rd SR mode)
 localparam signed [WIDTH-1:0] OMEGA_DT_F3 = 18'sd643;   // 25 Hz (4th SR mode)
@@ -167,7 +167,7 @@ localparam signed [WIDTH-1:0] HARMONIC_2_1 = 18'sd32768;    // 2.0 in Q14
 
 // Theoretical f₁ at quarter-integer position (for validation only)
 // OMEGA_DT = round(2π × f_hz × 0.00025 × 16384) = round(25.736 × f_hz)
-localparam signed [WIDTH-1:0] OMEGA_DT_F1_THEORY = 18'sd356;  // 13.84 Hz (φ^1.25 × 7.6)
+localparam signed [WIDTH-1:0] OMEGA_DT_F1_THEORY = 18'sd364;  // 14.14 Hz (φ^1.25 × 7.75)
 // Actual OMEGA_DT_F1 = 354 (13.75 Hz observed) - 0.6% from theory validates quarter-integer rule
 
 //-----------------------------------------------------------------------------

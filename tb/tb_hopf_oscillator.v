@@ -48,7 +48,7 @@ initial begin
     rst = 1;
     clk_en = 0;
     mu_dt = 18'sd4;  // Standard mu*dt (4 kHz rate)
-    omega_dt = 18'sd152;  // Theta frequency (5.89 Hz) at 4 kHz
+    omega_dt = 18'sd157;  // Theta frequency (6.09 Hz) at 4 kHz (v12.2: φ^-0.5 × 7.75)
     input_x = 18'sd0;
 
     repeat(10) @(posedge clk);
@@ -71,7 +71,7 @@ initial begin
     $display("         amplitude: %0d (expect ~16384-32768)", amplitude);
 
     // TEST 3: Frequency measurement (4000 updates = 1 second at 4 kHz)
-    $display("\n[TEST 3] Frequency measurement (theta = 5.89 Hz)");
+    $display("\n[TEST 3] Frequency measurement (theta = 6.09 Hz)");
     zero_crossings = 0;
     prev_sign = x[WIDTH-1];
 
@@ -88,9 +88,9 @@ initial begin
     $display("         Zero crossings in 1s: %0d", zero_crossings);
     $display("         Estimated frequency: %.2f Hz", freq_hz);
 
-    // TEST 4: Different frequency (Gamma = 40.36 Hz)
-    $display("\n[TEST 4] Gamma frequency (40.36 Hz)");
-    omega_dt = 18'sd1039;  // Gamma omega*dt (4 kHz rate)
+    // TEST 4: Different frequency (Gamma = 41.76 Hz)
+    $display("\n[TEST 4] Gamma frequency (41.76 Hz)");
+    omega_dt = 18'sd1075;  // Gamma omega*dt (4 kHz rate) (v12.2: φ^3.5 × 7.75)
     zero_crossings = 0;
     prev_sign = x[WIDTH-1];
 
@@ -109,7 +109,7 @@ initial begin
 
     // TEST 5: Input coupling
     $display("\n[TEST 5] Input coupling response");
-    omega_dt = 18'sd152;  // Back to theta
+    omega_dt = 18'sd157;  // Back to theta
     input_x = 18'sd2048;  // Add external input
 
     for (i = 0; i < 200; i = i + 1) begin

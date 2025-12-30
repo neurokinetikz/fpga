@@ -108,11 +108,11 @@ initial begin
     // Initialize
     rst = 1;
     clk_en = 0;
-    omega_theta = 18'sd152;   // 5.89 Hz nominal
-    omega_alpha = 18'sd245;   // 9.53 Hz
-    omega_beta1 = 18'sd397;   // 15.42 Hz
-    omega_beta2 = 18'sd642;   // 24.94 Hz
-    omega_gamma = 18'sd1040;  // 40.36 Hz
+    omega_theta = 18'sd157;   // 6.09 Hz nominal (v12.2: φ^-0.5 × 7.75)
+    omega_alpha = 18'sd254;   // 9.86 Hz (v12.2: φ^0.5 × 7.75)
+    omega_beta1 = 18'sd410;   // 15.95 Hz (v12.2: φ^1.5 × 7.75)
+    omega_beta2 = 18'sd664;   // 25.81 Hz (v12.2: φ^2.5 × 7.75)
+    omega_gamma = 18'sd1075;  // 41.76 Hz (v12.2: φ^3.5 × 7.75)
 
     repeat (10) @(posedge clk);
     rst = 0;
@@ -229,14 +229,14 @@ initial begin
     //=========================================================================
     $display("\n[TEST 6] Realistic omega_dt values");
     // These are actual omega_dt values from the system
-    omega_theta = 18'sd152;   // 5.89 Hz
-    omega_alpha = 18'sd245;   // 9.53 Hz (ratio ≈ 1.61)
-    omega_beta1 = 18'sd397;   // 15.42 Hz (ratio ≈ 1.62)
-    omega_beta2 = 18'sd642;   // 24.94 Hz (ratio ≈ 1.62)
-    omega_gamma = 18'sd1040;  // 40.36 Hz (ratio ≈ 1.62)
+    omega_theta = 18'sd157;   // 6.09 Hz (v12.2)
+    omega_alpha = 18'sd254;   // 9.86 Hz (ratio ≈ 1.62)
+    omega_beta1 = 18'sd410;   // 15.95 Hz (ratio ≈ 1.61)
+    omega_beta2 = 18'sd664;   // 25.81 Hz (ratio ≈ 1.62)
+    omega_gamma = 18'sd1075;  // 41.76 Hz (ratio ≈ 1.62)
     wait_cycles(10);
 
-    $display("         Real ω values: θ=152, α=245, β₁=397, β₂=642, γ=1040");
+    $display("         Real ω values: θ=157, α=254, β₁=410, β₂=664, γ=1075");
     $display("         HSI = %0d, locked = %b", hsi, harmonic_locked);
 
     // Actual system ratios are close to φ but not exact

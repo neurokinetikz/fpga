@@ -28,8 +28,8 @@ reg [2:0] state_select;
 // Oscillator Parameters (matching tb_state_characterization.v)
 //-----------------------------------------------------------------------------
 localparam signed [WIDTH-1:0] MU_DT = 18'sd4;
-localparam signed [WIDTH-1:0] OMEGA_THETA = 18'sd152;  // 5.89 Hz at 4 kHz
-localparam signed [WIDTH-1:0] OMEGA_GAMMA = 18'sd1039; // 40.36 Hz at 4 kHz
+localparam signed [WIDTH-1:0] OMEGA_THETA = 18'sd157;  // 6.09 Hz at 4 kHz (v12.2: φ^-0.5 × 7.75)
+localparam signed [WIDTH-1:0] OMEGA_GAMMA = 18'sd1075; // 41.76 Hz at 4 kHz (v12.2: φ^3.5 × 7.75)
 
 //-----------------------------------------------------------------------------
 // Oscillator Outputs

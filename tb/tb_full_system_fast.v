@@ -98,11 +98,12 @@ wire retrieval_window = dut.ca3_retrieval_window;
 wire signed [WIDTH-1:0] omega_dt_active = dut.col_sensory.omega_eff_l23;
 
 // v10.1: Base OMEGA_DT values and drift tolerance for frequency verification
-localparam signed [WIDTH-1:0] OMEGA_FAST = 18'sd1681;       // 65.3 Hz encoding gamma
-localparam signed [WIDTH-1:0] OMEGA_SLOW = 18'sd1039;       // 40.36 Hz retrieval gamma
-// v3.3: Tolerance reverted after cortical_frequency_drift jitter fix
-// drift ±0.5 Hz (±13) + jitter ±0.2 Hz (±5) = ±0.7 Hz total (±18 units)
-localparam signed [WIDTH-1:0] OMEGA_DRIFT_TOL = 18'sd20;   // ±0.7 Hz drift+jitter tolerance
+// v12.2: Updated for φⁿ × 7.75 Hz architecture
+localparam signed [WIDTH-1:0] OMEGA_FAST = 18'sd1740;       // 67.6 Hz encoding gamma (v12.2: φ^4.5 × 7.75)
+localparam signed [WIDTH-1:0] OMEGA_SLOW = 18'sd1075;       // 41.76 Hz retrieval gamma (v12.2: φ^3.5 × 7.75)
+// v12.2: Tolerance includes wider drift for higher frequencies
+// L23 drift ±2.0 Hz (±51) + jitter ±0.2 Hz (±5) = ±2.2 Hz total (~57 units)
+localparam signed [WIDTH-1:0] OMEGA_DRIFT_TOL = 18'sd60;   // ±2.2 Hz drift+jitter tolerance
 
 // v6.5: Integration test signals - scaffold/plastic layer access
 wire signed [WIDTH-1:0] sensory_l4_x = dut.col_sensory.l4_x;
@@ -402,7 +403,7 @@ initial begin
     prev_theta_phase = theta_phase;
     phase_test_updates = 0;
 
-    // Run for ~3 theta cycles (~500ms at 5.89 Hz)
+    // Run for ~3 theta cycles (~490ms at 6.09 Hz)
     begin : test9_block
         integer local_updates;
         local_updates = 0;
@@ -517,8 +518,8 @@ initial begin
         end
     end
 
-    $display("         Fast gamma (~1681±%0d): %0d, Slow gamma (~1039±%0d): %0d",
-             OMEGA_DRIFT_TOL, fast_gamma_count, OMEGA_DRIFT_TOL, slow_gamma_count);
+    $display("         Fast gamma (~%0d±%0d): %0d, Slow gamma (~%0d±%0d): %0d",
+             OMEGA_FAST, OMEGA_DRIFT_TOL, fast_gamma_count, OMEGA_SLOW, OMEGA_DRIFT_TOL, slow_gamma_count);
     $display("         Sync encoding: %0d, Sync retrieval: %0d, Mismatch: %0d",
              omega_sync_encoding, omega_sync_retrieval, omega_mismatch);
 

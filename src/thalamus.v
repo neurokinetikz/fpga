@@ -1,5 +1,12 @@
 //=============================================================================
-// Thalamus Module - v11.5 with Distributed SIE Boost
+// Thalamus Module - v11.6 with Dual Alignment Ignition
+//
+// v11.6 CHANGES (Dual Alignment Ignition - v12.2):
+// - Theta center frequency updated: 5.89 → 6.09 Hz (OMEGA_DT 152 → 157)
+// - New derivation: theta = SR1 / √φ = 7.75 / 1.272 = 6.09 Hz
+// - Added theta_drift and theta_jitter inputs for alignment detection
+// - omega_dt now dynamic: OMEGA_DT_THETA + theta_drift + theta_jitter
+// - Added omega_dt_theta_actual output for phi_n_alignment_detector
 //
 // v11.5 CHANGES (Option C Distributed SIE Reduction):
 // - SIE_ENHANCE_F0 reduced from 4.0× to 1.3× (+2.3 dB contribution)
@@ -139,6 +146,10 @@ module thalamus #(
     // v10.0: SIE gain envelope from ignition controller (0-1 in Q14)
     input  wire signed [WIDTH-1:0] gain_envelope,
 
+    // v11.6: Theta frequency drift inputs from thalamic_frequency_drift
+    input  wire signed [WIDTH-1:0] theta_drift,   // Slow drift offset
+    input  wire signed [WIDTH-1:0] theta_jitter,  // Fast per-cycle jitter
+
     // Theta outputs
     output wire signed [WIDTH-1:0] theta_gated_output,
     output wire signed [WIDTH-1:0] theta_x,
@@ -151,6 +162,9 @@ module thalamus #(
     // Phase 4-5: falling to trough (early retrieval)
     // Phase 6-7: rising from trough (late retrieval)
     output wire [2:0] theta_phase,
+
+    // v11.6: Actual theta omega_dt for alignment detector
+    output wire signed [WIDTH-1:0] omega_dt_theta_actual,
 
     // f₀ SR Reference outputs (driven by external field) - v7.2 compatibility
     output wire signed [WIDTH-1:0] f0_x,
@@ -180,8 +194,16 @@ module thalamus #(
 // Parameters
 //-----------------------------------------------------------------------------
 
-// OMEGA_DT for 5.89 Hz theta: ω×dt = 2π×5.89×0.00025 = 0.00925 → Q14: 152
-localparam signed [WIDTH-1:0] OMEGA_DT_THETA = 18'sd152;  // 4 kHz update rate
+// OMEGA_DT for 6.09 Hz theta: ω×dt = 2π×6.09×0.00025 = 0.00957 → Q14: 157
+// v11.6: Derived from SR1 = 7.75 Hz: theta = SR1 / √φ = 7.75 / 1.272 = 6.09 Hz
+localparam signed [WIDTH-1:0] OMEGA_DT_THETA = 18'sd157;  // 4 kHz update rate
+
+// v11.6: Effective omega_dt with drift and jitter for alignment detection
+wire signed [WIDTH-1:0] omega_dt_theta_effective;
+assign omega_dt_theta_effective = OMEGA_DT_THETA + theta_drift + theta_jitter;
+
+// v11.6: Output actual omega_dt for alignment detector
+assign omega_dt_theta_actual = omega_dt_theta_effective;
 
 localparam signed [WIDTH-1:0] HALF = 18'sd8192;
 localparam signed [WIDTH-1:0] GAIN_BASELINE = 18'sd16384;
@@ -331,7 +353,7 @@ assign entrain_product = k_entrain_dynamic * f0_x_int;
 assign theta_entrain_input = entrain_product >>> FRAC;
 
 //-----------------------------------------------------------------------------
-// Theta Oscillator (5.89 Hz - hippocampal timing)
+// Theta Oscillator (6.09 Hz - hippocampal timing, v11.6 aligned to SR1/√φ)
 // v10.0: Receives continuous entrainment from f₀ modulated by gain_envelope
 // v10.1: Theta amplitude envelope for biological variability
 //-----------------------------------------------------------------------------
@@ -376,7 +398,7 @@ hopf_oscillator #(.WIDTH(WIDTH), .FRAC(FRAC)) theta_relay (
     .rst(rst),
     .clk_en(clk_en),
     .mu_dt(mu_theta_mod),  // v10.1: modulated MU for biological variability
-    .omega_dt(OMEGA_DT_THETA),
+    .omega_dt(omega_dt_theta_effective),  // v11.6: Dynamic with drift+jitter
     .input_x(theta_entrain_input),  // Entrained by f₀ when beta quiet
     .x(theta_x_int),
     .y(theta_y_int),

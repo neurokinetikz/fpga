@@ -57,19 +57,19 @@ integer tests_passed;
 integer tests_failed;
 integer i, cycle;
 
-// Expected center frequencies
-localparam signed [WIDTH-1:0] OMEGA_CENTER_0 = 18'sd196;   // f0: 7.6 Hz
+// Expected center frequencies (v12.2: f0 updated to 7.75 Hz)
+localparam signed [WIDTH-1:0] OMEGA_CENTER_0 = 18'sd199;   // f0: 7.75 Hz (v12.2)
 localparam signed [WIDTH-1:0] OMEGA_CENTER_1 = 18'sd354;   // f1: 13.75 Hz
 localparam signed [WIDTH-1:0] OMEGA_CENTER_2 = 18'sd514;   // f2: 20 Hz
 localparam signed [WIDTH-1:0] OMEGA_CENTER_3 = 18'sd643;   // f3: 25 Hz
 localparam signed [WIDTH-1:0] OMEGA_CENTER_4 = 18'sd823;   // f4: 32 Hz
 
-// Expected drift ranges (v2.0: 1.5× wider for visible spectrogram wobble)
-localparam signed [WIDTH-1:0] DRIFT_MAX_0 = 18'sd23;    // f0: ±0.9 Hz (was ±15)
-localparam signed [WIDTH-1:0] DRIFT_MAX_1 = 18'sd28;    // f1: ±1.1 Hz (was ±19)
-localparam signed [WIDTH-1:0] DRIFT_MAX_2 = 18'sd39;    // f2: ±1.5 Hz (was ±26)
-localparam signed [WIDTH-1:0] DRIFT_MAX_3 = 18'sd58;    // f3: ±2.25 Hz (was ±39)
-localparam signed [WIDTH-1:0] DRIFT_MAX_4 = 18'sd77;    // f4: ±3.0 Hz (was ±51)
+// Expected drift ranges (v12.2: tightened for impedance matching)
+localparam signed [WIDTH-1:0] DRIFT_MAX_0 = 18'sd13;    // f0: ±0.5 Hz (v12.2: was ±0.9)
+localparam signed [WIDTH-1:0] DRIFT_MAX_1 = 18'sd21;    // f1: ±0.8 Hz (v12.2: was ±1.1)
+localparam signed [WIDTH-1:0] DRIFT_MAX_2 = 18'sd26;    // f2: ±1.0 Hz (v12.2: was ±1.5)
+localparam signed [WIDTH-1:0] DRIFT_MAX_3 = 18'sd39;    // f3: ±1.5 Hz (v12.2: was ±2.25)
+localparam signed [WIDTH-1:0] DRIFT_MAX_4 = 18'sd51;    // f4: ±2.0 Hz (v12.2: was ±3.0)
 
 // Track min/max drift for each harmonic
 reg signed [WIDTH-1:0] min_drift [0:NUM_HARMONICS-1];

@@ -1,12 +1,13 @@
 //=============================================================================
-// Cortical Frequency Drift Generator - v3.4
+// Cortical Frequency Drift Generator - v3.5
 //
 // Models frequency variability in cortical oscillators for EEG-realistic output.
 // Three components work together:
 //
-// 1. SLOW DRIFT: Bounded random walk (±0.5 Hz over seconds)
+// 1. SLOW DRIFT: Bounded random walk (per-layer ranges, see below)
 //    - Updates every 0.2s in simulation
 //    - Models slow frequency drift seen in EEG
+//    - v3.5: Per-layer drift ranges matching SR harmonics
 //
 // 2. FAST JITTER: Cycle-by-cycle frequency noise (±0.2 Hz per sample)
 //    - Updates every clk_en cycle (4 kHz)
@@ -18,6 +19,17 @@
 //    - Receives force from energy_landscape.v
 //    - Guides oscillators toward φⁿ half-integer attractors
 //    - Force added to drift update with gain K_FORCE
+//
+// v3.5 CHANGES (Dual Alignment Ignition - v12.2):
+// - Updated all frequencies to derive from SR1 = 7.75 Hz × φⁿ
+// - Per-layer drift ranges matching corresponding SR harmonics:
+//     L6:  ±0.5 Hz (13) - SR1 boundary
+//     L5a: ±0.8 Hz (21) - SR2
+//     L5b: ±1.5 Hz (39) - SR4
+//     L4:  ±2.0 Hz (51) - SR5
+//     L23: ±2.0 Hz (51) - no SR match
+// - Added RANDOM_INIT parameter for stochastic startup
+// - Added omega_dt_l6_actual output for alignment detector
 //
 // v3.4 CHANGES:
 // - Added omega_correction inputs from energy_landscape.v escape mechanism
@@ -39,12 +51,13 @@
 // - Added K_FORCE gain for scaling force contribution
 // - Force guides drift toward half-integer φⁿ attractors
 //
-// CORTICAL OSCILLATOR FREQUENCIES (phi^n based):
-//   L6:   9.53 Hz  (phi^0.5)  - alpha band
-//   L5a:  15.42 Hz (phi^1.5)  - low beta
-//   L5b:  24.94 Hz (phi^2.5)  - high beta
-//   L4:   31.73 Hz (phi^3)    - low gamma
-//   L2/3: 40.36 Hz (phi^3.5)  - gamma (switches to 65.3 Hz in encoding)
+// CORTICAL OSCILLATOR FREQUENCIES (v3.5: derived from SR1 = 7.75 Hz × φⁿ):
+//   L6:   9.86 Hz  (φ^0.5)  - alpha band     (OMEGA_DT = 254)
+//   L5a:  15.95 Hz (φ^1.5)  - low beta       (OMEGA_DT = 410)
+//   L5b:  25.81 Hz (φ^2.5)  - high beta      (OMEGA_DT = 664)
+//   L4:   32.83 Hz (φ^3)    - low gamma      (OMEGA_DT = 845)
+//   L2/3: 41.76 Hz (φ^3.5)  - gamma          (OMEGA_DT = 1075)
+//         67.6 Hz  (φ^4.5)  - fast gamma     (OMEGA_DT = 1740, encoding mode)
 //
 // Effect: Narrow spectral peaks (~1-2 Hz) with per-cycle naturalness
 //=============================================================================
@@ -55,7 +68,8 @@ module cortical_frequency_drift #(
     parameter FRAC = 14,
     parameter NUM_LAYERS = 5,
     parameter FAST_SIM = 0,
-    parameter ENABLE_ADAPTIVE = 0  // v3.0: Enable energy-landscape force input
+    parameter ENABLE_ADAPTIVE = 0,  // v3.0: Enable energy-landscape force input
+    parameter RANDOM_INIT = 1       // v3.5: Enable random start position
 )(
     input  wire clk,
     input  wire rst,
@@ -75,6 +89,9 @@ module cortical_frequency_drift #(
     output wire signed [WIDTH-1:0] jitter_l4,     // L4 low-gamma jitter
     output wire signed [WIDTH-1:0] jitter_l23,    // L2/3 gamma jitter
 
+    // v3.5: Actual L6 omega_dt for alignment detector
+    output wire signed [WIDTH-1:0] omega_dt_l6_actual,  // Center + drift + jitter
+
     // v3.0: Adaptive force inputs from energy_landscape.v (optional)
     // When ENABLE_ADAPTIVE=1, these forces guide drift toward φⁿ attractors
     input  wire signed [WIDTH-1:0] force_l6,      // L6 restoring force
@@ -93,11 +110,25 @@ module cortical_frequency_drift #(
 );
 
 //-----------------------------------------------------------------------------
-// Slow Drift Range
-// ±0.5 Hz in OMEGA_DT units: round(2π × 0.5 × 0.00025 × 16384) = ±13
-// Cortical oscillators are more stable than SR
+// v3.5: Center Frequencies (OMEGA_DT values)
+// Derived from SR1 = 7.75 Hz × φⁿ for alignment detector output
 //-----------------------------------------------------------------------------
-localparam signed [WIDTH-1:0] DRIFT_MAX = 18'sd13;  // ±0.5 Hz
+localparam signed [WIDTH-1:0] OMEGA_CENTER_L6  = 18'sd254;   // 9.86 Hz  (φ^0.5)
+localparam signed [WIDTH-1:0] OMEGA_CENTER_L5A = 18'sd410;   // 15.95 Hz (φ^1.5)
+localparam signed [WIDTH-1:0] OMEGA_CENTER_L5B = 18'sd664;   // 25.81 Hz (φ^2.5)
+localparam signed [WIDTH-1:0] OMEGA_CENTER_L4  = 18'sd845;   // 32.83 Hz (φ^3)
+localparam signed [WIDTH-1:0] OMEGA_CENTER_L23 = 18'sd1075;  // 41.76 Hz (φ^3.5)
+
+//-----------------------------------------------------------------------------
+// v3.5: Per-Layer Drift Ranges (matching corresponding SR harmonics)
+// Formula: DRIFT_MAX = round(2π × Δf × 0.00025 × 16384)
+// L6 = SR1 boundary, L5a ~ SR2, L5b ~ SR4, L4/L23 ~ SR5
+//-----------------------------------------------------------------------------
+localparam signed [WIDTH-1:0] DRIFT_MAX_L6  = 18'sd13;   // ±0.5 Hz (SR1 boundary)
+localparam signed [WIDTH-1:0] DRIFT_MAX_L5A = 18'sd21;   // ±0.8 Hz (SR2)
+localparam signed [WIDTH-1:0] DRIFT_MAX_L5B = 18'sd39;   // ±1.5 Hz (SR4)
+localparam signed [WIDTH-1:0] DRIFT_MAX_L4  = 18'sd51;   // ±2.0 Hz (SR5)
+localparam signed [WIDTH-1:0] DRIFT_MAX_L23 = 18'sd51;   // ±2.0 Hz (no SR match)
 
 //-----------------------------------------------------------------------------
 // Fast Jitter Range
@@ -156,6 +187,19 @@ localparam [15:0] LFSR_SEED_L5A = 16'hE5B2;
 localparam [15:0] LFSR_SEED_L5B = 16'h29C8;
 localparam [15:0] LFSR_SEED_L4  = 16'hD4F1;
 localparam [15:0] LFSR_SEED_L23 = 16'h8167;
+
+//-----------------------------------------------------------------------------
+// v3.5: Random Initialization Offsets
+// Use LFSR seed bits to compute initial position within drift bounds
+// Maps seed bits [15:11] (0-31) to [-DRIFT_MAX, +DRIFT_MAX]
+//-----------------------------------------------------------------------------
+wire signed [WIDTH-1:0] init_offset_l6, init_offset_l5a, init_offset_l5b;
+wire signed [WIDTH-1:0] init_offset_l4, init_offset_l23;
+assign init_offset_l6  = RANDOM_INIT ? (((LFSR_SEED_L6[15:11]  - 5'd16) * DRIFT_MAX_L6)  >>> 4) : 18'sd0;
+assign init_offset_l5a = RANDOM_INIT ? (((LFSR_SEED_L5A[15:11] - 5'd16) * DRIFT_MAX_L5A) >>> 4) : 18'sd0;
+assign init_offset_l5b = RANDOM_INIT ? (((LFSR_SEED_L5B[15:11] - 5'd16) * DRIFT_MAX_L5B) >>> 4) : 18'sd0;
+assign init_offset_l4  = RANDOM_INIT ? (((LFSR_SEED_L4[15:11]  - 5'd16) * DRIFT_MAX_L4)  >>> 4) : 18'sd0;
+assign init_offset_l23 = RANDOM_INIT ? (((LFSR_SEED_L23[15:11] - 5'd16) * DRIFT_MAX_L23) >>> 4) : 18'sd0;
 
 //-----------------------------------------------------------------------------
 // Per-Layer LFSR and Drift State
@@ -219,20 +263,21 @@ reg signed [WIDTH-1:0] next_drift_l4, next_drift_l23;
 //-----------------------------------------------------------------------------
 // Random Walk Update Logic - L6 Alpha
 // v3.0: Adds force_contrib when ENABLE_ADAPTIVE=1
+// v3.5: Uses per-layer DRIFT_MAX and random initialization
 //-----------------------------------------------------------------------------
 always @(posedge clk or posedge rst) begin
     if (rst) begin
         lfsr_l6 <= LFSR_SEED_L6;
-        drift_l6_reg <= 18'sd0;
+        drift_l6_reg <= init_offset_l6;  // v3.5: Random initial position
     end else if (clk_en && update_tick) begin
         lfsr_l6 <= {lfsr_l6[14:0], fb_l6};
         // v3.0: Base step + force contribution + v11.2 omega correction, then clamp
         next_drift_l6 = dir_l6 ? (drift_l6_reg + step_l6 + force_contrib_l6 + omega_corr_contrib_l6)
                                : (drift_l6_reg - step_l6 + force_contrib_l6 + omega_corr_contrib_l6);
-        if (next_drift_l6 > DRIFT_MAX)
-            drift_l6_reg <= DRIFT_MAX;
-        else if (next_drift_l6 < -DRIFT_MAX)
-            drift_l6_reg <= -DRIFT_MAX;
+        if (next_drift_l6 > DRIFT_MAX_L6)
+            drift_l6_reg <= DRIFT_MAX_L6;
+        else if (next_drift_l6 < -DRIFT_MAX_L6)
+            drift_l6_reg <= -DRIFT_MAX_L6;
         else
             drift_l6_reg <= next_drift_l6;
     end
@@ -241,19 +286,20 @@ end
 //-----------------------------------------------------------------------------
 // Random Walk Update Logic - L5a Low Beta
 // v3.0: Adds force_contrib when ENABLE_ADAPTIVE=1
+// v3.5: Uses per-layer DRIFT_MAX and random initialization
 //-----------------------------------------------------------------------------
 always @(posedge clk or posedge rst) begin
     if (rst) begin
         lfsr_l5a <= LFSR_SEED_L5A;
-        drift_l5a_reg <= 18'sd0;
+        drift_l5a_reg <= init_offset_l5a;  // v3.5: Random initial position
     end else if (clk_en && update_tick) begin
         lfsr_l5a <= {lfsr_l5a[14:0], fb_l5a};
         next_drift_l5a = dir_l5a ? (drift_l5a_reg + step_l5a + force_contrib_l5a + omega_corr_contrib_l5a)
                                  : (drift_l5a_reg - step_l5a + force_contrib_l5a + omega_corr_contrib_l5a);
-        if (next_drift_l5a > DRIFT_MAX)
-            drift_l5a_reg <= DRIFT_MAX;
-        else if (next_drift_l5a < -DRIFT_MAX)
-            drift_l5a_reg <= -DRIFT_MAX;
+        if (next_drift_l5a > DRIFT_MAX_L5A)
+            drift_l5a_reg <= DRIFT_MAX_L5A;
+        else if (next_drift_l5a < -DRIFT_MAX_L5A)
+            drift_l5a_reg <= -DRIFT_MAX_L5A;
         else
             drift_l5a_reg <= next_drift_l5a;
     end
@@ -262,19 +308,20 @@ end
 //-----------------------------------------------------------------------------
 // Random Walk Update Logic - L5b High Beta
 // v3.0: Adds force_contrib when ENABLE_ADAPTIVE=1
+// v3.5: Uses per-layer DRIFT_MAX and random initialization
 //-----------------------------------------------------------------------------
 always @(posedge clk or posedge rst) begin
     if (rst) begin
         lfsr_l5b <= LFSR_SEED_L5B;
-        drift_l5b_reg <= 18'sd0;
+        drift_l5b_reg <= init_offset_l5b;  // v3.5: Random initial position
     end else if (clk_en && update_tick) begin
         lfsr_l5b <= {lfsr_l5b[14:0], fb_l5b};
         next_drift_l5b = dir_l5b ? (drift_l5b_reg + step_l5b + force_contrib_l5b + omega_corr_contrib_l5b)
                                  : (drift_l5b_reg - step_l5b + force_contrib_l5b + omega_corr_contrib_l5b);
-        if (next_drift_l5b > DRIFT_MAX)
-            drift_l5b_reg <= DRIFT_MAX;
-        else if (next_drift_l5b < -DRIFT_MAX)
-            drift_l5b_reg <= -DRIFT_MAX;
+        if (next_drift_l5b > DRIFT_MAX_L5B)
+            drift_l5b_reg <= DRIFT_MAX_L5B;
+        else if (next_drift_l5b < -DRIFT_MAX_L5B)
+            drift_l5b_reg <= -DRIFT_MAX_L5B;
         else
             drift_l5b_reg <= next_drift_l5b;
     end
@@ -283,19 +330,20 @@ end
 //-----------------------------------------------------------------------------
 // Random Walk Update Logic - L4 Low Gamma
 // v3.0: Adds force_contrib when ENABLE_ADAPTIVE=1
+// v3.5: Uses per-layer DRIFT_MAX and random initialization
 //-----------------------------------------------------------------------------
 always @(posedge clk or posedge rst) begin
     if (rst) begin
         lfsr_l4 <= LFSR_SEED_L4;
-        drift_l4_reg <= 18'sd0;
+        drift_l4_reg <= init_offset_l4;  // v3.5: Random initial position
     end else if (clk_en && update_tick) begin
         lfsr_l4 <= {lfsr_l4[14:0], fb_l4};
         next_drift_l4 = dir_l4 ? (drift_l4_reg + step_l4 + force_contrib_l4 + omega_corr_contrib_l4)
                                : (drift_l4_reg - step_l4 + force_contrib_l4 + omega_corr_contrib_l4);
-        if (next_drift_l4 > DRIFT_MAX)
-            drift_l4_reg <= DRIFT_MAX;
-        else if (next_drift_l4 < -DRIFT_MAX)
-            drift_l4_reg <= -DRIFT_MAX;
+        if (next_drift_l4 > DRIFT_MAX_L4)
+            drift_l4_reg <= DRIFT_MAX_L4;
+        else if (next_drift_l4 < -DRIFT_MAX_L4)
+            drift_l4_reg <= -DRIFT_MAX_L4;
         else
             drift_l4_reg <= next_drift_l4;
     end
@@ -304,19 +352,20 @@ end
 //-----------------------------------------------------------------------------
 // Random Walk Update Logic - L2/3 Gamma
 // v3.0: Adds force_contrib when ENABLE_ADAPTIVE=1
+// v3.5: Uses per-layer DRIFT_MAX and random initialization
 //-----------------------------------------------------------------------------
 always @(posedge clk or posedge rst) begin
     if (rst) begin
         lfsr_l23 <= LFSR_SEED_L23;
-        drift_l23_reg <= 18'sd0;
+        drift_l23_reg <= init_offset_l23;  // v3.5: Random initial position
     end else if (clk_en && update_tick) begin
         lfsr_l23 <= {lfsr_l23[14:0], fb_l23};
         next_drift_l23 = dir_l23 ? (drift_l23_reg + step_l23 + force_contrib_l23 + omega_corr_contrib_l23)
                                  : (drift_l23_reg - step_l23 + force_contrib_l23 + omega_corr_contrib_l23);
-        if (next_drift_l23 > DRIFT_MAX)
-            drift_l23_reg <= DRIFT_MAX;
-        else if (next_drift_l23 < -DRIFT_MAX)
-            drift_l23_reg <= -DRIFT_MAX;
+        if (next_drift_l23 > DRIFT_MAX_L23)
+            drift_l23_reg <= DRIFT_MAX_L23;
+        else if (next_drift_l23 < -DRIFT_MAX_L23)
+            drift_l23_reg <= -DRIFT_MAX_L23;
         else
             drift_l23_reg <= next_drift_l23;
     end
@@ -410,5 +459,8 @@ assign jitter_l4  = (jitter_l4_raw  > JITTER_MAX) ? JITTER_MAX :
                     (jitter_l4_raw  < -JITTER_MAX) ? -JITTER_MAX : jitter_l4_raw;
 assign jitter_l23 = (jitter_l23_raw > JITTER_MAX) ? JITTER_MAX :
                     (jitter_l23_raw < -JITTER_MAX) ? -JITTER_MAX : jitter_l23_raw;
+
+// v3.5: Actual L6 omega_dt for alignment detector (center + drift + jitter)
+assign omega_dt_l6_actual = OMEGA_CENTER_L6 + drift_l6 + jitter_l6;
 
 endmodule

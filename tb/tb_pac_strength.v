@@ -169,14 +169,14 @@ initial begin
     pass_count = 0;
     fail_count = 0;
 
-    // Initialize frequencies (OMEGA_DT values from architecture)
-    omega_theta = 18'd152;       // 5.89 Hz
-    omega_alpha = 18'd245;       // 9.53 Hz
-    omega_beta_low = 18'd397;    // 15.42 Hz
-    omega_beta_high = 18'd642;   // 24.94 Hz
-    omega_gamma = 18'd817;       // 31.73 Hz
-    omega_gamma_fast = 18'd1040; // 40.36 Hz
-    omega_sr_f0 = 18'd196;       // 7.6 Hz
+    // Initialize frequencies (OMEGA_DT values from architecture v12.2)
+    omega_theta = 18'd157;       // 6.09 Hz (v12.2: φ^-0.5 × 7.75)
+    omega_alpha = 18'd254;       // 9.86 Hz (v12.2: φ^0.5 × 7.75)
+    omega_beta_low = 18'd410;    // 15.95 Hz (v12.2: φ^1.5 × 7.75)
+    omega_beta_high = 18'd664;   // 25.81 Hz (v12.2: φ^2.5 × 7.75)
+    omega_gamma = 18'd845;       // 32.83 Hz (v12.2: φ^3.0 × 7.75)
+    omega_gamma_fast = 18'd1075; // 41.76 Hz (v12.2: φ^3.5 × 7.75)
+    omega_sr_f0 = 18'd199;       // 7.75 Hz (v12.2: SR1 center)
     omega_sr_f2 = 18'd514;       // 20 Hz
 
     // Initialize amplitudes to unity

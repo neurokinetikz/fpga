@@ -197,16 +197,17 @@ module cortical_column #(
 );
 
 // OMEGA_DT = 2*pi*f*dt, dt=0.00025 for 4 kHz update rate
-// Formula: OMEGA_DT = round(2π × f_hz × 0.00025 × 16384)
-localparam signed [WIDTH-1:0] OMEGA_DT_L6  = 18'sd245;   // 9.53 Hz
-localparam signed [WIDTH-1:0] OMEGA_DT_L5B = 18'sd642;   // 24.94 Hz
-localparam signed [WIDTH-1:0] OMEGA_DT_L5A = 18'sd397;   // 15.42 Hz
-localparam signed [WIDTH-1:0] OMEGA_DT_L4  = 18'sd817;   // 31.73 Hz
-localparam signed [WIDTH-1:0] OMEGA_DT_L23 = 18'sd1039;  // 40.36 Hz (slow gamma, φ³·⁵)
+// Formula: OMEGA_DT = round(2π × f_hz × 0.00025 × 16384) = round(25.736 × f_hz)
+// v12.2: All frequencies derived from SR1 = 7.75 Hz × φⁿ
+localparam signed [WIDTH-1:0] OMEGA_DT_L6  = 18'sd254;   // 9.86 Hz  (φ^0.5, v12.2: was 9.53)
+localparam signed [WIDTH-1:0] OMEGA_DT_L5A = 18'sd410;   // 15.95 Hz (φ^1.5, v12.2: was 15.42)
+localparam signed [WIDTH-1:0] OMEGA_DT_L5B = 18'sd664;   // 25.81 Hz (φ^2.5, v12.2: was 24.94)
+localparam signed [WIDTH-1:0] OMEGA_DT_L4  = 18'sd845;   // 32.83 Hz (φ^3,   v12.2: was 31.73)
+localparam signed [WIDTH-1:0] OMEGA_DT_L23 = 18'sd1075;  // 41.76 Hz (φ^3.5, v12.2: was 40.36)
 
 // v8.1: Fast gamma for encoding window - exactly φ higher than slow gamma
-// 65.3 Hz = 40.36 Hz × φ (one golden ratio step up)
-localparam signed [WIDTH-1:0] OMEGA_DT_L23_FAST = 18'sd1681;  // 65.3 Hz (fast gamma, φ⁴·⁵)
+// v12.2: 67.6 Hz = 41.76 Hz × φ (one golden ratio step up)
+localparam signed [WIDTH-1:0] OMEGA_DT_L23_FAST = 18'sd1740;  // 67.6 Hz (φ^4.5, v12.2: was 65.3)
 
 // v8.1: Theta-phase-dependent gamma frequency selection
 // encoding_window=1 → fast gamma (65.3 Hz) for precise temporal coding during sensory input
