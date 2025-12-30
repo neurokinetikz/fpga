@@ -270,13 +270,14 @@ task test_transition;
 
         case (to_state)
             STATE_ANESTHESIA: begin
-                // Note: In fast sim, oscillators have inertia - amplitude doesn't drop immediately
-                // Test that system remains stable during transition
-                if (post_theta_amp > 10000 && post_gamma_amp > 5000) begin
-                    $display("    [PASS] System stable in anesthesia (oscillators have inertia)");
+                // v12.2: ANESTHESIA state correctly suppresses gamma oscillators
+                // Gamma should be LOW (2000-5000), theta should remain stable
+                // Alpha (L6) is enhanced in anesthesia (alpha > 10000)
+                if (post_theta_amp > 10000 && post_gamma_amp > 2000 && post_gamma_amp < 10000) begin
+                    $display("    [PASS] Anesthesia state - gamma suppressed, theta stable");
                     test_pass = test_pass + 1;
                 end else begin
-                    $display("    [FAIL] System unstable in anesthesia");
+                    $display("    [FAIL] Anesthesia state unexpected (gamma=%0d should be 2000-10000)", post_gamma_amp);
                     test_fail = test_fail + 1;
                 end
             end

@@ -1,14 +1,16 @@
 //=============================================================================
-// Thalamic Frequency Drift Generator - v1.0
+// Thalamic Frequency Drift Generator - v1.1
 //
-// NEW MODULE for v12.2: Dual Alignment Ignition
+// v1.1 CHANGES (Three-Boundary Architecture):
+// - SEEKER RATE: Theta now drifts 3× faster than SR1 (reference)
+//   SR1 updates every 2s (UPDATE_PERIOD = 8000)
+//   Theta updates every 0.625s (UPDATE_PERIOD = 2500) - 3.2× faster
+// - This implements the "seeker-reference" model where internal oscillators
+//   scan faster than the external SR reference, creating alignment windows
 //
-// Adds bounded random walk frequency drift to the theta oscillator, enabling
-// stochastic alignment between internal boundary sqrt(theta*alpha) and SR1.
-//
-// Previously, theta was static at 5.89 Hz with only amplitude envelope
-// modulation. This module adds frequency drift to enable the alignment
-// detection mechanism for enhanced ignition sensitivity.
+// v1.0 (Dual Alignment Ignition - v12.2):
+// - Adds bounded random walk frequency drift to the theta oscillator
+// - Enables stochastic alignment between sqrt(theta*alpha) and SR1
 //
 // THETA FREQUENCY (derived from SR1 = 7.75 Hz):
 //   theta = SR1 / sqrt(phi) = 7.75 / 1.272 = 6.09 Hz
@@ -16,13 +18,14 @@
 //
 // DRIFT MODEL:
 // - Bounded random walk with reflecting boundaries
-// - Update rate: 0.2s (matches cortical for coordinated drift)
+// - Update rate: 0.625s (SEEKER - 3× faster than SR1's 2s)
 // - Drift range: +/-0.5 Hz (matches SR1 for boundary alignment)
 // - Fast jitter: +/-0.2 Hz per sample for naturalness
 // - Random initialization: Prevents startup alignment
 //
-// The theta drift combined with alpha drift creates alignment windows
-// where sqrt(theta*alpha) approaches SR1, enhancing ignition sensitivity.
+// ALIGNMENT WINDOW BEHAVIOR:
+// With theta/alpha drifting at ~0.125 Hz/sec and SR1 at ~0.039 Hz/sec,
+// alignment windows of 5-15 seconds emerge naturally.
 //=============================================================================
 `timescale 1ns / 1ps
 
@@ -68,15 +71,15 @@ localparam signed [WIDTH-1:0] DRIFT_MAX = 18'sd13;  // +/-0.5 Hz
 localparam signed [WIDTH-1:0] JITTER_MAX = 18'sd5;  // +/-0.2 Hz
 
 //-----------------------------------------------------------------------------
-// Update Period
-// 0.2s updates (matches cortical drift for coordinated movement)
-// FAST_SIM: 800 clk_en = 0.2s at 4kHz
-// Real-time: 1920000 clk_en = 8 minutes
+// Update Period (v1.1: SEEKER RATE - 3× faster than SR1)
+// Theta drifts 3.2× faster than SR1 (8000) to create "seeker-reference" dynamics
+// FAST_SIM: 250 clk_en = 0.0625s at 4kHz (was 800)
+// Real-time: 2500 clk_en = 0.625s at 4kHz (3× faster than SR1's 8000 = 2s)
 //-----------------------------------------------------------------------------
 `ifdef FAST_SIM
-    localparam [21:0] UPDATE_PERIOD = 22'd800;
+    localparam [21:0] UPDATE_PERIOD = 22'd1000;  // 0.25s (3× faster than SR1's 3200)
 `else
-    localparam [21:0] UPDATE_PERIOD = (FAST_SIM != 0) ? 22'd800 : 22'd1920000;
+    localparam [21:0] UPDATE_PERIOD = (FAST_SIM != 0) ? 22'd250 : 22'd2500;  // 0.625s
 `endif
 
 //-----------------------------------------------------------------------------

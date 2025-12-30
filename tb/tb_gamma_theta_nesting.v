@@ -1,9 +1,9 @@
 //=============================================================================
-// Gamma-Theta Nesting Testbench - v8.1
+// Gamma-Theta Nesting Testbench - v8.2
 //
 // Tests the theta-phase-dependent gamma frequency switching in L2/3:
-// - encoding_window=1: fast gamma (65.3 Hz, phi^4.5)
-// - encoding_window=0: slow gamma (40.36 Hz, phi^3.5)
+// - encoding_window=1: fast gamma (67.6 Hz, phi^4.5) - v12.2 update
+// - encoding_window=0: slow gamma (41.76 Hz, phi^3.5) - v12.2 update
 // - Frequency ratio = phi (exactly one golden ratio step)
 //
 // Test Scenarios:
@@ -13,9 +13,9 @@
 // 4. Smooth transitions (no amplitude discontinuities at phase boundaries)
 // 5. State independence (gamma switching works in all consciousness states)
 //
-// Period calculations at 4 kHz update rate:
-// - Slow gamma (40.36 Hz): period = 24.78ms -> 99 clk_en pulses/cycle
-// - Fast gamma (65.3 Hz):  period = 15.31ms -> 61 clk_en pulses/cycle
+// Period calculations at 4 kHz update rate (v12.2):
+// - Slow gamma (41.76 Hz): period = 23.95ms -> 96 clk_en pulses/cycle
+// - Fast gamma (67.6 Hz):  period = 14.79ms -> 59 clk_en pulses/cycle
 //=============================================================================
 `timescale 1ns / 1ps
 
@@ -81,12 +81,12 @@ wire signed [WIDTH-1:0] motor_l23_x = dut.motor_l23_x;
 // Access to omega_eff_l23 through cortical column (v10.0: renamed from omega_dt_l23_active)
 wire signed [WIDTH-1:0] omega_dt_active = dut.col_motor.omega_eff_l23;
 
-// v10.0: Base OMEGA_DT values and drift tolerance
-// Fast gamma: 1681 (65.3 Hz), Slow gamma: 1039 (40.36 Hz)
+// v12.2: Base OMEGA_DT values and drift tolerance
+// Fast gamma: 1740 (67.6 Hz, φ^4.5), Slow gamma: 1075 (41.76 Hz, φ^3.5)
 // v3.3: Tolerance reverted after cortical_frequency_drift jitter fix
 // drift ±0.5 Hz (±13) + jitter ±0.2 Hz (±5) = ±0.7 Hz total (±18 units)
-localparam signed [WIDTH-1:0] OMEGA_FAST = 18'sd1681;
-localparam signed [WIDTH-1:0] OMEGA_SLOW = 18'sd1039;
+localparam signed [WIDTH-1:0] OMEGA_FAST = 18'sd1740;  // v12.2: was 1681
+localparam signed [WIDTH-1:0] OMEGA_SLOW = 18'sd1075;  // v12.2: was 1039
 localparam signed [WIDTH-1:0] OMEGA_DRIFT_TOL = 18'sd20;  // ±0.7 Hz drift+jitter tolerance
 
 // Fast clock: 10ns period (100 MHz)
@@ -146,11 +146,11 @@ endtask
 //-----------------------------------------------------------------------------
 initial begin
     $display("========================================");
-    $display("GAMMA-THETA NESTING TESTBENCH v8.1");
+    $display("GAMMA-THETA NESTING TESTBENCH v8.2");
     $display("========================================");
     $display("Testing L2/3 gamma frequency switching:");
-    $display("  Encoding:  65.3 Hz (fast gamma, phi^4.5)");
-    $display("  Retrieval: 40.36 Hz (slow gamma, phi^3.5)");
+    $display("  Encoding:  67.6 Hz (fast gamma, phi^4.5)");
+    $display("  Retrieval: 41.76 Hz (slow gamma, phi^3.5)");
     $display("  Ratio:     phi = 1.618");
     $display("========================================\n");
 
@@ -203,9 +203,9 @@ initial begin
             end
         end
 
-        $display("         Fast gamma OMEGA_DT (~1681±20) during encoding: %s",
+        $display("         Fast gamma OMEGA_DT (~1740±20) during encoding: %s",
                  encoding_omega_seen ? "YES" : "NO");
-        $display("         Slow gamma OMEGA_DT (~1039±20) during retrieval: %s",
+        $display("         Slow gamma OMEGA_DT (~1075±20) during retrieval: %s",
                  retrieval_omega_seen ? "YES" : "NO");
 
         if (encoding_omega_seen && retrieval_omega_seen) begin
@@ -296,13 +296,13 @@ initial begin
 
     //=========================================================================
     // TEST 3: Verify frequency ratio is correct by OMEGA_DT values
-    // Fast = 1681, Slow = 1039. Ratio should be ~1.618 (phi)
+    // Fast = 1740, Slow = 1075. Ratio should be ~1.618 (phi)
     //=========================================================================
     $display("\n[TEST 3] OMEGA_DT ratio verification");
     begin : test3_block
         real omega_ratio;
-        omega_ratio = 1681.0 / 1039.0;
-        $display("         OMEGA_DT fast: 1681, OMEGA_DT slow: 1039");
+        omega_ratio = 1740.0 / 1075.0;  // v12.2: updated values
+        $display("         OMEGA_DT fast: 1740, OMEGA_DT slow: 1075");
         $display("         Ratio: %.3f (theoretical phi: 1.618)", omega_ratio);
         // The ratio is computed from constants - should be exactly right
         if (omega_ratio > 1.61 && omega_ratio < 1.62) begin
@@ -348,8 +348,8 @@ initial begin
             end
         end
 
-        $display("         Synced fast (enc=1, omega~1681): %0d", synced_fast);
-        $display("         Synced slow (enc=0, omega~1039): %0d", synced_slow);
+        $display("         Synced fast (enc=1, omega~1740): %0d", synced_fast);
+        $display("         Synced slow (enc=0, omega~1075): %0d", synced_slow);
         $display("         Mismatched: %0d", mismatched);
 
         // v10.0: Accept some mismatches due to drift variation

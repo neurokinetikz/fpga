@@ -1,11 +1,11 @@
 //=============================================================================
-// Cortical Frequency Drift Generator - v3.5
+// Cortical Frequency Drift Generator - v3.6
 //
 // Models frequency variability in cortical oscillators for EEG-realistic output.
 // Three components work together:
 //
-// 1. SLOW DRIFT: Bounded random walk (per-layer ranges, see below)
-//    - Updates every 0.2s in simulation
+// 1. SLOW DRIFT: Bounded random walk (per-layer ranges AND rates, see below)
+//    - v3.6: Per-layer update rates for "seeker-reference" dynamics
 //    - Models slow frequency drift seen in EEG
 //    - v3.5: Per-layer drift ranges matching SR harmonics
 //
@@ -19,6 +19,16 @@
 //    - Receives force from energy_landscape.v
 //    - Guides oscillators toward φⁿ half-integer attractors
 //    - Force added to drift update with gain K_FORCE
+//
+// v3.6 CHANGES (Three-Boundary Architecture):
+// - SEEKER RATES: Internal oscillators drift 3-5× faster than SR partners
+//     L6:  0.625s (3× faster than SR1's 2s)    UPDATE_PERIOD = 2500
+//     L5a: 2.0s   (5× faster than SR3's 10s)   UPDATE_PERIOD = 8000
+//     L5b: 0.325s (3× faster than SR4's 1s)    UPDATE_PERIOD = 1300
+//     L4:  0.625s (3× faster than SR5's 2s)    UPDATE_PERIOD = 2500
+//     L23: 0.625s (same as L4)                 UPDATE_PERIOD = 2500
+// - This implements the "seeker-reference" model where internal oscillators
+//   scan faster than the external SR reference, creating alignment windows
 //
 // v3.5 CHANGES (Dual Alignment Ignition - v12.2):
 // - Updated all frequencies to derive from SR1 = 7.75 Hz × φⁿ
@@ -148,34 +158,98 @@ localparam signed [WIDTH-1:0] JITTER_MAX = 18'sd5;  // ±0.2 Hz (was ±4 Hz)
 localparam signed [WIDTH-1:0] K_FORCE = 18'sd1638;  // 0.1 in Q14
 
 //-----------------------------------------------------------------------------
-// Update Period
-// Slower than SR drift - cortical oscillators are more stable
-// FAST_SIM: 800 clk_en = 0.2s at 4kHz
-// Real-time: 1920000 clk_en = 8 minutes
+// v3.6: Per-Layer Update Periods (SEEKER RATES)
+// Internal oscillators drift 3-5× faster than their SR partners
+// Creating "seeker-reference" dynamics for alignment window emergence
 //-----------------------------------------------------------------------------
 `ifdef FAST_SIM
-    localparam [21:0] UPDATE_PERIOD = 22'd800;      // 0.2s updates (slower than SR)
+    // FAST_SIM: Scaled for longer alignment windows (~10-20ms instead of ~3ms)
+    // Increased 4x from previous values while maintaining seeker-reference ratio
+    localparam [21:0] UPDATE_PERIOD_L6  = 22'd1000;  // 0.25s (3× faster than SR1's 3200)
+    localparam [21:0] UPDATE_PERIOD_L5A = 22'd3200;  // 0.8s (5× faster than SR3's 16000)
+    localparam [21:0] UPDATE_PERIOD_L5B = 22'd500;   // 0.125s (3× faster than SR4's 1600)
+    localparam [21:0] UPDATE_PERIOD_L4  = 22'd1000;  // 0.25s (3× faster than SR5's 3200)
+    localparam [21:0] UPDATE_PERIOD_L23 = 22'd1000;  // 0.25s (same as L4)
 `else
-    localparam [21:0] UPDATE_PERIOD = (FAST_SIM != 0) ? 22'd800 : 22'd1920000;
+    // Real-time: Seeker rates relative to SR stability hierarchy
+    localparam [21:0] UPDATE_PERIOD_L6  = (FAST_SIM != 0) ? 22'd250  : 22'd2500;   // 0.625s (3× SR1)
+    localparam [21:0] UPDATE_PERIOD_L5A = (FAST_SIM != 0) ? 22'd800  : 22'd8000;   // 2.0s (5× SR3)
+    localparam [21:0] UPDATE_PERIOD_L5B = (FAST_SIM != 0) ? 22'd130  : 22'd1300;   // 0.325s (3× SR4)
+    localparam [21:0] UPDATE_PERIOD_L4  = (FAST_SIM != 0) ? 22'd250  : 22'd2500;   // 0.625s (3× SR5)
+    localparam [21:0] UPDATE_PERIOD_L23 = (FAST_SIM != 0) ? 22'd250  : 22'd2500;   // 0.625s
 `endif
 
 //-----------------------------------------------------------------------------
-// Update Counter
+// v3.6: Per-Layer Update Counters
+// Each layer has its own counter and update tick for independent seeker rates
 //-----------------------------------------------------------------------------
-reg [21:0] update_counter;
-wire update_tick;
+reg [21:0] update_counter_l6, update_counter_l5a, update_counter_l5b;
+reg [21:0] update_counter_l4, update_counter_l23;
+wire update_tick_l6, update_tick_l5a, update_tick_l5b, update_tick_l4, update_tick_l23;
 
-assign update_tick = (update_counter == UPDATE_PERIOD);
+assign update_tick_l6  = (update_counter_l6  == UPDATE_PERIOD_L6);
+assign update_tick_l5a = (update_counter_l5a == UPDATE_PERIOD_L5A);
+assign update_tick_l5b = (update_counter_l5b == UPDATE_PERIOD_L5B);
+assign update_tick_l4  = (update_counter_l4  == UPDATE_PERIOD_L4);
+assign update_tick_l23 = (update_counter_l23 == UPDATE_PERIOD_L23);
 
+// L6 Update Counter
 always @(posedge clk or posedge rst) begin
     if (rst) begin
-        update_counter <= 22'd0;
+        update_counter_l6 <= 22'd0;
     end else if (clk_en) begin
-        if (update_tick) begin
-            update_counter <= 22'd0;
-        end else begin
-            update_counter <= update_counter + 1'b1;
-        end
+        if (update_tick_l6)
+            update_counter_l6 <= 22'd0;
+        else
+            update_counter_l6 <= update_counter_l6 + 1'b1;
+    end
+end
+
+// L5a Update Counter
+always @(posedge clk or posedge rst) begin
+    if (rst) begin
+        update_counter_l5a <= 22'd0;
+    end else if (clk_en) begin
+        if (update_tick_l5a)
+            update_counter_l5a <= 22'd0;
+        else
+            update_counter_l5a <= update_counter_l5a + 1'b1;
+    end
+end
+
+// L5b Update Counter
+always @(posedge clk or posedge rst) begin
+    if (rst) begin
+        update_counter_l5b <= 22'd0;
+    end else if (clk_en) begin
+        if (update_tick_l5b)
+            update_counter_l5b <= 22'd0;
+        else
+            update_counter_l5b <= update_counter_l5b + 1'b1;
+    end
+end
+
+// L4 Update Counter
+always @(posedge clk or posedge rst) begin
+    if (rst) begin
+        update_counter_l4 <= 22'd0;
+    end else if (clk_en) begin
+        if (update_tick_l4)
+            update_counter_l4 <= 22'd0;
+        else
+            update_counter_l4 <= update_counter_l4 + 1'b1;
+    end
+end
+
+// L2/3 Update Counter
+always @(posedge clk or posedge rst) begin
+    if (rst) begin
+        update_counter_l23 <= 22'd0;
+    end else if (clk_en) begin
+        if (update_tick_l23)
+            update_counter_l23 <= 22'd0;
+        else
+            update_counter_l23 <= update_counter_l23 + 1'b1;
     end
 end
 
@@ -262,6 +336,7 @@ reg signed [WIDTH-1:0] next_drift_l4, next_drift_l23;
 
 //-----------------------------------------------------------------------------
 // Random Walk Update Logic - L6 Alpha
+// v3.6: Uses per-layer update_tick_l6 for seeker rate
 // v3.0: Adds force_contrib when ENABLE_ADAPTIVE=1
 // v3.5: Uses per-layer DRIFT_MAX and random initialization
 //-----------------------------------------------------------------------------
@@ -269,7 +344,7 @@ always @(posedge clk or posedge rst) begin
     if (rst) begin
         lfsr_l6 <= LFSR_SEED_L6;
         drift_l6_reg <= init_offset_l6;  // v3.5: Random initial position
-    end else if (clk_en && update_tick) begin
+    end else if (clk_en && update_tick_l6) begin  // v3.6: Per-layer tick
         lfsr_l6 <= {lfsr_l6[14:0], fb_l6};
         // v3.0: Base step + force contribution + v11.2 omega correction, then clamp
         next_drift_l6 = dir_l6 ? (drift_l6_reg + step_l6 + force_contrib_l6 + omega_corr_contrib_l6)
@@ -285,6 +360,7 @@ end
 
 //-----------------------------------------------------------------------------
 // Random Walk Update Logic - L5a Low Beta
+// v3.6: Uses per-layer update_tick_l5a for seeker rate (5× faster than SR3)
 // v3.0: Adds force_contrib when ENABLE_ADAPTIVE=1
 // v3.5: Uses per-layer DRIFT_MAX and random initialization
 //-----------------------------------------------------------------------------
@@ -292,7 +368,7 @@ always @(posedge clk or posedge rst) begin
     if (rst) begin
         lfsr_l5a <= LFSR_SEED_L5A;
         drift_l5a_reg <= init_offset_l5a;  // v3.5: Random initial position
-    end else if (clk_en && update_tick) begin
+    end else if (clk_en && update_tick_l5a) begin  // v3.6: Per-layer tick
         lfsr_l5a <= {lfsr_l5a[14:0], fb_l5a};
         next_drift_l5a = dir_l5a ? (drift_l5a_reg + step_l5a + force_contrib_l5a + omega_corr_contrib_l5a)
                                  : (drift_l5a_reg - step_l5a + force_contrib_l5a + omega_corr_contrib_l5a);
@@ -307,6 +383,7 @@ end
 
 //-----------------------------------------------------------------------------
 // Random Walk Update Logic - L5b High Beta
+// v3.6: Uses per-layer update_tick_l5b for seeker rate (3× faster than SR4)
 // v3.0: Adds force_contrib when ENABLE_ADAPTIVE=1
 // v3.5: Uses per-layer DRIFT_MAX and random initialization
 //-----------------------------------------------------------------------------
@@ -314,7 +391,7 @@ always @(posedge clk or posedge rst) begin
     if (rst) begin
         lfsr_l5b <= LFSR_SEED_L5B;
         drift_l5b_reg <= init_offset_l5b;  // v3.5: Random initial position
-    end else if (clk_en && update_tick) begin
+    end else if (clk_en && update_tick_l5b) begin  // v3.6: Per-layer tick
         lfsr_l5b <= {lfsr_l5b[14:0], fb_l5b};
         next_drift_l5b = dir_l5b ? (drift_l5b_reg + step_l5b + force_contrib_l5b + omega_corr_contrib_l5b)
                                  : (drift_l5b_reg - step_l5b + force_contrib_l5b + omega_corr_contrib_l5b);
@@ -329,6 +406,7 @@ end
 
 //-----------------------------------------------------------------------------
 // Random Walk Update Logic - L4 Low Gamma
+// v3.6: Uses per-layer update_tick_l4 for seeker rate (3× faster than SR5)
 // v3.0: Adds force_contrib when ENABLE_ADAPTIVE=1
 // v3.5: Uses per-layer DRIFT_MAX and random initialization
 //-----------------------------------------------------------------------------
@@ -336,7 +414,7 @@ always @(posedge clk or posedge rst) begin
     if (rst) begin
         lfsr_l4 <= LFSR_SEED_L4;
         drift_l4_reg <= init_offset_l4;  // v3.5: Random initial position
-    end else if (clk_en && update_tick) begin
+    end else if (clk_en && update_tick_l4) begin  // v3.6: Per-layer tick
         lfsr_l4 <= {lfsr_l4[14:0], fb_l4};
         next_drift_l4 = dir_l4 ? (drift_l4_reg + step_l4 + force_contrib_l4 + omega_corr_contrib_l4)
                                : (drift_l4_reg - step_l4 + force_contrib_l4 + omega_corr_contrib_l4);
@@ -351,6 +429,7 @@ end
 
 //-----------------------------------------------------------------------------
 // Random Walk Update Logic - L2/3 Gamma
+// v3.6: Uses per-layer update_tick_l23 for seeker rate
 // v3.0: Adds force_contrib when ENABLE_ADAPTIVE=1
 // v3.5: Uses per-layer DRIFT_MAX and random initialization
 //-----------------------------------------------------------------------------
@@ -358,7 +437,7 @@ always @(posedge clk or posedge rst) begin
     if (rst) begin
         lfsr_l23 <= LFSR_SEED_L23;
         drift_l23_reg <= init_offset_l23;  // v3.5: Random initial position
-    end else if (clk_en && update_tick) begin
+    end else if (clk_en && update_tick_l23) begin  // v3.6: Per-layer tick
         lfsr_l23 <= {lfsr_l23[14:0], fb_l23};
         next_drift_l23 = dir_l23 ? (drift_l23_reg + step_l23 + force_contrib_l23 + omega_corr_contrib_l23)
                                  : (drift_l23_reg - step_l23 + force_contrib_l23 + omega_corr_contrib_l23);

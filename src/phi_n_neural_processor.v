@@ -1,5 +1,16 @@
 //=============================================================================
-// Top-Level Module - v11.6 with Dual Alignment Ignition (v12.2)
+// Top-Level Module - v12.0 with Three-Boundary Architecture
+//
+// v12.0 CHANGES (Three-Boundary Architecture):
+// - Added ENABLE_THREE_BOUNDARY parameter (default 0 for backward compatibility)
+// - Instantiated boundary_detector_f2 for f₂=√(β_low×β_high) → SR3 (stability)
+// - Instantiated boundary_detector_f3 for f₃=√(β_high×γ) → SR5 (consciousness)
+// - Instantiated direct_coupling_sr4 for β_high → SR4 (arousal)
+// - Instantiated multi_alignment_ctrl for combined alignment control
+// - Added omega_dt_f*_actual outputs from sr_frequency_drift for all harmonics
+// - Added debug outputs for three-boundary monitoring
+// - SR drift now uses stability hierarchy (per-harmonic update rates)
+// - Cortical drift now uses seeker rates (per-layer update rates)
 //
 // v11.6 CHANGES (Dual Alignment Ignition - v12.2):
 // - Added ENABLE_ALIGNMENT parameter (default 0 for backward compatibility)
@@ -197,6 +208,7 @@ module phi_n_neural_processor #(
     parameter SR_DRIFT_ENABLE = 1,  // v8.2: Enable SR frequency drift (realistic variation)
     parameter ENABLE_ADAPTIVE = 0,  // v11.0: Enable active φⁿ dynamics (self-organizing)
     parameter ENABLE_ALIGNMENT = 0,  // v11.6: Enable alignment-modulated ignition threshold
+    parameter ENABLE_THREE_BOUNDARY = 0,  // v12.0: Enable three-boundary architecture
     parameter RANDOM_INIT = 1        // v11.6: Enable random initialization for stochastic startup
 )(
     input  wire clk,
@@ -301,10 +313,15 @@ sr_noise_generator #(
 // Models realistic hours-scale frequency drift observed in real SR monitoring
 // Natural detuning between SR and neural frequencies prevents unrealistic coherence
 // v11.6: Added RANDOM_INIT and omega_dt_f0_actual output for alignment detector
+// v12.0: Added omega_dt_f*_actual for all harmonics (three-boundary architecture)
 //-----------------------------------------------------------------------------
 wire signed [NUM_HARMONICS*WIDTH-1:0] sr_omega_dt_packed;
 wire signed [NUM_HARMONICS*WIDTH-1:0] sr_drift_offset_packed;
-wire signed [WIDTH-1:0] omega_dt_sr_f0_actual;  // v11.6: For alignment detector
+wire signed [WIDTH-1:0] omega_dt_sr_f0_actual;  // SR1 for f₀ alignment
+wire signed [WIDTH-1:0] omega_dt_sr_f1_actual;  // SR2
+wire signed [WIDTH-1:0] omega_dt_sr_f2_actual;  // SR3 for f₂ alignment (stability)
+wire signed [WIDTH-1:0] omega_dt_sr_f3_actual;  // SR4 for arousal coupling
+wire signed [WIDTH-1:0] omega_dt_sr_f4_actual;  // SR5 for f₃ alignment (consciousness)
 
 sr_frequency_drift #(
     .WIDTH(WIDTH),
@@ -318,7 +335,12 @@ sr_frequency_drift #(
     .clk_en(clk_4khz_en),
     .omega_dt_packed(sr_omega_dt_packed),
     .drift_offset_packed(sr_drift_offset_packed),
-    .omega_dt_f0_actual(omega_dt_sr_f0_actual)  // v11.6: For alignment detector
+    // v12.0: Per-harmonic actual omega outputs
+    .omega_dt_f0_actual(omega_dt_sr_f0_actual),
+    .omega_dt_f1_actual(omega_dt_sr_f1_actual),
+    .omega_dt_f2_actual(omega_dt_sr_f2_actual),
+    .omega_dt_f3_actual(omega_dt_sr_f3_actual),
+    .omega_dt_f4_actual(omega_dt_sr_f4_actual)
 );
 
 //-----------------------------------------------------------------------------
@@ -566,6 +588,132 @@ phi_n_alignment_detector #(
 );
 
 //-----------------------------------------------------------------------------
+// v12.0: Three-Boundary Architecture Modules (Conditional on ENABLE_THREE_BOUNDARY)
+// f₀ = √(θ×α) → SR1 (ignition primary) - already in phi_n_alignment_detector
+// f₂ = √(β_low×β_high) → SR3 (stability anchor)
+// f₃ = √(β_high×γ) → SR5 (consciousness gate)
+// SR4 = direct β_high → SR4 (arousal modulation)
+//-----------------------------------------------------------------------------
+
+// Compute actual cortical omega values (center + drift + jitter)
+wire signed [WIDTH-1:0] omega_dt_l5a_actual = OMEGA_DT_BETA_LOW  + cortical_drift_l5a + cortical_jitter_l5a;
+wire signed [WIDTH-1:0] omega_dt_l5b_actual = OMEGA_DT_BETA_HIGH + cortical_drift_l5b + cortical_jitter_l5b;
+wire signed [WIDTH-1:0] omega_dt_l4_actual  = OMEGA_DT_GAMMA     + cortical_drift_l4  + cortical_jitter_l4;
+
+// Three-boundary outputs (active when ENABLE_THREE_BOUNDARY=1)
+wire signed [WIDTH-1:0] f2_boundary_out, f2_detuning_out, f2_alignment_out, f2_stability_out;
+wire signed [WIDTH-1:0] f3_boundary_out, f3_detuning_out, f3_alignment_out, f3_consciousness_out;
+wire signed [WIDTH-1:0] sr4_detuning_out, sr4_coupling_out;
+wire signed [WIDTH-1:0] multi_threshold_out, multi_overall_alignment;
+wire multi_ignition_permitted, multi_consciousness_possible;
+
+// v12.2h: Forward declare beta_quiet_int BEFORE generate block
+// to ensure proper signal connection for multi_alignment_ctrl
+wire beta_quiet_int;
+
+generate
+if (ENABLE_THREE_BOUNDARY) begin : three_boundary_gen
+    //-------------------------------------------------------------------------
+    // f₂ Boundary Detector: √(β_low × β_high) → SR3 (Stability Anchor)
+    //-------------------------------------------------------------------------
+    boundary_detector_f2 #(
+        .WIDTH(WIDTH),
+        .FRAC(FRAC)
+    ) f2_det (
+        .clk(clk),
+        .rst(rst),
+        .clk_en(clk_4khz_en),
+        .omega_beta_low_actual(omega_dt_l5a_actual),
+        .omega_beta_high_actual(omega_dt_l5b_actual),
+        .omega_sr3_actual(omega_dt_sr_f2_actual),  // SR3 = f₂
+        .f2_boundary(f2_boundary_out),
+        .f2_detuning(f2_detuning_out),
+        .f2_alignment(f2_alignment_out),
+        .f2_stability_score(f2_stability_out)
+    );
+
+    //-------------------------------------------------------------------------
+    // f₃ Boundary Detector: √(β_high × γ) → SR5 (Consciousness Gate)
+    //-------------------------------------------------------------------------
+    boundary_detector_f3 #(
+        .WIDTH(WIDTH),
+        .FRAC(FRAC)
+    ) f3_det (
+        .clk(clk),
+        .rst(rst),
+        .clk_en(clk_4khz_en),
+        .omega_beta_high_actual(omega_dt_l5b_actual),
+        .omega_gamma_actual(omega_dt_l4_actual),
+        .omega_sr5_actual(omega_dt_sr_f4_actual),  // SR5 = f₄
+        .f3_boundary(f3_boundary_out),
+        .f3_detuning(f3_detuning_out),
+        .f3_alignment(f3_alignment_out),
+        .f3_consciousness_gate(f3_consciousness_out)
+    );
+
+    //-------------------------------------------------------------------------
+    // SR4 Direct Coupling: β_high → SR4 (Arousal Modulation)
+    //-------------------------------------------------------------------------
+    direct_coupling_sr4 #(
+        .WIDTH(WIDTH),
+        .FRAC(FRAC)
+    ) sr4_coup (
+        .clk(clk),
+        .rst(rst),
+        .clk_en(clk_4khz_en),
+        .omega_beta_high_actual(omega_dt_l5b_actual),
+        .omega_sr4_actual(omega_dt_sr_f3_actual),  // SR4 = f₃
+        .sr4_detuning(sr4_detuning_out),
+        .sr4_coupling_strength(sr4_coupling_out)
+    );
+
+    //-------------------------------------------------------------------------
+    // Multi-Alignment Controller: Orchestrates all boundary alignments
+    //-------------------------------------------------------------------------
+    multi_alignment_ctrl #(
+        .WIDTH(WIDTH),
+        .FRAC(FRAC)
+    ) align_ctrl (
+        .clk(clk),
+        .rst(rst),
+        .clk_en(clk_4khz_en),
+        // Alignment inputs from boundary detectors
+        .f0_alignment(alignment_factor),
+        .f0_ignition_sens(ignition_sensitivity),
+        .f2_alignment(f2_alignment_out),
+        .f2_stability(f2_stability_out),
+        .f3_alignment(f3_alignment_out),
+        .f3_consciousness(f3_consciousness_out),
+        .sr4_coupling(sr4_coupling_out),
+        // State inputs
+        .beta_quiet(beta_quiet_int),
+        .base_threshold(18'sd12288),  // 0.75 Q14 nominal threshold
+        // Outputs
+        .ignition_threshold(multi_threshold_out),
+        .overall_alignment(multi_overall_alignment),
+        .ignition_permitted(multi_ignition_permitted),
+        .consciousness_access_possible(multi_consciousness_possible)
+    );
+end else begin : no_three_boundary
+    // When disabled, outputs are zeroed
+    assign f2_boundary_out = 18'sd0;
+    assign f2_detuning_out = 18'sd0;
+    assign f2_alignment_out = 18'sd0;
+    assign f2_stability_out = 18'sd0;
+    assign f3_boundary_out = 18'sd0;
+    assign f3_detuning_out = 18'sd0;
+    assign f3_alignment_out = 18'sd0;
+    assign f3_consciousness_out = 18'sd0;
+    assign sr4_detuning_out = 18'sd0;
+    assign sr4_coupling_out = 18'sd0;
+    assign multi_threshold_out = 18'sd12288;  // Fixed 0.75 threshold
+    assign multi_overall_alignment = 18'sd0;
+    assign multi_ignition_permitted = 1'b0;
+    assign multi_consciousness_possible = 1'b0;
+end
+endgenerate
+
+//-----------------------------------------------------------------------------
 // v10.1: Amplitude Envelope Generators for Output Mixer
 // Creates biological "alpha breathing" effect where band power waxes and wanes.
 // These are separate from cortical column internal envelopes (which modulate MU).
@@ -702,13 +850,13 @@ wire [2:0] sie_ignition_phase;
 wire sie_ignition_active;
 
 // Use f0 coherence from thalamus for ignition triggering
-// Note: beta_quiet_int is a forward declaration resolved after thalamus
-wire beta_quiet_int;
+// Note: beta_quiet_int is now declared before generate block (line ~612)
 
 sr_ignition_controller #(
     .WIDTH(WIDTH),
     .FRAC(FRAC),
-    .ENABLE_ALIGNMENT(ENABLE_ALIGNMENT)  // v11.6: Enable alignment-modulated threshold
+    .ENABLE_ALIGNMENT(ENABLE_ALIGNMENT),         // v11.6: Enable alignment-modulated threshold
+    .ENABLE_THREE_BOUNDARY(ENABLE_THREE_BOUNDARY) // v12.0: Enable three-boundary architecture
 ) ignition_ctrl (
     .clk(clk),
     .rst(rst),
@@ -723,6 +871,11 @@ sr_ignition_controller #(
     // v11.6: Alignment inputs from phi_n_alignment_detector
     .alignment_factor(alignment_factor),
     .crystallinity(crystallinity),
+
+    // v12.0: Multi-alignment inputs from multi_alignment_ctrl
+    // When ENABLE_THREE_BOUNDARY=0, these are tied to default values
+    .multi_alignment_threshold(multi_threshold_out),
+    .multi_ignition_permitted(multi_ignition_permitted),
 
     // Phase timing (from config_controller)
     .phase2_dur(sie_phase2_dur),

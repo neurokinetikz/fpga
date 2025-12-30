@@ -149,12 +149,12 @@ task init_inputs;
         phase_couple_l23 = 0;
         phase_couple_l6 = 0;
         encoding_window = 0;
-        // Standard MU values
-        mu_dt_l6 = 18'sd66;   // MU=4
-        mu_dt_l5b = 18'sd66;
-        mu_dt_l5a = 18'sd66;
-        mu_dt_l4 = 18'sd66;
-        mu_dt_l23 = 18'sd66;
+        // Standard MU values (v11.4: raw MU values 1-6, not scaled by 16.5)
+        mu_dt_l6 = 18'sd4;    // MU=4 (was 66, now raw value)
+        mu_dt_l5b = 18'sd4;
+        mu_dt_l5a = 18'sd4;
+        mu_dt_l4 = 18'sd4;
+        mu_dt_l23 = 18'sd4;
     end
 endtask
 
@@ -236,8 +236,8 @@ initial begin
     rst = 0;
     init_inputs;
 
-    // High MU for enhanced oscillation
-    mu_dt_l23 = 18'sd99;  // MU=6 (enhanced)
+    // High MU for enhanced oscillation (v11.4: raw MU value)
+    mu_dt_l23 = 18'sd6;   // MU=6 (enhanced, was 99)
     feedforward_input = 18'sd4096;  // 0.25 - moderate input
 
     wait_cycles(500);

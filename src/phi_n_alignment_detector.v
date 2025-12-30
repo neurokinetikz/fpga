@@ -1,5 +1,5 @@
 //=============================================================================
-// phi^n Alignment Detector - v1.0
+// phi^n Alignment Detector - v1.1
 //
 // NEW MODULE for v12.2: Dual Alignment Ignition
 //
@@ -55,13 +55,14 @@ localparam signed [WIDTH-1:0] ONE = 18'sd16384;        // 1.0 in Q14
 localparam signed [WIDTH-1:0] PHI_Q14 = 18'sd26510;    // phi = 1.618 in Q14
 
 // Gaussian width for alignment factor
-// sigma = 5 OMEGA_DT units (~0.2 Hz)
-// sigma^2 = 25
-localparam signed [WIDTH-1:0] SIGMA_SQ = 18'sd25;
+// v1.1: Widened from σ=5 to σ=8 for longer alignment windows
+// sigma = 8 OMEGA_DT units (~0.3 Hz)
+// sigma^2 = 64
+localparam signed [WIDTH-1:0] SIGMA_SQ = 18'sd64;
 
 // For Gaussian approximation: 1 - x^2/sigma^2
-// Scale factor = ONE / SIGMA_SQ = 16384 / 25 = 655
-localparam signed [WIDTH-1:0] GAUSSIAN_SCALE = 18'sd655;
+// Scale factor = ONE / SIGMA_SQ = 16384 / 64 = 256
+localparam signed [WIDTH-1:0] GAUSSIAN_SCALE = 18'sd256;
 
 //-----------------------------------------------------------------------------
 // Pipeline Stage 1: Compute product theta * alpha
@@ -171,8 +172,8 @@ always @(posedge clk or posedge rst) begin
         detuning_sq <= detuning_raw * detuning_raw;
 
         // Gaussian approximation
-        // If detuning > 5 (sigma), alignment ~= 0
-        if (detuning_raw > 18'sd5) begin
+        // If detuning > 8 (sigma), alignment ~= 0
+        if (detuning_raw > 18'sd8) begin
             alignment_raw <= 18'sd0;
         end else begin
             // alignment = ONE - detuning_sq * GAUSSIAN_SCALE

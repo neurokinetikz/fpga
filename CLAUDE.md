@@ -4,7 +4,7 @@
 
 This is an FPGA implementation of a biologically-realistic neural oscillator system based on the **φⁿ (golden ratio) frequency architecture** with Schumann Resonance coupling. The system implements 21 Hopf oscillators organized into a thalamo-cortical architecture for neural signal processing and consciousness state modeling.
 
-**Current Version:** v12.2 (Dual Alignment Ignition)
+**Current Version:** v12.3 (Three-Boundary Architecture)
 **Target Platform:** Digilent Zybo Z7-20 (Xilinx Zynq-7020)
 
 ## Quick Start
@@ -49,24 +49,28 @@ make clean             # Clean generated files
 
 ```
 fpga/
-├── src/                          # Verilog source modules (31 files)
-│   ├── phi_n_neural_processor.v  # Top-level (v11.6, dual alignment ignition)
+├── src/                          # Verilog source modules (35 files)
+│   ├── phi_n_neural_processor.v  # Top-level (v12.3, three-boundary architecture)
 │   ├── hopf_oscillator.v         # Core oscillator (v6.0, dx/dt = μx - ωy - r²x)
 │   ├── hopf_oscillator_stochastic.v # Stochastic variant with noise input
 │   ├── ca3_phase_memory.v        # Hebbian phase memory (v8.0, theta-gated)
 │   ├── thalamus.v                # Theta + SR + matrix (v11.6, alignment drift)
-│   ├── thalamic_frequency_drift.v # v1.0: Theta frequency drift for alignment
+│   ├── thalamic_frequency_drift.v # v1.1: Theta seeker rate (3.2× faster)
 │   ├── cortical_column.v         # 6-layer cortical model (v12.2, φⁿ×7.75 Hz)
-│   ├── phi_n_alignment_detector.v # v1.0: √(θ×α) = SR1 alignment detection
+│   ├── phi_n_alignment_detector.v # v1.1: √(θ×α) = SR1, widened σ=8
+│   ├── boundary_detector_f2.v    # v1.1: √(β_low×β_high) → SR3 stability anchor
+│   ├── boundary_detector_f3.v    # v1.0: √(β_high×γ) → SR5 consciousness gate
+│   ├── direct_coupling_sr4.v     # v1.1: β_high → SR4 arousal modulation
+│   ├── multi_alignment_ctrl.v    # v1.2k: Four-boundary orchestration controller
 │   ├── dendritic_compartment.v   # v9.5: Two-compartment dendritic model
 │   ├── layer1_minimal.v          # Layer 1 with L6 input (v9.6)
 │   ├── pv_interneuron.v          # PV+ basket cell dynamics (v9.2)
 │   ├── sr_harmonic_bank.v        # 5-harmonic SR bank (v7.7, dynamic SIE from stability)
 │   ├── sr_noise_generator.v      # Per-harmonic stochastic noise (5 LFSRs)
-│   ├── sr_frequency_drift.v      # v2.1: f₀=7.75 Hz, tightened drift ±0.5 Hz
-│   ├── sr_ignition_controller.v  # v1.4: Alignment-modulated threshold
+│   ├── sr_frequency_drift.v      # v3.0: Per-harmonic stability hierarchy
+│   ├── sr_ignition_controller.v  # v1.5: Three-boundary permission system
 │   ├── amplitude_envelope_generator.v # v11.4: O-U process with parameterized bounds
-│   ├── cortical_frequency_drift.v # v3.5: Per-layer drift matching SR harmonics
+│   ├── cortical_frequency_drift.v # v3.6: Per-layer seeker rates (3-5× faster)
 │   ├── config_controller.v       # Consciousness states (v11.4, state interpolation)
 │   ├── clock_enable_generator.v  # FAST_SIM-aware 4kHz clock (v6.0)
 │   ├── pink_noise_generator.v    # 1/f^φ noise (v7.2, √Fibonacci-weighted)
@@ -81,12 +85,13 @@ fpga/
 │   ├── bicoherence_monitor.v     # v11.3: Three-frequency coupling detection
 │   ├── coupling_mode_controller.v # v1.2b: Synchronized gain interpolation
 │   └── harmonic_spacing_index.v  # v11.3: φⁿ ratio deviation monitoring
-├── tb/                           # Testbenches (37 files)
+├── tb/                           # Testbenches (38 files)
 │   ├── tb_full_system_fast.v     # Full system integration (v6.5, 15 tests)
+│   ├── tb_three_boundary.v       # v12.3: Three-boundary architecture tests (15 tests)
 │   ├── tb_theta_phase_multiplexing.v # Theta phase tests (19 tests)
 │   ├── tb_scaffold_architecture.v    # Scaffold layer tests (14 tests)
 │   ├── tb_gamma_theta_nesting.v      # Gamma-theta PAC tests (7 tests)
-│   ├── tb_sr_frequency_drift.v       # v8.5: SR drift tests (30 tests)
+│   ├── tb_sr_frequency_drift.v       # v12.3: SR drift tests with stability hierarchy (30 tests)
 │   ├── tb_canonical_microcircuit.v   # v8.6: Canonical pathway tests (20 tests)
 │   ├── tb_layer1_minimal.v       # v8.7: Layer 1 gain modulation tests (10 tests)
 │   ├── tb_l6_connectivity.v      # v8.8: L6 output target tests (10 tests)
@@ -120,7 +125,8 @@ fpga/
 │   └── run_vivado_*.tcl          # Vivado TCL scripts
 ├── docs/                         # Specifications
 │   ├── FPGA_SPECIFICATION_V8.md  # Base architecture spec (v8.0)
-│   ├── SPEC_v12.2_UPDATE.md      # Current version (v12.2 Dual Alignment Ignition)
+│   ├── SPEC_v12.3_UPDATE.md      # Current version (v12.3 Three-Boundary Architecture)
+│   ├── SPEC_v12.2_UPDATE.md      # Previous (v12.2 Dual Alignment Ignition)
 │   ├── SPEC_v12.1_UPDATE.md      # Previous (v12.1 Synchronized State Transitions)
 │   ├── SPEC_v12.0_UPDATE.md      # Previous (v12.0 Unified State Dynamics)
 │   ├── SPEC_v11.3_UPDATE.md      # Previous (v11.3 SIE Dynamics)
@@ -167,6 +173,26 @@ fpga/
 | f₂ | 20 Hz | ±1.0 Hz | low_beta (L5a) |
 | f₃ | 25 Hz | ±1.5 Hz | high_beta (L5b) |
 | f₄ | 32 Hz | ±2.0 Hz | gamma (L4) |
+
+### Three-Boundary Architecture (v12.3)
+
+Four alignment sources gate ignition events and consciousness access:
+
+| Alignment | Source | Target | Weight | Role |
+|-----------|--------|--------|--------|------|
+| f₀ | √(θ×α) | SR1 (7.75 Hz) | 40% | Ignition Primary |
+| f₂ | √(β_low×β_high) | SR3 (20 Hz) | 30% | Stability Anchor |
+| SR4 | β_high direct | SR4 (25 Hz) | 20% | Arousal Modulation |
+| f₃ | √(β_high×γ) | SR5 (32 Hz) | 10% | Consciousness Gate |
+
+**Seeker-Reference Dynamics:** Internal cortical oscillators drift 3-5× faster than SR references, creating periodic alignment windows:
+- Theta: 0.625s updates (3.2× faster than SR1's 2s)
+- SR3: 10s updates (MOST STABLE anchor)
+- SR4: 1s updates (FASTEST, arousal modulator)
+
+**Ignition Permission:** Requires f₀ ≥ 0.3, f₂ ≥ 0.2, and beta_quiet.
+
+**Consciousness Gate:** f₃ has inherent 8% gap (74 OMEGA_DT), making alignment rare and brief.
 
 ### Consciousness States (state_select[2:0])
 
@@ -317,10 +343,32 @@ fpga/
 | TRANSITION_GATE_25PCT | 16384 | 25% | State-gated forcing threshold (v1.2) |
 | GAIN_LOW | 2048 | 0.125 | Minimum harmonic_gain (v7.20) |
 | GAIN_RANGE | 14336 | 0.875 | Gain normalization range (v7.20) |
+| SIGMA_SQ_F2 | 64 | σ=8 | f₂ boundary Gaussian width (v12.3) |
+| SIGMA_SQ_F3 | 100 | σ=10 | f₃ boundary Gaussian width (v12.3) |
+| SIGMA_SQ_SR4 | 144 | σ=12 | SR4 coupling Gaussian width (v12.3) |
+| GATE_THRESH_F3 | 4915 | 0.3 | Consciousness gate threshold (v12.3) |
+| W_F0 | 6554 | 0.4 | f₀ alignment weight (v12.3) |
+| W_F2 | 4915 | 0.3 | f₂ alignment weight (v12.3) |
+| W_SR4 | 3277 | 0.2 | SR4 coupling weight (v12.3) |
+| W_F3 | 1638 | 0.1 | f₃ alignment weight (v12.3) |
+| UPDATE_PERIOD_SR1 | 8000 | 2s | SR1 drift period (v12.3) |
+| UPDATE_PERIOD_SR2 | 20000 | 5s | SR2 drift period (v12.3) |
+| UPDATE_PERIOD_SR3 | 40000 | 10s | SR3 drift period - MOST STABLE (v12.3) |
+| UPDATE_PERIOD_SR4 | 4000 | 1s | SR4 drift period - FASTEST (v12.3) |
+| UPDATE_PERIOD_SR5 | 8000 | 2s | SR5 drift period (v12.3) |
+| ENABLE_THREE_BOUNDARY | 0/1 | — | v12.3: 0=dual, 1=three-boundary |
 
 ## Current Specification
 
-See [docs/SPEC/UPDATES/SPEC_v12.2_UPDATE.md](docs/SPEC/UPDATES/SPEC_v12.2_UPDATE.md) for the latest v12.2 architecture with:
+See [docs/SPEC/UPDATES/SPEC_v12.3_UPDATE.md](docs/SPEC/UPDATES/SPEC_v12.3_UPDATE.md) for the latest v12.3 architecture with:
+- **Three-Boundary Architecture** (v12.3): Hierarchical f₀/f₂/SR4/f₃ alignment system
+- **Seeker-Reference Dynamics** (v12.3): Internal oscillators 3-5× faster create alignment windows
+- **SR Stability Hierarchy** (v3.0): Per-harmonic update periods (SR3=10s anchor, SR4=1s fast)
+- **Consciousness Gate** (v1.0): f₃ = √(β_high×γ) → SR5 with 8% inherent gap
+- **Multi-Alignment Controller** (v1.2k): Weighted permission (f₀:40%, f₂:30%, SR4:20%, f₃:10%)
+- **Widened Alignment Windows** (v1.1): σ increased to 8-12 OMEGA_DT for longer windows
+
+Previous architecture features (v12.2):
 - **Dual Alignment Ignition** (v12.2): Internal boundary √(θ×α) = SR1 = 7.75 Hz
 - **Alignment-Modulated Threshold** (v1.4): Ignition sensitivity increases when aligned
 - **Thalamic Frequency Drift** (v1.0): New theta drift module ±0.5 Hz for alignment
@@ -400,12 +448,13 @@ Base specification: [docs/FPGA_SPECIFICATION_V8.md](docs/FPGA_SPECIFICATION_V8.m
 
 ## Testing
 
-All testbenches should pass. Key tests (365+ total):
+All testbenches should pass. Key tests (380+ total):
 - `tb_full_system_fast`: 15/15 tests - full integration (v6.5)
+- `tb_three_boundary`: 15/15 tests - three-boundary architecture (v12.3)
 - `tb_theta_phase_multiplexing`: 19/19 tests - theta phase (v8.3)
 - `tb_scaffold_architecture`: 14/14 tests - scaffold layers (v8.0)
 - `tb_gamma_theta_nesting`: 7/7 tests - gamma-theta PAC (v8.4)
-- `tb_sr_frequency_drift`: 30/30 tests - SR drift (v8.5)
+- `tb_sr_frequency_drift`: 30/30 tests - SR drift with stability hierarchy (v12.3)
 - `tb_canonical_microcircuit`: 20/20 tests - canonical pathway (v8.6)
 - `tb_layer1_minimal`: 10/10 tests - Layer 1 gain modulation (v8.7)
 - `tb_l6_connectivity`: 10/10 tests - L6 output targets (v8.8)
@@ -431,7 +480,7 @@ All testbenches should pass. Key tests (365+ total):
 - `tb_coupling_mode_controller`: 8/8 tests - Mode switching (v11.3)
 - `tb_harmonic_spacing_index`: 8/8 tests - φⁿ ratio tracking (v11.3)
 - `tb_state_interpolation`: 10/10 tests - state transition interpolation (v11.4)
-- `tb_state_transition_spectrogram`: Visual - 100s spectrogram validation (v12.1, 12 debug columns)
+- `tb_state_transition_spectrogram`: Visual - 100s spectrogram validation (v12.3, 32 debug columns)
 - `tb_multi_harmonic_sr`: 17/17 tests - multi-harmonic SR
 - `tb_learning_fast`: 8/8 tests - CA3 Hebbian learning (v2.1)
 - `tb_sr_coupling`: 12/12 tests - SR coupling

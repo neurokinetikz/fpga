@@ -36,11 +36,13 @@ generate
 endgenerate
 
 // DUT instantiation
+// v3.0: Set RANDOM_INIT=0 for deterministic reset behavior in tests
 sr_frequency_drift #(
     .WIDTH(WIDTH),
     .FRAC(FRAC),
     .NUM_HARMONICS(NUM_HARMONICS),
-    .FAST_SIM(FAST_SIM)
+    .FAST_SIM(FAST_SIM),
+    .RANDOM_INIT(0)  // Disable random init for deterministic testing
 ) dut (
     .clk(clk),
     .rst(rst),
@@ -117,7 +119,7 @@ initial begin
     //=========================================================================
     $display("\n--- TEST 1: Initial values after reset ---");
 
-    report_test("f0 starts at center (196)", omega_dt[0] == OMEGA_CENTER_0);
+    report_test("f0 starts at center (199)", omega_dt[0] == OMEGA_CENTER_0);
     report_test("f1 starts at center (354)", omega_dt[1] == OMEGA_CENTER_1);
     report_test("f2 starts at center (514)", omega_dt[2] == OMEGA_CENTER_2);
     report_test("f3 starts at center (643)", omega_dt[3] == OMEGA_CENTER_3);
@@ -135,7 +137,9 @@ initial begin
     $display("\n--- TEST 2: Drift bounds verification ---");
 
     // Run for many update periods
-    for (cycle = 0; cycle < 10000; cycle = cycle + 1) begin
+    // v3.0: Increased from 10000 to 40000 cycles to allow f2 (SR3) to drift
+    // f2 has UPDATE_PERIOD of 16000 cycles (SLOWEST - stability anchor)
+    for (cycle = 0; cycle < 40000; cycle = cycle + 1) begin
         @(posedge clk);
         clk_en = 1;
         @(posedge clk);
@@ -156,15 +160,15 @@ initial begin
     $display("Harmonic 3: drift range [%0d, %0d], max allowed ±%0d", min_drift[3], max_drift[3], DRIFT_MAX_3);
     $display("Harmonic 4: drift range [%0d, %0d], max allowed ±%0d", min_drift[4], max_drift[4], DRIFT_MAX_4);
 
-    report_test("f0 drift stays within ±23",
+    report_test("f0 drift stays within ±13",
                 min_drift[0] >= -DRIFT_MAX_0 && max_drift[0] <= DRIFT_MAX_0);
-    report_test("f1 drift stays within ±28",
+    report_test("f1 drift stays within ±21",
                 min_drift[1] >= -DRIFT_MAX_1 && max_drift[1] <= DRIFT_MAX_1);
-    report_test("f2 drift stays within ±39",
+    report_test("f2 drift stays within ±26",
                 min_drift[2] >= -DRIFT_MAX_2 && max_drift[2] <= DRIFT_MAX_2);
-    report_test("f3 drift stays within ±58",
+    report_test("f3 drift stays within ±39",
                 min_drift[3] >= -DRIFT_MAX_3 && max_drift[3] <= DRIFT_MAX_3);
-    report_test("f4 drift stays within ±77",
+    report_test("f4 drift stays within ±51",
                 min_drift[4] >= -DRIFT_MAX_4 && max_drift[4] <= DRIFT_MAX_4);
 
     //=========================================================================

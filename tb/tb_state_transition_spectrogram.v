@@ -97,11 +97,12 @@ wire signed [5*WIDTH-1:0] sr_coherence_packed;
 wire [4:0] sie_per_harmonic;
 wire [4:0] coherence_mask;
 
-// Instantiate DUT with FAST_SIM
+// Instantiate DUT with FAST_SIM and THREE_BOUNDARY enabled
 phi_n_neural_processor #(
     .WIDTH(WIDTH),
     .FRAC(FRAC),
-    .FAST_SIM(1)
+    .FAST_SIM(1),
+    .ENABLE_THREE_BOUNDARY(1)  // v12.0: Enable three-boundary architecture
 ) dut (
     .clk(clk),
     .rst(rst),
@@ -257,11 +258,13 @@ initial begin
     $fwrite(csv_file, "motor_l6_x,motor_l5a_x,motor_l5b_x,motor_l4_x,motor_l23_x,");
     $fwrite(csv_file, "beta_quiet,sr_amplification\n");
 
-    // Write header for DAC file (12 columns for state_transition_spectrogram.py)
+    // Write header for DAC file
     // v11.4: Added gain_envelope to track SR ignition events
     // v7.20: Added mode_blend, pink_weight, osc_scale for gain interpolation verification
     // v1.2b DEBUG: Added transitioning, harmonic_gain, use_cont, trans_progress for troubleshooting
-    $fwrite(dac_file, "time_ms,phase,state_select,dac_output,gain_envelope,mode_blend,pink_weight,osc_scale,transitioning,harmonic_gain,use_cont,trans_progress\n");
+    // v12.0: Added three-boundary signals (f0_align, f2_align, f3_align, sr4_coupling, overall_align, ignition_ok, conscious_ok)
+    // v1.2k: Added debug_ign_expected (uses _prev values that match ignition_permitted timing) (32 columns)
+    $fwrite(dac_file, "time_ms,phase,state_select,dac_output,gain_envelope,mode_blend,pink_weight,osc_scale,transitioning,harmonic_gain,use_cont,trans_progress,f0_align,f2_align,f2_stab,f3_align,sr4_coupling,overall_align,beta_quiet,f0_ok,f2_ok,f0_ok_reg,f2_ok_reg,db_f0,db_f2,db_bq_is_0,db_bq_is_1,debug_all_cond,debug_ign_exp,db_bq_prev,ignition_ok,conscious_ok\n");
 
     $display("=============================================================================");
     $display("State Transition Spectrogram Testbench v12.1");
@@ -343,11 +346,13 @@ initial begin
                     beta_quiet,
                     sr_amplification);
 
-                // Write to DAC file (12 columns for state_transition_spectrogram.py)
+                // Write to DAC file
                 // v11.4: Added gain_envelope to track SR ignition events
                 // v7.20: Added mode_blend, pink_weight, osc_scale for gain interpolation verification
                 // v1.2b DEBUG: Added transitioning, harmonic_gain, use_cont, trans_progress for troubleshooting
-                $fwrite(dac_file, "%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d\n",
+                // v12.0: Added three-boundary signals including f0_alignment
+                // v1.2k: Added debug_ign_expected (uses _prev values for timing match) (32 columns)
+                $fwrite(dac_file, "%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d,%0d\n",
                     sample_count,
                     current_phase,
                     state_select,
@@ -359,7 +364,27 @@ initial begin
                     dut.state_transitioning_int,
                     $signed(dut.harmonic_gain),
                     dut.use_continuous_gains,
-                    dut.state_transition_progress_int);
+                    dut.state_transition_progress_int,
+                    $signed(dut.alignment_factor),
+                    $signed(dut.f2_alignment_out),
+                    $signed(dut.f2_stability_out),
+                    $signed(dut.f3_alignment_out),
+                    $signed(dut.sr4_coupling_out),
+                    $signed(dut.multi_overall_alignment),
+                    beta_quiet,
+                    dut.three_boundary_gen.align_ctrl.f0_ok,
+                    dut.three_boundary_gen.align_ctrl.f2_ok,
+                    dut.three_boundary_gen.align_ctrl.f0_ok_reg,
+                    dut.three_boundary_gen.align_ctrl.f2_ok_reg,
+                    dut.three_boundary_gen.align_ctrl.debug_f0_ok_is_1,
+                    dut.three_boundary_gen.align_ctrl.debug_f2_ok_is_1,
+                    dut.three_boundary_gen.align_ctrl.debug_bq_is_0,
+                    dut.three_boundary_gen.align_ctrl.debug_bq_is_1,
+                    dut.three_boundary_gen.align_ctrl.debug_all_conditions_met,
+                    dut.three_boundary_gen.align_ctrl.debug_ign_expected,
+                    dut.three_boundary_gen.align_ctrl.debug_bq_prev_is_1,
+                    dut.three_boundary_gen.align_ctrl.ignition_permitted,
+                    dut.three_boundary_gen.align_ctrl.consciousness_access_possible);
 
                 sample_count = sample_count + 1;
 

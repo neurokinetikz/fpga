@@ -166,11 +166,11 @@ task init_inputs;
         phase_couple_l23 = 0;
         phase_couple_l6 = 0;
         encoding_window = 0;
-        mu_dt_l6 = 18'sd66;
-        mu_dt_l5b = 18'sd66;
-        mu_dt_l5a = 18'sd66;
-        mu_dt_l4 = 18'sd66;
-        mu_dt_l23 = 18'sd66;
+        mu_dt_l6 = 18'sd4;    // v11.4: raw MU value
+        mu_dt_l5b = 18'sd4;
+        mu_dt_l5a = 18'sd4;
+        mu_dt_l4 = 18'sd4;
+        mu_dt_l23 = 18'sd4;
     end
 endtask
 
@@ -383,8 +383,8 @@ initial begin
     repeat(10) @(posedge clk);
     rst = 0;
     init_inputs;
-    mu_dt_l23 = 18'sd99;  // MU=6
-    mu_dt_l4 = 18'sd99;
+    mu_dt_l23 = 18'sd6;   // MU=6 (v11.4: raw value)
+    mu_dt_l4 = 18'sd6;
     feedforward_input = 18'sd4096;
 
     wait_cycles(500);

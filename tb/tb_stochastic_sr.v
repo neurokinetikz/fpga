@@ -103,16 +103,23 @@ wire signed [NUM_HARMONICS*WIDTH-1:0] stoch_f_x_packed;
 wire signed [NUM_HARMONICS*WIDTH-1:0] stoch_coh_packed;
 wire [NUM_HARMONICS-1:0] stoch_sie;
 
+// v7.4+: Required inputs for sr_harmonic_bank
+wire signed [NUM_HARMONICS*WIDTH-1:0] zero_omega_dt = 90'd0;
+wire signed [NUM_HARMONICS*WIDTH-1:0] zero_stability = 90'd0;
+
 sr_harmonic_bank #(
     .WIDTH(WIDTH),
     .FRAC(FRAC),
     .NUM_HARMONICS(NUM_HARMONICS),
-    .ENABLE_STOCHASTIC(1)
+    .ENABLE_STOCHASTIC(1),
+    .ENABLE_DRIFT(0),     // Disable drift to use internal defaults
+    .ENABLE_ADAPTIVE(0)   // Disable adaptive SIE
 ) stoch_bank (
     .clk(clk),
     .rst(rst),
     .clk_en(clk_en),
     .mu_dt(mu_dt),
+    .omega_dt_packed(zero_omega_dt),
     .sr_field_packed(sr_field_packed),
     .noise_packed(noise_packed),
     .theta_x(theta_x),
@@ -126,6 +133,7 @@ sr_harmonic_bank #(
     .gamma_x(gamma_x),
     .gamma_y(gamma_y),
     .beta_amplitude(beta_amplitude),
+    .stability_packed(zero_stability),
     .f_x_packed(stoch_f_x_packed),
     .coherence_packed(stoch_coh_packed),
     .sie_per_harmonic(stoch_sie)
@@ -140,14 +148,17 @@ sr_harmonic_bank #(
     .WIDTH(WIDTH),
     .FRAC(FRAC),
     .NUM_HARMONICS(NUM_HARMONICS),
-    .ENABLE_STOCHASTIC(0)  // Disabled
+    .ENABLE_STOCHASTIC(0),  // Disabled - noise should be ignored
+    .ENABLE_DRIFT(0),       // Disable drift to use internal defaults
+    .ENABLE_ADAPTIVE(0)     // Disable adaptive SIE
 ) det_bank (
     .clk(clk),
     .rst(rst),
     .clk_en(clk_en),
     .mu_dt(mu_dt),
+    .omega_dt_packed(zero_omega_dt),
     .sr_field_packed(sr_field_packed),
-    .noise_packed(noise_packed),  // Still connected but should be ignored
+    .noise_packed(noise_packed),  // Still connected but ignored due to ENABLE_STOCHASTIC=0
     .theta_x(theta_x),
     .theta_y(theta_y),
     .alpha_x(alpha_x),
@@ -159,6 +170,7 @@ sr_harmonic_bank #(
     .gamma_x(gamma_x),
     .gamma_y(gamma_y),
     .beta_amplitude(beta_amplitude),
+    .stability_packed(zero_stability),
     .f_x_packed(det_f_x_packed),
     .coherence_packed(det_coh_packed),
     .sie_per_harmonic(det_sie)

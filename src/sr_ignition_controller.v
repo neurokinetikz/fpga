@@ -1,8 +1,15 @@
 //=============================================================================
-// Schumann Resonance Ignition Controller v1.4
+// Schumann Resonance Ignition Controller v1.5
 //
 // Implements six-phase SIE (Schumann Ignition Event) state machine based on
 // empirical EEG observations (neurokinetikz 2019-2025).
+//
+// v1.5 CHANGES (v12.0 Three-Boundary Architecture):
+// - Added ENABLE_THREE_BOUNDARY parameter (default 0 for backward compatibility)
+// - Added multi_alignment_threshold input from multi_alignment_ctrl
+// - Added multi_ignition_permitted input from multi_alignment_ctrl
+// - When ENABLE_THREE_BOUNDARY=1: uses multi_alignment_threshold for ignition
+// - When ENABLE_THREE_BOUNDARY=0: falls back to ENABLE_ALIGNMENT behavior
 //
 // v1.4 CHANGES (v12.2 Dual Alignment Ignition):
 // - Added alignment_factor and crystallinity inputs from phi_n_alignment_detector
@@ -45,7 +52,8 @@
 module sr_ignition_controller #(
     parameter WIDTH = 18,
     parameter FRAC = 14,
-    parameter ENABLE_ALIGNMENT = 0   // v1.4: 0=v12.1 behavior, 1=alignment modulation
+    parameter ENABLE_ALIGNMENT = 0,    // v1.4: 0=v12.1 behavior, 1=alignment modulation
+    parameter ENABLE_THREE_BOUNDARY = 0  // v1.5: 0=single alignment, 1=three-boundary
 )(
     input  wire clk,
     input  wire rst,
@@ -58,9 +66,14 @@ module sr_ignition_controller #(
     input  wire beta_quiet,
 
     // v1.4: Alignment inputs from phi_n_alignment_detector
-    // Only used when ENABLE_ALIGNMENT=1
+    // Only used when ENABLE_ALIGNMENT=1 and ENABLE_THREE_BOUNDARY=0
     input  wire signed [WIDTH-1:0] alignment_factor,  // [0,1] Q14, peaks when sqrt(θ*α)=SR1
     input  wire signed [WIDTH-1:0] crystallinity,     // [0,1] Q14, closeness of α/θ to φ
+
+    // v1.5: Multi-alignment inputs from multi_alignment_ctrl
+    // Only used when ENABLE_THREE_BOUNDARY=1
+    input  wire signed [WIDTH-1:0] multi_alignment_threshold,  // Modulated threshold from controller
+    input  wire multi_ignition_permitted,                       // Three-boundary permission signal
 
     // Phase timing inputs (from config_controller, in 4kHz cycles)
     input  wire [15:0] phase2_dur,   // Coherence-first duration (~14000 = 3.5s)
@@ -106,7 +119,11 @@ localparam signed [WIDTH-1:0] GAIN_PEAK = 18'sd16384;      // 1.00 (full scale d
 localparam signed [WIDTH-1:0] GAIN_PROPAGATION = 18'sd9830; // 0.60 (sustained but lower)
 
 //-----------------------------------------------------------------------------
-// v1.4: Alignment-Modulated Threshold (only when ENABLE_ALIGNMENT=1)
+// v1.4/v1.5: Alignment-Modulated Threshold
+//
+// v1.5: ENABLE_THREE_BOUNDARY=1 uses multi_alignment_threshold from controller
+// v1.4: ENABLE_ALIGNMENT=1 computes threshold from alignment_factor
+// Otherwise: uses fixed COHERENCE_THRESH (v12.1 behavior)
 //
 // High alignment → lower threshold → easier ignition
 // threshold_scale = 1.5 - 0.5 × alignment_factor
@@ -119,12 +136,17 @@ localparam signed [WIDTH-1:0] GAIN_PROPAGATION = 18'sd9830; // 0.60 (sustained b
 wire signed [2*WIDTH-1:0] alignment_product;
 wire signed [WIDTH-1:0] threshold_scale;
 wire signed [2*WIDTH-1:0] thresh_product;
+wire signed [WIDTH-1:0] single_alignment_threshold;
 wire signed [WIDTH-1:0] effective_threshold;
 
 assign alignment_product = alignment_factor * 18'sd8192;
 assign threshold_scale = 18'sd24576 - (alignment_product >>> FRAC);
 assign thresh_product = COHERENCE_THRESH * threshold_scale;
-assign effective_threshold = ENABLE_ALIGNMENT ? (thresh_product >>> FRAC) : COHERENCE_THRESH;
+assign single_alignment_threshold = ENABLE_ALIGNMENT ? (thresh_product >>> FRAC) : COHERENCE_THRESH;
+
+// v1.5: Choose threshold based on enabled mode
+// Priority: ENABLE_THREE_BOUNDARY > ENABLE_ALIGNMENT > fixed threshold
+assign effective_threshold = ENABLE_THREE_BOUNDARY ? multi_alignment_threshold : single_alignment_threshold;
 
 //-----------------------------------------------------------------------------
 // Envelope Rate Constants (for smooth transitions)

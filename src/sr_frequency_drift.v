@@ -1,28 +1,31 @@
 //=============================================================================
-// SR Frequency Drift Generator - v2.1
+// SR Frequency Drift Generator - v3.0
+//
+// v3.0 CHANGES (Three-Boundary Architecture):
+// - Per-harmonic UPDATE_PERIOD implementing SR STABILITY HIERARCHY
+//   SR3 (f₂) = SLOWEST (10s) - stability anchor
+//   SR2 (f₁) = Very slow (5s) - timing reference
+//   SR1 (f₀) = Moderate (2s) - event detector
+//   SR5 (f₄) = Moderate (2s) - consciousness gate
+//   SR4 (f₃) = FASTEST (1s) - arousal modulator
+// - Per-harmonic STEP_MAX: SR3/SR2 smallest, SR4 largest
+// - Separate update counters per harmonic
+// - Added individual omega outputs for all harmonics (boundary detectors)
 //
 // v2.1 CHANGES (Dual Alignment Ignition - v12.2):
 // - Updated f₀ center: 7.6 → 7.75 Hz (exact SR1 from geophysical data)
 // - Tightened drift ranges for impedance matching with internal oscillators
 // - Added RANDOM_INIT parameter for stochastic startup alignment
-// - Added omega_dt_f0_actual output for alignment detector
 //
-// v2.0 CHANGES (Biological Realism - Phase 4):
-// - Faster UPDATE_PERIOD: 1500 → 400 cycles (~0.1s per step in FAST_SIM)
-// - Variable step sizes (1-4): Lévy flight-like for biological variability
+// SR FREQUENCIES (unchanged from v2.1):
+//   f₀ = 7.75 Hz ± 0.5 Hz   (range: 7.25-8.25 Hz)
+//   f₁ = 13.75 Hz ± 0.8 Hz  (range: 12.95-14.55 Hz)
+//   f₂ = 20 Hz   ± 1.0 Hz   (range: 19-21 Hz)
+//   f₃ = 25 Hz   ± 1.5 Hz   (range: 23.5-26.5 Hz)
+//   f₄ = 32 Hz   ± 2.0 Hz   (range: 30-34 Hz)
 //
-// SR FREQUENCIES (v2.1 - tightened for phi^n alignment):
-//   f₀ = 7.75 Hz ± 0.5 Hz   (range: 7.25-8.25 Hz)  v2.1: tightened for alignment
-//   f₁ = 13.75 Hz ± 0.8 Hz  (range: 12.95-14.55 Hz) v2.1: tightened
-//   f₂ = 20 Hz   ± 1.0 Hz   (range: 19-21 Hz)      v2.1: tightened
-//   f₃ = 25 Hz   ± 1.5 Hz   (range: 23.5-26.5 Hz)  v2.1: tightened
-//   f₄ = 32 Hz   ± 2.0 Hz   (range: 30-34 Hz)      v2.1: tightened
-//
-// DRIFT MODEL:
-// - Bounded random walk with reflecting boundaries
-// - Update rate: ~0.1s (visible in spectrogram)
-// - Step size: 1-4 OMEGA_DT units per update (variable, Lévy flight-like)
-// - Random initialization prevents startup alignment
+// STABILITY HIERARCHY (from real geophysical data):
+//   SR3 > SR2 > SR1 = SR5 > SR4 (most to least stable)
 //=============================================================================
 `timescale 1ns / 1ps
 
@@ -31,7 +34,7 @@ module sr_frequency_drift #(
     parameter FRAC = 14,
     parameter NUM_HARMONICS = 5,
     parameter FAST_SIM = 0,
-    parameter RANDOM_INIT = 1  // v2.1: Enable random start position
+    parameter RANDOM_INIT = 1
 )(
     input  wire clk,
     input  wire rst,
@@ -43,65 +46,87 @@ module sr_frequency_drift #(
     // Debug: current offset from center (signed)
     output wire signed [NUM_HARMONICS*WIDTH-1:0] drift_offset_packed,
 
-    // v2.1: Actual f0 omega_dt for alignment detector
-    output wire signed [WIDTH-1:0] omega_dt_f0_actual
+    // v2.1: Individual omega_dt outputs for alignment/boundary detectors
+    output wire signed [WIDTH-1:0] omega_dt_f0_actual,  // SR1 - f₀ boundary
+    output wire signed [WIDTH-1:0] omega_dt_f1_actual,  // SR2 - timing ref
+    output wire signed [WIDTH-1:0] omega_dt_f2_actual,  // SR3 - f₂ boundary (stability)
+    output wire signed [WIDTH-1:0] omega_dt_f3_actual,  // SR4 - arousal
+    output wire signed [WIDTH-1:0] omega_dt_f4_actual   // SR5 - f₃ boundary (consciousness)
 );
 
 //-----------------------------------------------------------------------------
 // Center Frequencies (OMEGA_DT in Q14)
 // Formula: OMEGA_DT = round(2π × f_hz × dt × 2^14) where dt = 0.00025s
-// v2.1: f₀ updated to 7.75 Hz for exact phi^n alignment
 //-----------------------------------------------------------------------------
-localparam signed [WIDTH-1:0] OMEGA_CENTER_F0 = 18'sd199;   // 7.75 Hz (v2.1: was 7.6)
-localparam signed [WIDTH-1:0] OMEGA_CENTER_F1 = 18'sd354;   // 13.75 Hz
-localparam signed [WIDTH-1:0] OMEGA_CENTER_F2 = 18'sd514;   // 20 Hz
-localparam signed [WIDTH-1:0] OMEGA_CENTER_F3 = 18'sd643;   // 25 Hz
-localparam signed [WIDTH-1:0] OMEGA_CENTER_F4 = 18'sd823;   // 32 Hz
+localparam signed [WIDTH-1:0] OMEGA_CENTER_F0 = 18'sd199;   // 7.75 Hz (SR1)
+localparam signed [WIDTH-1:0] OMEGA_CENTER_F1 = 18'sd354;   // 13.75 Hz (SR2)
+localparam signed [WIDTH-1:0] OMEGA_CENTER_F2 = 18'sd514;   // 20 Hz (SR3)
+localparam signed [WIDTH-1:0] OMEGA_CENTER_F3 = 18'sd643;   // 25 Hz (SR4)
+localparam signed [WIDTH-1:0] OMEGA_CENTER_F4 = 18'sd823;   // 32 Hz (SR5)
 
 //-----------------------------------------------------------------------------
-// Drift Ranges (±OMEGA_DT units) - v2.1: Tightened for impedance matching
-// Converted from Hz: DRIFT_MAX = round(2π × Δf × dt × 2^14)
-// Matches internal oscillator drift ranges for alignment probability
+// Drift Ranges (±OMEGA_DT units) - unchanged from v2.1
 //-----------------------------------------------------------------------------
-localparam signed [WIDTH-1:0] DRIFT_MAX_F0 = 18'sd13;   // ±0.5 Hz (v2.1: was ±0.9)
-localparam signed [WIDTH-1:0] DRIFT_MAX_F1 = 18'sd21;   // ±0.8 Hz (v2.1: was ±1.1)
-localparam signed [WIDTH-1:0] DRIFT_MAX_F2 = 18'sd26;   // ±1.0 Hz (v2.1: was ±1.5)
-localparam signed [WIDTH-1:0] DRIFT_MAX_F3 = 18'sd39;   // ±1.5 Hz (v2.1: was ±2.25)
-localparam signed [WIDTH-1:0] DRIFT_MAX_F4 = 18'sd51;   // ±2.0 Hz (v2.1: was ±3.0)
+localparam signed [WIDTH-1:0] DRIFT_MAX_F0 = 18'sd13;   // ±0.5 Hz
+localparam signed [WIDTH-1:0] DRIFT_MAX_F1 = 18'sd21;   // ±0.8 Hz
+localparam signed [WIDTH-1:0] DRIFT_MAX_F2 = 18'sd26;   // ±1.0 Hz
+localparam signed [WIDTH-1:0] DRIFT_MAX_F3 = 18'sd39;   // ±1.5 Hz
+localparam signed [WIDTH-1:0] DRIFT_MAX_F4 = 18'sd51;   // ±2.0 Hz
 
 //-----------------------------------------------------------------------------
-// Random Walk Update Period - v2.0: Faster for visible spectrogram wobble
-// Previous: 15 minutes (3.6M cycles) - too slow for visible variation
-// v2.0: ~0.1s updates - creates seconds-scale visible frequency wobble
+// v3.0: Per-Harmonic Update Periods - STABILITY HIERARCHY
 //
-// FAST_SIM: 400 clk_en = 0.1s at 4kHz (was 1500 = 0.375s)
-// Real-time: 960000 clk_en = 4 minutes (was 3.6M = 15 minutes)
+// From real geophysical data:
+//   SR3 = MOST STABLE (highest Q ~9)
+//   SR2 = Very stable
+//   SR1 = Moderate (event-responsive, Q varies 8-22)
+//   SR5 = Moderate
+//   SR4 = MOST VARIABLE
+//
+// FAST_SIM values are 1/10th of real-time for simulation speed
 //-----------------------------------------------------------------------------
 `ifdef FAST_SIM
-    localparam [21:0] UPDATE_PERIOD = 22'd400;      // v2.0: 0.1s updates (was 1500)
+    // FAST_SIM: Scaled for longer alignment windows (~10-20ms instead of ~3ms)
+    // Increased 4x from previous values to slow down drift dynamics
+    localparam [21:0] UPDATE_PERIOD_F0 = 22'd3200;   // SR1: 0.8s (moderate)
+    localparam [21:0] UPDATE_PERIOD_F1 = 22'd8000;   // SR2: 2.0s (slow - timing ref)
+    localparam [21:0] UPDATE_PERIOD_F2 = 22'd16000;  // SR3: 4.0s (SLOWEST - anchor)
+    localparam [21:0] UPDATE_PERIOD_F3 = 22'd1600;   // SR4: 0.4s (FASTEST - variable)
+    localparam [21:0] UPDATE_PERIOD_F4 = 22'd3200;   // SR5: 0.8s (moderate)
 `else
-    localparam [21:0] UPDATE_PERIOD = (FAST_SIM != 0) ? 22'd400 : 22'd960000;
+    // Real-time at 4kHz: values in clock cycles
+    localparam [21:0] UPDATE_PERIOD_F0 = (FAST_SIM != 0) ? 22'd800  : 22'd8000;   // 2s
+    localparam [21:0] UPDATE_PERIOD_F1 = (FAST_SIM != 0) ? 22'd2000 : 22'd20000;  // 5s
+    localparam [21:0] UPDATE_PERIOD_F2 = (FAST_SIM != 0) ? 22'd4000 : 22'd40000;  // 10s (SLOWEST)
+    localparam [21:0] UPDATE_PERIOD_F3 = (FAST_SIM != 0) ? 22'd400  : 22'd4000;   // 1s (FASTEST)
+    localparam [21:0] UPDATE_PERIOD_F4 = (FAST_SIM != 0) ? 22'd800  : 22'd8000;   // 2s
 `endif
 
 //-----------------------------------------------------------------------------
-// Update Counter
+// v3.0: Per-Harmonic Step Sizes - STABILITY HIERARCHY
+//
+// More stable harmonics take smaller steps
+//   SR3/SR2: 1 only (most stable)
+//   SR1/SR5: 1-2 (moderate)
+//   SR4: 1-3 (most variable)
 //-----------------------------------------------------------------------------
-reg [21:0] update_counter;
-wire update_tick;
+localparam signed [WIDTH-1:0] STEP_MAX_F0 = 18'sd2;  // SR1: 1-2 (moderate)
+localparam signed [WIDTH-1:0] STEP_MAX_F1 = 18'sd1;  // SR2: 1 only (stable)
+localparam signed [WIDTH-1:0] STEP_MAX_F2 = 18'sd1;  // SR3: 1 only (MOST STABLE)
+localparam signed [WIDTH-1:0] STEP_MAX_F3 = 18'sd3;  // SR4: 1-3 (MOST VARIABLE)
+localparam signed [WIDTH-1:0] STEP_MAX_F4 = 18'sd2;  // SR5: 1-2 (moderate)
 
-assign update_tick = (update_counter == UPDATE_PERIOD);
+//-----------------------------------------------------------------------------
+// v3.0: Per-Harmonic Update Counters
+//-----------------------------------------------------------------------------
+reg [21:0] update_counter_0, update_counter_1, update_counter_2;
+reg [21:0] update_counter_3, update_counter_4;
 
-always @(posedge clk or posedge rst) begin
-    if (rst) begin
-        update_counter <= 22'd0;
-    end else if (clk_en) begin
-        if (update_tick) begin
-            update_counter <= 22'd0;
-        end else begin
-            update_counter <= update_counter + 1'b1;
-        end
-    end
-end
+wire update_tick_0 = (update_counter_0 >= UPDATE_PERIOD_F0);
+wire update_tick_1 = (update_counter_1 >= UPDATE_PERIOD_F1);
+wire update_tick_2 = (update_counter_2 >= UPDATE_PERIOD_F2);
+wire update_tick_3 = (update_counter_3 >= UPDATE_PERIOD_F3);
+wire update_tick_4 = (update_counter_4 >= UPDATE_PERIOD_F4);
 
 //-----------------------------------------------------------------------------
 // LFSR Seeds (different for each harmonic)
@@ -133,29 +158,34 @@ wire dir_3 = lfsr_3[0];
 wire dir_4 = lfsr_4[0];
 
 //-----------------------------------------------------------------------------
-// v2.0: Variable Step Sizes (1-4) for Lévy flight-like behavior
-// Use LFSR bits [3:2] to determine step magnitude (1-4 units)
-// Creates occasional large jumps like biological frequency variability
+// v3.0: Variable Step Sizes based on per-harmonic STEP_MAX
 //-----------------------------------------------------------------------------
-wire [1:0] step_bits_0 = lfsr_0[3:2];
-wire [1:0] step_bits_1 = lfsr_1[3:2];
-wire [1:0] step_bits_2 = lfsr_2[3:2];
-wire [1:0] step_bits_3 = lfsr_3[3:2];
-wire [1:0] step_bits_4 = lfsr_4[3:2];
+// For STEP_MAX=1: always step 1
+// For STEP_MAX=2: step 1 or 2 based on LFSR bit
+// For STEP_MAX=3: step 1, 2, or 3 based on LFSR bits
 
-// Step size: 1 + step_bits gives range 1-4
-wire signed [WIDTH-1:0] step_0 = {{(WIDTH-3){1'b0}}, step_bits_0, 1'b0} + 18'sd1;  // 1, 2, 3, or 4
-wire signed [WIDTH-1:0] step_1 = {{(WIDTH-3){1'b0}}, step_bits_1, 1'b0} + 18'sd1;
-wire signed [WIDTH-1:0] step_2 = {{(WIDTH-3){1'b0}}, step_bits_2, 1'b0} + 18'sd1;
-wire signed [WIDTH-1:0] step_3 = {{(WIDTH-3){1'b0}}, step_bits_3, 1'b0} + 18'sd1;
-wire signed [WIDTH-1:0] step_4 = {{(WIDTH-3){1'b0}}, step_bits_4, 1'b0} + 18'sd1;
+// F0: STEP_MAX=2, use bit[2] for 1 or 2
+wire signed [WIDTH-1:0] step_0 = lfsr_0[2] ? 18'sd2 : 18'sd1;
+
+// F1: STEP_MAX=1, always 1
+wire signed [WIDTH-1:0] step_1 = 18'sd1;
+
+// F2: STEP_MAX=1, always 1 (MOST STABLE)
+wire signed [WIDTH-1:0] step_2 = 18'sd1;
+
+// F3: STEP_MAX=3, use bits[3:2] for 1, 2, or 3
+wire signed [WIDTH-1:0] step_3 = (lfsr_3[3:2] == 2'b11) ? 18'sd3 :
+                                  (lfsr_3[2] ? 18'sd2 : 18'sd1);
+
+// F4: STEP_MAX=2, use bit[2] for 1 or 2
+wire signed [WIDTH-1:0] step_4 = lfsr_4[2] ? 18'sd2 : 18'sd1;
 
 //-----------------------------------------------------------------------------
-// v2.1: Random Initialization Offsets
-// Use LFSR seed bits to compute initial position within drift bounds
-// Maps seed bits [15:11] (0-31) to [-DRIFT_MAX, +DRIFT_MAX]
+// Random Initialization Offsets
 //-----------------------------------------------------------------------------
-wire signed [WIDTH-1:0] init_offset_0, init_offset_1, init_offset_2, init_offset_3, init_offset_4;
+wire signed [WIDTH-1:0] init_offset_0, init_offset_1, init_offset_2;
+wire signed [WIDTH-1:0] init_offset_3, init_offset_4;
+
 assign init_offset_0 = RANDOM_INIT ? (((LFSR_SEED_0[15:11] - 5'd16) * DRIFT_MAX_F0) >>> 4) : 18'sd0;
 assign init_offset_1 = RANDOM_INIT ? (((LFSR_SEED_1[15:11] - 5'd16) * DRIFT_MAX_F1) >>> 4) : 18'sd0;
 assign init_offset_2 = RANDOM_INIT ? (((LFSR_SEED_2[15:11] - 5'd16) * DRIFT_MAX_F2) >>> 4) : 18'sd0;
@@ -163,116 +193,151 @@ assign init_offset_3 = RANDOM_INIT ? (((LFSR_SEED_3[15:11] - 5'd16) * DRIFT_MAX_
 assign init_offset_4 = RANDOM_INIT ? (((LFSR_SEED_4[15:11] - 5'd16) * DRIFT_MAX_F4) >>> 4) : 18'sd0;
 
 //-----------------------------------------------------------------------------
-// Random Walk Update Logic - Harmonic 0 (v2.0: variable step size)
+// v3.0: Harmonic 0 (SR1) - Moderate stability, event detector
+// Update period: 2s, Step: 1-2
 //-----------------------------------------------------------------------------
 always @(posedge clk or posedge rst) begin
     if (rst) begin
+        update_counter_0 <= 22'd0;
         lfsr_0 <= LFSR_SEED_0;
-        drift_0 <= init_offset_0;  // v2.1: Random initial position
-    end else if (clk_en && update_tick) begin
-        lfsr_0 <= {lfsr_0[14:0], fb_0};
-        if (dir_0) begin
-            if (drift_0 + step_0 <= DRIFT_MAX_F0)
-                drift_0 <= drift_0 + step_0;
-            else
-                drift_0 <= drift_0 - step_0;  // Reflect at boundary
+        drift_0 <= init_offset_0;
+    end else if (clk_en) begin
+        if (update_tick_0) begin
+            update_counter_0 <= 22'd0;
+            lfsr_0 <= {lfsr_0[14:0], fb_0};
+            if (dir_0) begin
+                if (drift_0 + step_0 <= DRIFT_MAX_F0)
+                    drift_0 <= drift_0 + step_0;
+                else
+                    drift_0 <= drift_0 - step_0;
+            end else begin
+                if (drift_0 - step_0 >= -DRIFT_MAX_F0)
+                    drift_0 <= drift_0 - step_0;
+                else
+                    drift_0 <= drift_0 + step_0;
+            end
         end else begin
-            if (drift_0 - step_0 >= -DRIFT_MAX_F0)
-                drift_0 <= drift_0 - step_0;
-            else
-                drift_0 <= drift_0 + step_0;  // Reflect at boundary
+            update_counter_0 <= update_counter_0 + 1'b1;
         end
     end
 end
 
 //-----------------------------------------------------------------------------
-// Random Walk Update Logic - Harmonic 1 (v2.0: variable step size)
+// v3.0: Harmonic 1 (SR2) - Very stable, timing reference
+// Update period: 5s, Step: 1 only
 //-----------------------------------------------------------------------------
 always @(posedge clk or posedge rst) begin
     if (rst) begin
+        update_counter_1 <= 22'd0;
         lfsr_1 <= LFSR_SEED_1;
-        drift_1 <= init_offset_1;  // v2.1: Random initial position
-    end else if (clk_en && update_tick) begin
-        lfsr_1 <= {lfsr_1[14:0], fb_1};
-        if (dir_1) begin
-            if (drift_1 + step_1 <= DRIFT_MAX_F1)
-                drift_1 <= drift_1 + step_1;
-            else
-                drift_1 <= drift_1 - step_1;  // Reflect at boundary
+        drift_1 <= init_offset_1;
+    end else if (clk_en) begin
+        if (update_tick_1) begin
+            update_counter_1 <= 22'd0;
+            lfsr_1 <= {lfsr_1[14:0], fb_1};
+            if (dir_1) begin
+                if (drift_1 + step_1 <= DRIFT_MAX_F1)
+                    drift_1 <= drift_1 + step_1;
+                else
+                    drift_1 <= drift_1 - step_1;
+            end else begin
+                if (drift_1 - step_1 >= -DRIFT_MAX_F1)
+                    drift_1 <= drift_1 - step_1;
+                else
+                    drift_1 <= drift_1 + step_1;
+            end
         end else begin
-            if (drift_1 - step_1 >= -DRIFT_MAX_F1)
-                drift_1 <= drift_1 - step_1;
-            else
-                drift_1 <= drift_1 + step_1;  // Reflect at boundary
+            update_counter_1 <= update_counter_1 + 1'b1;
         end
     end
 end
 
 //-----------------------------------------------------------------------------
-// Random Walk Update Logic - Harmonic 2 (v2.0: variable step size)
+// v3.0: Harmonic 2 (SR3) - MOST STABLE, stability anchor
+// Update period: 10s (SLOWEST), Step: 1 only
 //-----------------------------------------------------------------------------
 always @(posedge clk or posedge rst) begin
     if (rst) begin
+        update_counter_2 <= 22'd0;
         lfsr_2 <= LFSR_SEED_2;
-        drift_2 <= init_offset_2;  // v2.1: Random initial position
-    end else if (clk_en && update_tick) begin
-        lfsr_2 <= {lfsr_2[14:0], fb_2};
-        if (dir_2) begin
-            if (drift_2 + step_2 <= DRIFT_MAX_F2)
-                drift_2 <= drift_2 + step_2;
-            else
-                drift_2 <= drift_2 - step_2;  // Reflect at boundary
+        drift_2 <= init_offset_2;
+    end else if (clk_en) begin
+        if (update_tick_2) begin
+            update_counter_2 <= 22'd0;
+            lfsr_2 <= {lfsr_2[14:0], fb_2};
+            if (dir_2) begin
+                if (drift_2 + step_2 <= DRIFT_MAX_F2)
+                    drift_2 <= drift_2 + step_2;
+                else
+                    drift_2 <= drift_2 - step_2;
+            end else begin
+                if (drift_2 - step_2 >= -DRIFT_MAX_F2)
+                    drift_2 <= drift_2 - step_2;
+                else
+                    drift_2 <= drift_2 + step_2;
+            end
         end else begin
-            if (drift_2 - step_2 >= -DRIFT_MAX_F2)
-                drift_2 <= drift_2 - step_2;
-            else
-                drift_2 <= drift_2 + step_2;  // Reflect at boundary
+            update_counter_2 <= update_counter_2 + 1'b1;
         end
     end
 end
 
 //-----------------------------------------------------------------------------
-// Random Walk Update Logic - Harmonic 3 (v2.0: variable step size)
+// v3.0: Harmonic 3 (SR4) - MOST VARIABLE, arousal modulator
+// Update period: 1s (FASTEST), Step: 1-3
 //-----------------------------------------------------------------------------
 always @(posedge clk or posedge rst) begin
     if (rst) begin
+        update_counter_3 <= 22'd0;
         lfsr_3 <= LFSR_SEED_3;
-        drift_3 <= init_offset_3;  // v2.1: Random initial position
-    end else if (clk_en && update_tick) begin
-        lfsr_3 <= {lfsr_3[14:0], fb_3};
-        if (dir_3) begin
-            if (drift_3 + step_3 <= DRIFT_MAX_F3)
-                drift_3 <= drift_3 + step_3;
-            else
-                drift_3 <= drift_3 - step_3;  // Reflect at boundary
+        drift_3 <= init_offset_3;
+    end else if (clk_en) begin
+        if (update_tick_3) begin
+            update_counter_3 <= 22'd0;
+            lfsr_3 <= {lfsr_3[14:0], fb_3};
+            if (dir_3) begin
+                if (drift_3 + step_3 <= DRIFT_MAX_F3)
+                    drift_3 <= drift_3 + step_3;
+                else
+                    drift_3 <= drift_3 - step_3;
+            end else begin
+                if (drift_3 - step_3 >= -DRIFT_MAX_F3)
+                    drift_3 <= drift_3 - step_3;
+                else
+                    drift_3 <= drift_3 + step_3;
+            end
         end else begin
-            if (drift_3 - step_3 >= -DRIFT_MAX_F3)
-                drift_3 <= drift_3 - step_3;
-            else
-                drift_3 <= drift_3 + step_3;  // Reflect at boundary
+            update_counter_3 <= update_counter_3 + 1'b1;
         end
     end
 end
 
 //-----------------------------------------------------------------------------
-// Random Walk Update Logic - Harmonic 4 (v2.0: variable step size)
+// v3.0: Harmonic 4 (SR5) - Moderate stability, consciousness gate
+// Update period: 2s, Step: 1-2
 //-----------------------------------------------------------------------------
 always @(posedge clk or posedge rst) begin
     if (rst) begin
+        update_counter_4 <= 22'd0;
         lfsr_4 <= LFSR_SEED_4;
-        drift_4 <= init_offset_4;  // v2.1: Random initial position
-    end else if (clk_en && update_tick) begin
-        lfsr_4 <= {lfsr_4[14:0], fb_4};
-        if (dir_4) begin
-            if (drift_4 + step_4 <= DRIFT_MAX_F4)
-                drift_4 <= drift_4 + step_4;
-            else
-                drift_4 <= drift_4 - step_4;  // Reflect at boundary
+        drift_4 <= init_offset_4;
+    end else if (clk_en) begin
+        if (update_tick_4) begin
+            update_counter_4 <= 22'd0;
+            lfsr_4 <= {lfsr_4[14:0], fb_4};
+            if (dir_4) begin
+                if (drift_4 + step_4 <= DRIFT_MAX_F4)
+                    drift_4 <= drift_4 + step_4;
+                else
+                    drift_4 <= drift_4 - step_4;
+            end else begin
+                if (drift_4 - step_4 >= -DRIFT_MAX_F4)
+                    drift_4 <= drift_4 - step_4;
+                else
+                    drift_4 <= drift_4 + step_4;
+            end
         end else begin
-            if (drift_4 - step_4 >= -DRIFT_MAX_F4)
-                drift_4 <= drift_4 - step_4;
-            else
-                drift_4 <= drift_4 + step_4;  // Reflect at boundary
+            update_counter_4 <= update_counter_4 + 1'b1;
         end
     end
 end
@@ -292,7 +357,11 @@ wire signed [WIDTH-1:0] omega_4 = OMEGA_CENTER_F4 + drift_4;
 assign omega_dt_packed = {omega_4, omega_3, omega_2, omega_1, omega_0};
 assign drift_offset_packed = {drift_4, drift_3, drift_2, drift_1, drift_0};
 
-// v2.1: Individual f0 output for alignment detector
-assign omega_dt_f0_actual = omega_0;
+// Individual outputs for boundary detectors
+assign omega_dt_f0_actual = omega_0;  // SR1 - f₀ boundary partner
+assign omega_dt_f1_actual = omega_1;  // SR2 - timing reference
+assign omega_dt_f2_actual = omega_2;  // SR3 - f₂ boundary (stability anchor)
+assign omega_dt_f3_actual = omega_3;  // SR4 - arousal modulator
+assign omega_dt_f4_actual = omega_4;  // SR5 - f₃ boundary (consciousness gate)
 
 endmodule

@@ -80,6 +80,7 @@ localparam signed [WIDTH-1:0] Q14_HALF = 18'sd8192;    // 0.5
 localparam signed [WIDTH-1:0] Q14_POINT45 = 18'sd7373; // 0.45
 localparam signed [WIDTH-1:0] Q14_POINT60 = 18'sd9830; // 0.60
 localparam signed [WIDTH-1:0] Q14_POINT75 = 18'sd12288; // 0.75
+localparam signed [WIDTH-1:0] Q14_POINT78 = 18'sd12780; // 0.78 - above threshold for triggering
 localparam signed [WIDTH-1:0] Q14_POINT80 = 18'sd13107; // 0.80
 
 // Test tracking
@@ -158,13 +159,13 @@ initial begin
     check_test("Ignition not active", ignition_active == 1'b0);
 
     $display("\n--- Test 2: No Ignition Without Beta Quiet ---");
-    coherence_in = Q14_POINT75;  // High coherence
+    coherence_in = Q14_POINT78;  // High coherence (above threshold)
     beta_quiet = 0;  // But beta NOT quiet
     run_cycles(200);
     check_test("Still in BASELINE despite high coherence", ignition_phase == 3'd0);
 
     $display("\n--- Test 3: Trigger Ignition (Coherence + Beta Quiet) ---");
-    coherence_in = Q14_POINT75;  // High coherence
+    coherence_in = Q14_POINT78;  // High coherence (above threshold)
     beta_quiet = 1;  // Beta quiet - trigger!
     run_cycles(10);
     check_test("Transitioned to COHERENCE phase (1)", ignition_phase == 3'd1);
@@ -208,7 +209,7 @@ initial begin
     check_test("Ignition no longer active", ignition_active == 1'b0);
 
     $display("\n--- Test 9: Refractory Phase (No Re-Ignition) ---");
-    coherence_in = Q14_POINT75;  // Try to trigger again
+    coherence_in = Q14_POINT78;  // Try to trigger again (above threshold)
     beta_quiet = 1;
     run_cycles(500);
     check_test("Still in REFRACTORY despite trigger conditions", ignition_phase == 3'd6);
@@ -222,7 +223,7 @@ initial begin
     check_test("Gain back to baseline", gain_envelope < Q14_HALF);
 
     $display("\n--- Test 11: Second Ignition Possible After Refractory ---");
-    coherence_in = Q14_POINT75;
+    coherence_in = Q14_POINT78;  // Above threshold
     beta_quiet = 1;
     run_cycles(50);
     check_test("Can trigger second ignition", ignition_phase == 3'd1);
