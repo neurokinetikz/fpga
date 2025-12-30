@@ -1,8 +1,8 @@
-# φⁿ Neural Processor
+# φⁿ Neural Processor FPGA
 
-A biologically-realistic neural oscillator system implemented in Verilog for FPGA, featuring golden ratio (φ) frequency architecture, complete interneuron microcircuits, and Schumann Resonance coupling.
+A biologically-realistic neural oscillator system implemented in Verilog for FPGA, featuring golden ratio (φ) frequency architecture, complete interneuron microcircuits, Schumann Resonance coupling, and the Three-Boundary consciousness gating system.
 
-**Current Version:** v12.0 (Unified State Dynamics)
+**Current Version:** v12.3 (Three-Boundary Architecture)
 **Target Platform:** Digilent Zybo Z7-20 (Xilinx Zynq-7020)
 
 ---
@@ -28,23 +28,24 @@ This project implements a comprehensive thalamo-cortical neural architecture wit
 ### Oscillatory Dynamics
 - **Gamma-theta nesting**: L2/3 switches 65/40 Hz based on theta phase
 - **Spectrolaminar organization**: Gamma superficial, alpha/beta deep
-- **Schumann Resonance coupling**: 5 drifting harmonics (7.6-32 Hz)
+- **Schumann Resonance coupling**: 5 drifting harmonics (7.75-32 Hz)
 - **Consciousness state transitions**: Normal, Anesthesia, Psychedelic, Flow, Meditation
-- **State-dependent Ca²⁺ threshold** (v9.5): Lower in PSYCHEDELIC (more Ca²⁺ spikes), higher in ANESTHESIA
+- **State-dependent Ca²⁺ threshold** (v9.5): Lower in PSYCHEDELIC, higher in ANESTHESIA
 
-### Unified State Dynamics (v12.0)
-- **State transition interpolation** (v11.4): Smooth consciousness state changes via linear interpolation
-- **Distributed SIE architecture** (v11.5): Option C distributed boost (6.8 dB total) prevents stacking
-- **Parameterized envelope bounds** (v11.4): Theta ±30% [0.7,1.3], cortical ±50% [0.5,1.5]
-- **MU-based amplitude scaling** (v11.4): State-dependent layer output amplitudes
-- **State-driven coupling mode** (v1.1): MEDITATION forces HARMONIC coupling automatically
+### Three-Boundary Architecture (v12.3)
 
-### Active φⁿ Dynamics (v11.0-11.3)
-- **Self-organizing frequencies**: Oscillators find stable φⁿ positions via energy landscape
-- **SIE dynamics monitoring**: Kuramoto R, boundary generators, bicoherence, mode controller
-- **2:1 Harmonic Catastrophe avoidance**: f₁ automatically retreats from n=1.5 to n=1.25
-- **Dynamic SIE enhancement**: Computed from stability metric (replaces hardcoded values)
-- **ENABLE_ADAPTIVE parameter**: Backward-compatible mode switch (0=static, 1=adaptive)
+The v12.3 release introduces hierarchical alignment gating between internal cortical oscillators and external Schumann Resonance:
+
+| Boundary | Source | Target | Weight | Role |
+|----------|--------|--------|--------|------|
+| **f₀** | √(θ×α) | SR1 (7.75 Hz) | 40% | Ignition Primary |
+| **f₂** | √(β_low×β_high) | SR3 (20 Hz) | 30% | Stability Anchor |
+| **SR4** | β_high direct | SR4 (25 Hz) | 20% | Arousal Modulation |
+| **f₃** | √(β_high×γ) | SR5 (32 Hz) | 10% | Consciousness Gate |
+
+**Seeker-Reference Dynamics:** Internal oscillators drift 3-5× faster than SR references, creating periodic alignment windows rather than exact frequency lock.
+
+**Consciousness Gating:** The f₃ boundary has an inherent 8% gap (74 OMEGA_DT), making full consciousness access rare and brief—explaining why conscious processing is intermittent.
 
 ---
 
@@ -52,18 +53,29 @@ This project implements a comprehensive thalamo-cortical neural architecture wit
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────────┐
-│                     φⁿ NEURAL PROCESSOR v12.0                                │
+│                     φⁿ NEURAL PROCESSOR v12.3                                │
+│                   Three-Boundary Architecture                                │
 │                                                                              │
 │  ┌─────────────────────────────────────────────────────────────────────────┐ │
 │  │ SCHUMANN RESONANCE SYSTEM                                               │ │
-│  │   SR Frequency Drift (bounded random walk) → SR Harmonic Bank (f₀-f₄)   │ │
-│  │   5 stochastic oscillators: 7.6, 13.75, 20, 25, 32 Hz                   │ │
-│  │   Per-harmonic coherence detection → Continuous gain modulation         │ │
+│  │   SR Stability Hierarchy (v3.0):                                        │ │
+│  │   SR1: 7.75 Hz (2s) | SR2: 13.75 Hz (5s) | SR3: 20 Hz (10s ANCHOR)     │ │
+│  │   SR4: 25 Hz (1s FAST) | SR5: 32 Hz (2s)                               │ │
+│  └─────────────────────────────────────────────────────────────────────────┘ │
+│                              ↓                                               │
+│  ┌─────────────────────────────────────────────────────────────────────────┐ │
+│  │ THREE-BOUNDARY DETECTORS (v12.3)                                        │ │
+│  │   f₀ = √(θ×α) → SR1   [Ignition Primary, 40% weight]                   │ │
+│  │   f₂ = √(β_low×β_high) → SR3   [Stability Anchor, 30% weight]          │ │
+│  │   SR4 coupling: β_high → SR4   [Arousal, 20% weight]                    │ │
+│  │   f₃ = √(β_high×γ) → SR5   [Consciousness Gate, 10% weight, 8% gap]    │ │
+│  │                              ↓                                          │ │
+│  │   multi_alignment_ctrl → ignition_permitted, consciousness_access       │ │
 │  └─────────────────────────────────────────────────────────────────────────┘ │
 │                              ↓                                               │
 │  ┌─────────────────────────────────────────────────────────────────────────┐ │
 │  │ THALAMUS                                                                │ │
-│  │   Theta oscillator (5.89 Hz) ← SR entrainment when β quiet             │ │
+│  │   Theta oscillator (6.09 Hz, φ⁻⁰·⁵) ← Seeker rate 3.2× faster than SR1 │ │
 │  │   8-phase multiplexing (encoding phases 0-3, retrieval phases 4-7)      │ │
 │  │   Core pathway → L4    |    Matrix pathway (L5b avg) → L1              │ │
 │  │   L6 CT inhibition via TRN amplification                                │ │
@@ -86,7 +98,7 @@ This project implements a comprehensive thalamo-cortical neural architecture wit
 │  │   └─────────────────────────────────────────────────────────────────┘   │ │
 │  │   ┌─────────────────────────────────────────────────────────────────┐   │ │
 │  │   │ LAYER 2/3 (Supragranular) - Feedforward Gamma Engine    PLASTIC│   │ │
-│  │   │   40.36/65.3 Hz (φ³·⁵/φ⁴·⁵) - switches with theta phase        │   │ │
+│  │   │   41.76/67.6 Hz (φ³·⁵/φ⁴·⁵) - switches with theta phase        │   │ │
 │  │   │   ← L4 + L6 (basal) + CA3 (apical) × dendritic_gain             │   │ │
 │  │   │   ← PV+ inhibition (L2/3 PING + L4 ff + L5 fb)                  │   │ │
 │  │   │   → Feedforward to next column + CA3                            │   │ │
@@ -94,34 +106,35 @@ This project implements a comprehensive thalamo-cortical neural architecture wit
 │  │   └─────────────────────────────────────────────────────────────────┘   │ │
 │  │   ┌─────────────────────────────────────────────────────────────────┐   │ │
 │  │   │ LAYER 4 (Granular) - Thalamocortical Relay          SCAFFOLD   │   │ │
-│  │   │   31.73 Hz (φ³) - stable backbone                               │   │ │
+│  │   │   32.83 Hz (φ³) - stable backbone                               │   │ │
 │  │   │   ← Thalamic theta + feedforward                                │   │ │
 │  │   │   → L2/3 (canonical) + L5a (bypass)                             │   │ │
 │  │   │   PV+ population gates feedforward pathway                      │   │ │
 │  │   └─────────────────────────────────────────────────────────────────┘   │ │
 │  │   ┌─────────────────────────────────────────────────────────────────┐   │ │
 │  │   │ LAYER 5a (Upper L5) - Motor Output              INTERMEDIATE   │   │ │
-│  │   │   15.42 Hz (φ¹·⁵) - IT neurons (intratelencephalic)             │   │ │
+│  │   │   15.95 Hz (φ¹·⁵) - IT neurons (intratelencephalic)             │   │ │
 │  │   │   ← L2/3 + L6 feedback + L4 bypass (all × apical_gain)          │   │ │
 │  │   │   → Output mixer / DAC                                          │   │ │
 │  │   └─────────────────────────────────────────────────────────────────┘   │ │
 │  │   ┌─────────────────────────────────────────────────────────────────┐   │ │
 │  │   │ LAYER 5b (Lower L5) - Subcortical Output            SCAFFOLD   │   │ │
-│  │   │   24.94 Hz (φ²·⁵) - PT neurons (pyramidal tract)                │   │ │
+│  │   │   25.81 Hz (φ²·⁵) - PT neurons (pyramidal tract)                │   │ │
 │  │   │   ← L2/3 + inter-column feedback (× apical_gain)                │   │ │
 │  │   │   → L6 intra-column + Matrix thalamus                           │   │ │
 │  │   │   PV+ population provides feedback inhibition                   │   │ │
+│  │   │   Seeker rate 3× faster than SR4 for arousal coupling           │   │ │
 │  │   └─────────────────────────────────────────────────────────────────┘   │ │
 │  │   ┌─────────────────────────────────────────────────────────────────┐   │ │
 │  │   │ LAYER 6 (Multiform) - Corticothalamic Control       PLASTIC    │   │ │
-│  │   │   9.53 Hz (φ⁰·⁵) - alpha gain control                           │   │ │
+│  │   │   9.86 Hz (φ⁰·⁵) - alpha gain control                           │   │ │
 │  │   │   ← L5b feedback + inter-column + phase_coupling                │   │ │
 │  │   │   → Thalamus (inhibitory via TRN) + L5a + L5b + L2/3 + L1       │   │ │
 │  │   │   Extended connectivity (v9.6): L6→L2/3, L6→L5b, L6→L1          │   │ │
 │  │   └─────────────────────────────────────────────────────────────────┘   │ │
 │  └─────────────────────────────────────────────────────────────────────────┘ │
 │                              ↓                                               │
-│  Output Mixer → 12-bit DAC (motor L2/3 + L5a + pink noise)                  │
+│  Output Mixer → 18-bit DAC (motor L2/3 + L5a + pink noise)                  │
 └──────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -132,13 +145,13 @@ This project implements a comprehensive thalamo-cortical neural architecture wit
 ### Hardware
 - **Target:** Digilent Zybo Z7-20 (Xilinx Zynq-7020)
 - **Clock:** 125 MHz system clock
-- **Resources:** ~18k LUTs, ~160 DSP48 slices (estimated)
+- **Resources:** ~20k LUTs, ~180 DSP48 slices (estimated with v12.3 additions)
 
 ### Software
 - **Simulation:** [Icarus Verilog](http://iverilog.icarus.com/) (`iverilog`, `vvp`)
 - **Waveform Viewer:** [GTKWave](http://gtkwave.sourceforge.net/) (optional)
-- **Synthesis:** Xilinx Vivado 2023.x or later (for FPGA deployment)
-- **Analysis:** Python 3 with matplotlib (for visualization scripts)
+- **Synthesis:** Xilinx Vivado 2020.2+ (for FPGA deployment)
+- **Analysis:** Python 3.8+ with matplotlib, numpy (for visualization scripts)
 
 ---
 
@@ -163,9 +176,13 @@ sudo apt install iverilog
 # Using Makefile
 make iverilog-fast      # Fast CA3/theta test (6 tests)
 make iverilog-full      # Full system test (15 tests)
-make iverilog-all       # All tests (~220 tests)
+make iverilog-all       # All tests (~380 tests)
 
-# Manual compilation (full system)
+# Three-Boundary Architecture test (v12.3)
+iverilog -o tb_three_boundary.vvp -s tb_three_boundary src/*.v tb/tb_three_boundary.v
+vvp tb_three_boundary.vvp
+
+# Manual full system compilation
 iverilog -o tb_full_system_fast.vvp -s tb_full_system_fast \
     src/clock_enable_generator.v src/hopf_oscillator.v src/hopf_oscillator_stochastic.v \
     src/ca3_phase_memory.v src/thalamus.v src/pv_interneuron.v src/cortical_column.v \
@@ -185,29 +202,37 @@ gtkwave tb_full_system_fast.vcd
 
 ---
 
-## Oscillator Frequencies
+## Oscillator Frequencies (v12.3: φⁿ × 7.75 Hz Base)
 
-All cortical frequencies follow φⁿ scaling. SR harmonics use observed frequencies:
+All cortical frequencies follow φⁿ scaling from the Schumann Resonance fundamental:
 
 | Location | Frequency | φⁿ | OMEGA_DT | Role |
 |----------|-----------|-----|----------|------|
-| **Theta (thalamus)** | 5.89 Hz | φ⁻⁰·⁵ | 152 | Memory gating, encoding/retrieval |
-| SR f₀ | 7.6 Hz ± 0.6 | — | 196 | Schumann fundamental → theta |
-| SR f₁ | 13.75 Hz ± 0.75 | — | 354 | Alpha coupling (L6) |
-| SR f₂ | 20 Hz ± 1 | — | 514 | Low beta coupling (L5a) |
-| SR f₃ | 25 Hz ± 1.5 | — | 643 | High beta coupling (L5b) |
-| SR f₄ | 32 Hz ± 2 | — | 823 | Gamma coupling (L4) |
-| **L6 (cortex)** | 9.53 Hz | φ⁰·⁵ | 245 | Alpha gain control |
-| **L5a (cortex)** | 15.42 Hz | φ¹·⁵ | 397 | Low beta motor output |
-| **L5b (cortex)** | 24.94 Hz | φ²·⁵ | 642 | High beta feedback |
-| **L4 (cortex)** | 31.73 Hz | φ³ | 817 | Thalamocortical boundary |
-| **L2/3 (cortex)** | 40.36/65.3 Hz | φ³·⁵/φ⁴·⁵ | 1040/1681 | Gamma (switches with θ) |
+| **Theta (thalamus)** | 6.09 Hz | φ⁻⁰·⁵ | 157 | Memory gating, encoding/retrieval |
+| SR f₀ | 7.75 Hz ± 0.5 | — | 199 | Schumann fundamental → f₀ boundary |
+| SR f₁ | 13.75 Hz ± 0.8 | — | 354 | Alpha coupling (L6) |
+| SR f₂ | 20 Hz ± 1.0 | — | 514 | Low beta coupling → f₂ boundary |
+| SR f₃ | 25 Hz ± 1.5 | — | 643 | High beta coupling → SR4 direct |
+| SR f₄ | 32 Hz ± 2.0 | — | 823 | Gamma coupling → f₃ boundary |
+| **L6 (cortex)** | 9.86 Hz | φ⁰·⁵ | 254 | Alpha gain control |
+| **L5a (cortex)** | 15.95 Hz | φ¹·⁵ | 410 | Low beta motor output |
+| **L5b (cortex)** | 25.81 Hz | φ²·⁵ | 664 | High beta feedback |
+| **L4 (cortex)** | 32.83 Hz | φ³ | 845 | Thalamocortical boundary |
+| **L2/3 (cortex)** | 41.76/67.6 Hz | φ³·⁵/φ⁴·⁵ | 1075/1740 | Gamma (switches with θ) |
+
+### Three-Boundary Mathematics (v12.3)
+
+The geometric mean boundaries align with SR harmonics:
+
+```
+f₀ = √(θ × α)           = √(6.09 × 9.86)   = 7.75 Hz ≈ SR1 ✓
+f₂ = √(β_low × β_high)  = √(15.95 × 25.81) = 20.29 Hz ≈ SR3 (8 OMEGA_DT gap)
+f₃ = √(β_high × γ)      = √(25.81 × 32.83) = 29.11 Hz ≈ SR5 (74 OMEGA_DT gap, 8%)
+```
 
 ---
 
 ## Interneuron Microcircuits (v9.x Series)
-
-The v9.x series implements biologically realistic interneuron dynamics:
 
 ### Three Interneuron Classes
 
@@ -229,11 +254,7 @@ Matrix + Feedback ──▶ SST+ ──┤ (inhibits)
                       Pyramidal Dendrite ──▶ Gain Modulation [0.5, 1.5]
 ```
 
-When VIP+ is active: VIP+ inhibits SST+ → SST+ inhibition decreases → Pyramidal gain increases (disinhibition)
-
 ### Two-Compartment Dendritic Model (v9.5)
-
-Each pyramidal cell (L2/3, L5a, L5b) has separate basal and apical compartments:
 
 ```
                         ┌─────────────────────────┐
@@ -250,15 +271,7 @@ Each pyramidal cell (L2/3, L5a, L5b) has separate basal and apical compartments:
                         └─────────────────────────┘
 ```
 
-**BAC (Backpropagating Action Potential-Activated Ca²⁺) Firing:**
-When apical activity exceeds the Ca²⁺ threshold AND basal input is sufficient, the dendritic output is boosted by K_BAC (1.5×). This implements associative computation: top-down context (apical) gates bottom-up input (basal).
-
-### Cross-Layer PV+ Network (v9.3)
-
-L2/3 receives combined inhibition from three PV+ populations:
-- **pv_l23** (local PING): 1.0× weight - creates E-I gamma oscillation
-- **pv_l4** (feedforward): 0.5× weight - gates L4→L2/3 pathway
-- **pv_l5** (feedback): 0.25× weight - provides top-down control
+**BAC Firing:** When apical activity exceeds Ca²⁺ threshold AND basal input is sufficient, output is boosted 1.5×.
 
 ---
 
@@ -274,24 +287,7 @@ The system supports 5 consciousness states via `state_select[2:0]`:
 | 3 | **Flow** | L5a/L5b=6 enhanced | 0.5 | Motor-optimized state |
 | 4 | **Meditation** | θ/L6=6, β/γ suppressed | 0.375 | SR-sensitive, theta coherence |
 
-**State Transitions (v11.4):** The `transition_duration` input enables smooth interpolation between states. Setting it to 0 preserves instant transitions (backward compatible). A value of 80000 creates a 20-second ramp at 4 kHz.
-
-**State-Dependent Ca²⁺ Dynamics (v9.5):** The dendritic Ca²⁺ spike threshold varies by state. Lower thresholds in PSYCHEDELIC produce more Ca²⁺ spikes and BAC firing, enabling enhanced associative processing. Higher thresholds in ANESTHESIA suppress Ca²⁺ spikes, reducing consciousness.
-
----
-
-## Scaffold vs Plastic Architecture
-
-Based on Dupret et al. 2025 findings:
-
-| Layer | Type | Phase Coupling | Behavior |
-|-------|------|----------------|----------|
-| L4 | **Scaffold** | No | Stable thalamocortical boundary |
-| L5b | **Scaffold** | No | Maintains state, PT neurons |
-| L2/3 | **Plastic** | Yes | Integrates new patterns, gamma |
-| L6 | **Plastic** | Yes | Memory-dependent attention |
-| L5a | Intermediate | No | Motor output adaptation |
-| L1 | Modulator | — | Top-down gain control |
+**State Transitions (v11.4):** Smooth interpolation via `transition_duration` input (default 20s).
 
 ---
 
@@ -299,88 +295,50 @@ Based on Dupret et al. 2025 findings:
 
 ```
 fpga/
-├── src/                              # Verilog source modules (29 files)
-│   ├── phi_n_neural_processor.v      # Top-level (v11.5, distributed SIE boost)
+├── src/                              # Verilog source modules (35 files)
+│   ├── phi_n_neural_processor.v      # Top-level (v12.3, three-boundary)
 │   ├── hopf_oscillator.v             # Core oscillator (dx/dt = μx - ωy - r²x)
 │   ├── hopf_oscillator_stochastic.v  # Stochastic variant with noise
-│   ├── cortical_column.v             # 6-layer cortical model (v11.4, MU scaling)
-│   ├── dendritic_compartment.v       # Two-compartment dendritic model (v9.5)
+│   ├── boundary_detector_f2.v        # v1.1: √(β_low×β_high) → SR3
+│   ├── boundary_detector_f3.v        # v1.0: √(β_high×γ) → SR5
+│   ├── direct_coupling_sr4.v         # v1.1: β_high → SR4 direct
+│   ├── multi_alignment_ctrl.v        # v1.2k: Four-boundary orchestration
+│   ├── sr_frequency_drift.v          # v3.0: Per-harmonic stability hierarchy
+│   ├── sr_ignition_controller.v      # v1.5: Three-boundary permission
+│   ├── cortical_frequency_drift.v    # v3.6: Per-layer seeker rates
+│   ├── phi_n_alignment_detector.v    # v1.1: √(θ×α) = SR1, widened σ=8
+│   ├── thalamic_frequency_drift.v    # v1.1: Theta seeker rate (3.2×)
+│   ├── cortical_column.v             # 6-layer cortical model (v12.2)
+│   ├── dendritic_compartment.v       # Two-compartment dendritic (v9.5)
 │   ├── layer1_minimal.v              # L1 with VIP+ + L6 input (v9.6)
 │   ├── pv_interneuron.v              # PV+ basket cell dynamics (v9.2)
-│   ├── thalamus.v                    # Theta + SR + matrix (v11.5, distributed SIE)
+│   ├── thalamus.v                    # Theta + SR + matrix (v11.6)
 │   ├── ca3_phase_memory.v            # Hebbian phase memory (v8.0)
-│   ├── sr_harmonic_bank.v            # 5-harmonic SR bank (v7.7, dynamic SIE)
-│   ├── sr_noise_generator.v          # Per-harmonic stochastic noise
-│   ├── sr_frequency_drift.v          # v2.0: Faster update, wider drift
-│   ├── sr_ignition_controller.v      # v10.0: Six-phase SIE state machine
-│   ├── amplitude_envelope_generator.v # v11.4: O-U with parameterized bounds
-│   ├── cortical_frequency_drift.v    # v3.0: Force-based adaptive drift
-│   ├── config_controller.v           # Consciousness (v11.4, state interpolation)
-│   ├── clock_enable_generator.v      # FAST_SIM-aware 4kHz clock
-│   ├── pink_noise_generator.v        # 1/f^φ noise (v7.2, √Fibonacci-weighted)
-│   ├── output_mixer.v                # DAC output (v7.17, distributed SIE boost)
-│   ├── energy_landscape.v            # v11.1b: φⁿ forces + rational resonance
-│   ├── quarter_integer_detector.v    # v11.0: Position classification
-│   ├── sin_quarter_lut.v             # v11.0: 256-entry quarter-wave sine LUT
-│   ├── coupling_susceptibility.v     # v11.1a: Farey χ(r) with 55 rationals
-│   ├── kuramoto_order_parameter.v    # v11.3: Population synchronization
-│   ├── boundary_generator.v          # v11.3: Nonlinear mixing
-│   ├── bicoherence_monitor.v         # v11.3: Three-frequency coupling
-│   ├── coupling_mode_controller.v    # v1.1: State-driven mode switching
-│   └── harmonic_spacing_index.v      # v11.3: φⁿ ratio tracking
+│   ├── sr_harmonic_bank.v            # 5-harmonic SR bank (v7.7)
+│   ├── config_controller.v           # Consciousness (v11.4, interpolation)
+│   ├── energy_landscape.v            # v11.2: φⁿ forces + catastrophe
+│   ├── coupling_mode_controller.v    # v1.2b: Synchronized gain
+│   └── ...                           # Additional modules
 │
-├── tb/                               # Testbenches (39 files, 365+ tests)
+├── tb/                               # Testbenches (38 files, 380+ tests)
+│   ├── tb_three_boundary.v           # v12.3: Three-boundary tests (15)
 │   ├── tb_full_system_fast.v         # Full integration (15 tests)
-│   ├── tb_state_interpolation.v      # State transition interpolation (10 tests) - v11.4
-│   ├── tb_state_transition_spectrogram.v # 100s spectrogram validation - v11.4b
-│   ├── tb_kuramoto_order.v           # Kuramoto order parameter (7 tests) - v11.3
-│   ├── tb_boundary_generator.v       # Boundary mixing (7 tests) - v11.3
-│   ├── tb_bicoherence_monitor.v      # Bicoherence detection (6 tests) - v11.3
-│   ├── tb_coupling_mode_controller.v # Mode switching (8 tests) - v11.3
-│   ├── tb_harmonic_spacing_index.v   # φⁿ ratio tracking (8 tests) - v11.3
-│   ├── tb_pac_strength.v             # PAC strength (10 tests) - v11.1c
-│   ├── tb_coupling_susceptibility.v  # Farey χ(r) coupling (20 tests) - v11.1a
-│   ├── tb_energy_landscape.v         # Forces + rational resonance (24 tests) - v11.1b
-│   ├── tb_quarter_integer_detector.v # Position classification (8 tests) - v11.0
-│   ├── tb_self_organization.v        # Full integration validation (10 tests) - v11.0
-│   ├── tb_phi_n_sr_relationships.v   # φⁿ Q-factor hierarchy (10 tests) - v10.4
-│   ├── tb_quarter_integer_theory.v   # Quarter-integer fallback (12 tests) - v10.5
-│   ├── tb_amplitude_envelope.v       # O-U envelope dynamics (8 tests) - v10.0
-│   ├── tb_sr_ignition_phases.v       # SIE phase evolution (10 tests) - v10.0
-│   ├── tb_l6_extended.v              # Extended L6 connectivity (10 tests) - v9.6
-│   ├── tb_dendritic_compartment.v    # Dendritic Ca²⁺/BAC (10 tests) - v9.5
-│   ├── tb_vip_disinhibition.v        # VIP+ tests (8 tests) - v9.4
-│   ├── tb_pv_crosslayer.v            # Cross-layer PV+ (8 tests) - v9.3
-│   ├── tb_pv_feedback.v              # PING network (8 tests) - v9.2
-│   ├── tb_sst_dynamics.v             # SST+ slow dynamics (8 tests) - v9.1
-│   ├── tb_pv_minimal.v               # PV+ baseline (6 tests) - v9.0
-│   ├── tb_l6_connectivity.v          # L6 output targets (10 tests) - v8.8
-│   ├── tb_layer1_minimal.v           # L1 gain modulation (10 tests) - v8.7
-│   ├── tb_canonical_microcircuit.v   # Pathway tests (20 tests) - v8.6
-│   ├── tb_sr_frequency_drift.v       # SR drift (30 tests) - v8.5
-│   ├── tb_gamma_theta_nesting.v      # PAC tests (7 tests) - v8.4
-│   ├── tb_theta_phase_multiplexing.v # Theta phase (19 tests) - v8.3
-│   ├── tb_scaffold_architecture.v    # Scaffold layers (14 tests) - v8.0
-│   ├── tb_multi_harmonic_sr.v        # Multi-harmonic SR (17 tests)
-│   ├── tb_learning_fast.v            # CA3 Hebbian (8 tests)
-│   ├── tb_sr_coupling.v              # SR coupling (12 tests)
-│   ├── tb_v55_fast.v                 # Fast integration (6 tests)
+│   ├── tb_state_transition_spectrogram.v # 100s spectrogram (32 columns)
+│   ├── tb_sr_frequency_drift.v       # SR drift with hierarchy (30 tests)
+│   ├── tb_coupling_mode_controller.v # Mode switching (8 tests)
 │   └── ...                           # Additional testbenches
 │
 ├── scripts/                          # Analysis & visualization
-│   ├── visualize_*.py                # Python plotting scripts
+│   ├── dac_spectrogram.py            # Spectral analysis
+│   ├── state_transition_spectrogram.py
 │   └── run_vivado_*.tcl              # Synthesis TCL scripts
 │
 ├── docs/                             # Specifications
+│   ├── SPEC/UPDATES/SPEC_v12.3_UPDATE.md  # Current version spec
 │   ├── FPGA_SPECIFICATION_V8.md      # Base architecture spec
-│   ├── SPEC_v12.0_UPDATE.md          # Current version (Unified State Dynamics)
-│   ├── SPEC_v11.3_UPDATE.md          # SIE Dynamics & Population Metrics
-│   ├── SPEC_v11.0_UPDATE.md          # Active φⁿ Dynamics
-│   ├── SPEC_v10.5_UPDATE.md          # Quarter-Integer φⁿ Theory
-│   ├── SPEC_v10.4_UPDATE.md          # φⁿ Geophysical SR Integration
-│   └── SYSTEM_DESCRIPTION.md         # Comprehensive system description
+│   └── SYSTEM_DESCRIPTION.md         # Comprehensive description
 │
-├── CLAUDE.md                         # Development workflow & quick reference
+├── CLAUDE.md                         # Technical reference & constants
 ├── Makefile                          # Build targets
 └── README.md                         # This file
 ```
@@ -395,86 +353,29 @@ fpga/
 - **Range:** [-8.0, +7.99994]
 - **Unity (1.0):** 16384
 
-### Key Constants
+### Key Constants (v12.3)
 
 | Name | Q14 Value | Decimal | Usage |
 |------|-----------|---------|-------|
 | ONE | 16384 | 1.0 | Unity reference |
-| K_PHASE | 4096 | 0.25 | Phase coupling strength |
-| SST_ALPHA | 164 | 0.01 | SST+ time constant (τ=25ms) |
-| VIP_ALPHA | 82 | 0.005 | VIP+ time constant (τ=50ms) |
-| TAU_INV | 819 | 0.05 | PV+ time constant (τ=5ms) |
-| K_EXCITE | 8192 | 0.5 | PV+ pyramid excitation |
-| K_INHIB | 4915 | 0.3 | PV+ inhibition weight |
-| K_VIP | 8192 | 0.5 | VIP+ attention scaling |
-| GAIN_MIN | 4096 | 0.25 | L1 minimum apical gain (v9.6) |
-| GAIN_MAX | 32768 | 2.0 | L1 maximum apical gain (v9.6) |
-| K_APICAL | 4096 | 0.25 | Apical contribution weight (v9.5) |
-| K_BAC | 24576 | 1.5 | BAC supralinear boost (v9.5) |
-| CA_THRESH_NORMAL | 8192 | 0.5 | Ca²⁺ threshold in NORMAL state |
-| CA_THRESH_PSYCHEDELIC | 4096 | 0.25 | Ca²⁺ threshold in PSYCHEDELIC |
-| K_L6_L23 | 2458 | 0.15 | L6 → L2/3 coupling (v9.6) |
-| K_L6_L5B | 1638 | 0.1 | L6 → L5b coupling (v9.6) |
-| K_L6_L1 | 1638 | 0.1 | L6 → L1 coupling (v9.6) |
-| ENABLE_ADAPTIVE | 0/1 | — | v11.0: 0=static, 1=self-organizing |
-| K_FORCE | 1638 | 0.1 | Force-to-drift gain (v11.0) |
-| FORCE_SCALE_A | 8192 | 0.5 | φ-landscape force amplitude (v11.0) |
-| FORCE_SCALE_B | 16384 | 1.0 | Catastrophe repulsion strength (v11.0) |
-| CATASTROPHE_N_MIN | 22118 | 1.35 | 2:1 danger zone lower bound (v11.0) |
-| CATASTROPHE_N_MAX | 25395 | 1.55 | 2:1 danger zone upper bound (v11.0) |
-| SIE_BASE_ENHANCE | 19661 | 1.2× | Dynamic SIE minimum (v11.0) |
-| SIE_K_INSTABILITY | 29491 | 1.8× | SIE instability scaling (v11.0) |
-| ENVELOPE_MIN_THETA | 11469 | 0.7 | Theta envelope lower bound (v11.4) |
-| ENVELOPE_MAX_THETA | 21299 | 1.3 | Theta envelope upper bound (v11.4) |
-| MU_DIV3 | 5461 | 0.333 | MU scaling divisor (v11.4) |
-| TRANSITION_DURATION | 80000 | 20s | Default state transition cycles (v11.4) |
-| SIE_ENHANCE_F0_v12 | 21299 | 1.3× | Distributed f₀ enhancement (v11.5) |
-| SIE_ENHANCE_F1_v12 | 19661 | 1.2× | Distributed f₁ enhancement (v11.5) |
-| SIE_MIXER_MAX | 22938 | 1.4× | Mixer boost ceiling (v11.5) |
-| KURAMOTO_R_ENTRY | 8192 | 0.5 | HARMONIC mode entry threshold (v1.1) |
-| KURAMOTO_R_EXIT | 6554 | 0.4 | HARMONIC mode exit threshold (v1.1) |
+| PHI | 26510 | 1.618 | Golden ratio |
+| SIGMA_SQ_F2 | 64 | σ=8 | f₂ boundary Gaussian |
+| SIGMA_SQ_F3 | 100 | σ=10 | f₃ boundary Gaussian |
+| SIGMA_SQ_SR4 | 144 | σ=12 | SR4 coupling Gaussian |
+| GATE_THRESH_F3 | 4915 | 0.3 | Consciousness gate threshold |
+| W_F0 | 6554 | 0.4 | f₀ alignment weight |
+| W_F2 | 4915 | 0.3 | f₂ alignment weight |
+| W_SR4 | 3277 | 0.2 | SR4 coupling weight |
+| W_F3 | 1638 | 0.1 | f₃ alignment weight |
+| UPDATE_PERIOD_SR3 | 40000 | 10s | SR3 - MOST STABLE |
+| UPDATE_PERIOD_SR4 | 4000 | 1s | SR4 - FASTEST |
+| ENABLE_THREE_BOUNDARY | 0/1 | — | Enable v12.3 architecture |
 
 ### Simulation Parameters
 - **Update rate:** 4 kHz oscillator dynamics
 - **FAST_SIM:** Parameter for ~3000× speedup (÷10 vs ÷31250 clock)
 - **Oscillators:** 21 Hopf (16 deterministic + 5 stochastic SR)
 - **Memory:** 6×6 symmetric Hebbian weight matrix (288 bits)
-
----
-
-## Version History
-
-| Version | Date | Key Features |
-|---------|------|--------------|
-| **v12.0** | 2025-12-29 | Unified State Dynamics: smooth transitions + distributed SIE architecture |
-| v11.5 | 2025-12-29 | Distributed SIE Boost (Option C): 6.8 dB across mixer/f₀/f₁ |
-| v11.4 | 2025-12-29 | State Transition Interpolation: lerp functions, parameterized envelopes |
-| v11.3 | 2025-12-28 | SIE Dynamics & Population Metrics: Kuramoto R, bicoherence, boundaries |
-| v11.2 | 2025-12-28 | DAC Anti-Clipping: MU_MODERATE (3) for NORMAL, soft limiter |
-| v11.1 | 2025-12-28 | Unified Boundary-Attractor: Farey χ(r), rational resonance, PAC strength |
-| v11.0 | 2025-12-28 | Active φⁿ Dynamics: self-organizing frequencies via energy landscape |
-| v10.5 | 2025-12-28 | Quarter-Integer φⁿ Theory: f₁ as φ^1.25 fallback due to 2:1 catastrophe |
-| v10.4 | 2025-12-28 | φⁿ Geophysical SR Integration: Q-factor modeling, amplitude hierarchy |
-| v10.3 | 2025-12-27 | 1/f^φ Spectral Slope: √Fibonacci-weighted pink noise (v7.2) |
-| v10.2 | 2025-12-27 | Spectral broadening: ±0.5 Hz fast jitter for ~1-2 Hz wide peaks |
-| v10.1 | 2025-12-27 | Envelope integration: per-band envelopes wired to output mixer |
-| v10.0 | 2025-12-27 | EEG Realism: amplitude envelopes, slow drift, SIE controller |
-| v9.6 | 2025-12-27 | Extended L6 connectivity (L6→L2/3, L6→L5b, L6→L1) |
-| v9.5 | 2025-12-27 | Two-compartment dendritic model, Ca²⁺ spikes, BAC firing |
-| v9.4 | 2025-12-27 | VIP+ disinhibition for attention gating |
-| v9.3 | 2025-12-27 | Cross-layer PV+ network (L4, L5 populations) |
-| v9.2 | 2025-12-27 | PV+ PING network with dynamic E-I loop |
-| v9.1 | 2025-12-27 | SST+ explicit slow dynamics (IIR filter) |
-| v9.0 | 2025-12-27 | PV+ minimal amplitude-proportional inhibition |
-| v8.8 | 2025-12-27 | L6 output connectivity (L6→L5a, L6→Thalamus+TRN) |
-| v8.7 | 2025-12-26 | Layer 1 gain modulation, matrix thalamic pathway |
-| v8.6 | 2025-12-26 | Canonical microcircuit (L4→L2/3→L5→L6) |
-| v8.5 | 2025-12-26 | SR frequency drift (bounded random walk) |
-| v8.4 | 2025-12-25 | Gamma-theta nesting |
-| v8.3 | 2025-12-25 | Theta phase multiplexing (8 phases) |
-| v8.0 | 2025-12-24 | Scaffold architecture (Dupret et al. 2025) |
-| v7.4 | 2025-12-23 | Continuous coherence-based SR gain |
-| v7.3 | 2025-12-22 | Multi-harmonic SR bank (5 harmonics) |
 
 ---
 
@@ -486,45 +387,38 @@ All testbenches should pass. Run the full test suite:
 make iverilog-all
 ```
 
-### Test Summary (~365 tests)
+### Test Summary (~380 tests)
 
 | Testbench | Tests | Version | Feature |
 |-----------|-------|---------|---------|
-| tb_state_interpolation | 10 | v11.4 | State transition interpolation |
-| tb_state_transition_spectrogram | Visual | v11.4b | 100s spectrogram validation |
-| tb_kuramoto_order | 7 | v11.3 | Kuramoto order parameter |
-| tb_boundary_generator | 7 | v11.3 | Boundary frequency mixing |
-| tb_bicoherence_monitor | 6 | v11.3 | Bicoherence detection |
-| tb_coupling_mode_controller | 8 | v11.3 | Mode switching |
-| tb_harmonic_spacing_index | 8 | v11.3 | φⁿ ratio tracking |
-| tb_pac_strength | 10 | v11.1c | Phase-amplitude coupling |
-| tb_coupling_susceptibility | 20 | v11.1a | Farey χ(r) coupling |
-| tb_energy_landscape | 24 | v11.1b | Forces + rational resonance |
-| tb_quarter_integer_detector | 8 | v11.0 | Position classification |
-| tb_self_organization | 10 | v11.0 | Full integration validation |
-| tb_phi_n_sr_relationships | 10 | v10.4 | φⁿ Q-factor hierarchy |
-| tb_quarter_integer_theory | 12 | v10.5 | Quarter-integer fallback |
-| tb_amplitude_envelope | 8 | v10.0 | O-U envelope dynamics |
-| tb_sr_ignition_phases | 10 | v10.0 | SIE phase evolution |
+| **tb_three_boundary** | **15** | **v12.3** | **Three-boundary architecture** |
 | tb_full_system_fast | 15 | v6.5 | Full integration |
-| tb_l6_extended | 10 | v9.6 | Extended L6 connectivity |
+| tb_sr_frequency_drift | 30 | v12.3 | SR stability hierarchy |
+| tb_state_transition_spectrogram | Visual | v12.3 | 32-column debug |
+| tb_coupling_mode_controller | 8 | v11.3 | Mode switching |
+| tb_energy_landscape | 24 | v11.1b | φⁿ forces + catastrophe |
+| tb_self_organization | 10 | v11.0 | Full integration validation |
 | tb_dendritic_compartment | 10 | v9.5 | Dendritic Ca²⁺/BAC |
-| tb_vip_disinhibition | 8 | v9.4 | VIP+ attention gating |
-| tb_pv_crosslayer | 8 | v9.3 | Cross-layer PV+ |
-| tb_pv_feedback | 8 | v9.2 | PING network dynamics |
-| tb_sst_dynamics | 8 | v9.1 | SST+ slow dynamics |
-| tb_pv_minimal | 6 | v9.0 | PV+ basket cell |
-| tb_l6_connectivity | 10 | v8.8 | L6 output targets |
-| tb_layer1_minimal | 10 | v8.7 | L1 gain modulation |
 | tb_canonical_microcircuit | 20 | v8.6 | Signal pathways |
-| tb_sr_frequency_drift | 30 | v8.5 | SR drift |
 | tb_gamma_theta_nesting | 7 | v8.4 | PAC tests |
 | tb_theta_phase_multiplexing | 19 | v8.3 | 8-phase theta |
-| tb_scaffold_architecture | 14 | v8.0 | Scaffold layers |
-| tb_multi_harmonic_sr | 17 | v7.3 | Multi-harmonic SR |
-| tb_learning_fast | 8 | v2.1 | CA3 Hebbian |
-| tb_sr_coupling | 12 | v7.2 | SR coupling |
-| tb_v55_fast | 6 | v5.5 | Fast integration |
+| ... | ... | ... | Additional tests |
+
+---
+
+## Version History
+
+| Version | Codename | Key Feature |
+|---------|----------|-------------|
+| **v12.3** | **Three-Boundary Architecture** | **Hierarchical f₀/f₂/SR4/f₃ alignment** |
+| v12.2 | Dual Alignment Ignition | √(θ×α) = SR1 alignment detection |
+| v12.1 | Synchronized State Transitions | Smooth gain interpolation |
+| v12.0 | Unified State Dynamics | State interpolation, distributed SIE |
+| v11.3 | SIE Dynamics | Kuramoto R, bicoherence, boundaries |
+| v11.0 | Active φⁿ Dynamics | Energy landscape, catastrophe avoidance |
+| v10.x | EEG Realism | Amplitude envelopes, 1/f^φ noise |
+| v9.x | Canonical Microcircuit | L6 connectivity, interneurons |
+| v8.x | Scaffold Architecture | Stable/plastic layer differentiation |
 
 ---
 
@@ -532,14 +426,10 @@ make iverilog-all
 
 | Document | Description |
 |----------|-------------|
-| [docs/SPEC_v12.0_UPDATE.md](docs/SPEC_v12.0_UPDATE.md) | **Current v12.0 Unified State Dynamics spec** |
-| [docs/SPEC_v11.3_UPDATE.md](docs/SPEC_v11.3_UPDATE.md) | v11.3 SIE Dynamics & Population Metrics |
-| [docs/SPEC_v11.0_UPDATE.md](docs/SPEC_v11.0_UPDATE.md) | v11.0 Active φⁿ Dynamics |
-| [docs/SPEC_v10.5_UPDATE.md](docs/SPEC_v10.5_UPDATE.md) | Quarter-Integer φⁿ Theory |
-| [docs/SPEC_v10.4_UPDATE.md](docs/SPEC_v10.4_UPDATE.md) | φⁿ Geophysical SR Integration |
+| [docs/SPEC/UPDATES/SPEC_v12.3_UPDATE.md](docs/SPEC/UPDATES/SPEC_v12.3_UPDATE.md) | **v12.3 Three-Boundary Architecture spec** |
+| [docs/SPEC/UPDATES/SPEC_v12.2_UPDATE.md](docs/SPEC/UPDATES/SPEC_v12.2_UPDATE.md) | v12.2 Dual Alignment Ignition |
 | [docs/FPGA_SPECIFICATION_V8.md](docs/FPGA_SPECIFICATION_V8.md) | Base architecture specification |
-| [docs/SYSTEM_DESCRIPTION.md](docs/SYSTEM_DESCRIPTION.md) | Comprehensive system description |
-| [CLAUDE.md](CLAUDE.md) | Development workflow & quick reference |
+| [CLAUDE.md](CLAUDE.md) | Technical reference & constants |
 
 ---
 
@@ -547,13 +437,11 @@ make iverilog-all
 
 | Phase | Version | Feature | Status |
 |-------|---------|---------|--------|
-| 11 | v11.0-v11.3 | Active φⁿ Dynamics, SIE metrics | **Complete** |
-| 12 | v11.4-v12.0 | Unified State Dynamics (transitions + distributed SIE) | **Complete** |
-| 13 | v12.1+ | Neuromodulation (ACh, NE, DA) | Planned |
-| 14 | v12.2+ | Slow oscillations (<1 Hz) and delta | Planned |
-| 15 | v12.3+ | Sleep spindles (11-16 Hz) | Planned |
-| 16 | v12.4+ | Multiple gamma sub-bands | Planned |
-| 17 | v12.5+ | Synaptic realism (lognormal weights) | Planned |
+| 12 | v12.0-v12.3 | Three-Boundary Architecture | **Complete** |
+| 13 | v12.4+ | Neuromodulation (ACh, NE, DA) | Planned |
+| 14 | v12.5+ | Slow oscillations (<1 Hz) and delta | Planned |
+| 15 | v12.6+ | Sleep spindles (11-16 Hz) | Planned |
+| 16 | v12.7+ | Multiple gamma sub-bands | Planned |
 
 ---
 
