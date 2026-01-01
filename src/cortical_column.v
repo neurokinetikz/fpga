@@ -1,5 +1,11 @@
 //=============================================================================
-// Cortical Column - v10.0 with Frequency Drift + Amplitude Envelopes
+// Cortical Column - v12.4 with State-Dependent Phase Coupling Gain
+//
+// v12.4 CHANGES:
+// - Add k_phase_couple input for state-dependent hippocampal-cortical balance
+// - Apply gain control to phase_couple_l23 and phase_couple_l6 signals
+// - Fixes 20:1 phase coupling dominance bug where hippocampal signals entered at 1.0×
+//   while L4 feedforward used K_L4_L23=0.05×
 //
 // v10.0 CHANGES (EEG Realism - Phase 8):
 // - Added omega_drift_* input ports for per-layer frequency drift
@@ -162,6 +168,10 @@ module cortical_column #(
 
     // v9.5: State-dependent Ca2+ threshold for dendritic compartments
     input  wire signed [WIDTH-1:0] ca_threshold,
+
+    // v12.4: State-dependent phase coupling gain from config_controller
+    // Controls hippocampal→cortical balance (NORMAL=0.05, MEDITATION=0.15)
+    input  wire signed [WIDTH-1:0] k_phase_couple,
 
     // v10.0: Frequency drift inputs (signed offset from base OMEGA_DT)
     // Range: ±0.5 Hz (~±13 OMEGA_DT units) for natural spectral spreading
@@ -375,11 +385,31 @@ dendritic_compartment #(
     .bac_active(l5a_bac)
 );
 
+//=============================================================================
+// v12.4: Phase Coupling Gain Control
+//=============================================================================
+// Apply state-dependent gain to phase coupling from CA3 hippocampal memory.
+// This fixes the 20:1 dominance bug where phase_couple entered at 1.0× while
+// L4 feedforward used K_L4_L23=0.05×.
+//
+// Gain values: NORMAL=0.05 (1:1), MEDITATION=0.15 (3:1), PSYCHEDELIC=0.02 (0.4:1)
+
+wire signed [2*WIDTH-1:0] phase_couple_l23_full;
+wire signed [WIDTH-1:0] phase_couple_l23_scaled;
+wire signed [2*WIDTH-1:0] phase_couple_l6_full;
+wire signed [WIDTH-1:0] phase_couple_l6_scaled;
+
+assign phase_couple_l23_full = phase_couple_l23 * k_phase_couple;
+assign phase_couple_l23_scaled = phase_couple_l23_full >>> FRAC;
+
+assign phase_couple_l6_full = phase_couple_l6 * k_phase_couple;
+assign phase_couple_l6_scaled = phase_couple_l6_full >>> FRAC;
+
 // v8.6: L6 receives: intra-column L5b feedback + inter-column feedback + PHASE COUPLING
 // Implements corticothalamic pathway: L5 → L6 → Thalamus
 // Note: L6 dendrites don't extend to L1, so no gain modulation here
 assign l5_to_l6_full = l5b_x_int * K_L5_L6;
-assign l6_input = (l5_to_l6_full >>> FRAC) + (fb_l5_full >>> FRAC) + phase_couple_l6;
+assign l6_input = (l5_to_l6_full >>> FRAC) + (fb_l5_full >>> FRAC) + phase_couple_l6_scaled;
 
 assign pac_full = K_PAC * l6_y_int;
 assign pac_mod = pac_full[FRAC +: WIDTH];
@@ -391,7 +421,8 @@ assign l4_to_l23_full = l4_x_int * K_L4_L23;
 assign l6_to_l23_full = l6_x_int * K_L6_L23;
 
 // v9.6: L2/3 receives L4 feedforward + L6 feedback + PAC + phase coupling (basal compartment)
-assign l23_input_raw = (l4_to_l23_full >>> FRAC) + (l6_to_l23_full >>> FRAC) + pac_mod + phase_couple_l23;
+// v12.4: Now uses phase_couple_l23_scaled (state-dependent gain) instead of raw 1.0× input
+assign l23_input_raw = (l4_to_l23_full >>> FRAC) + (l6_to_l23_full >>> FRAC) + pac_mod + phase_couple_l23_scaled;
 
 //=============================================================================
 // v9.3: Cross-Layer PV+ Network (Phase 4 - Multi-Source Inhibition)

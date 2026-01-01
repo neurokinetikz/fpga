@@ -4,7 +4,7 @@
 
 This is an FPGA implementation of a biologically-realistic neural oscillator system based on the **φⁿ (golden ratio) frequency architecture** with Schumann Resonance coupling. The system implements 21 Hopf oscillators organized into a thalamo-cortical architecture for neural signal processing and consciousness state modeling.
 
-**Current Version:** v12.3 (Three-Boundary Architecture)
+**Current Version:** v12.4 (State-Dependent Phase Coupling & Geophysical Realism)
 **Target Platform:** Digilent Zybo Z7-20 (Xilinx Zynq-7020)
 
 ## Quick Start
@@ -40,6 +40,7 @@ make iverilog-full     # Full system test
 make iverilog-hopf     # Hopf oscillator unit test
 make iverilog-theta    # Theta phase multiplexing test (v8.3)
 make iverilog-scaffold # Scaffold architecture test (v8.3)
+make iverilog-sr-realism # 72-hour SR realism validation (v12.4)
 make iverilog-all      # All tests
 make wave-fast         # Open waveform in GTKWave
 make clean             # Clean generated files
@@ -49,14 +50,14 @@ make clean             # Clean generated files
 
 ```
 fpga/
-├── src/                          # Verilog source modules (35 files)
-│   ├── phi_n_neural_processor.v  # Top-level (v12.3, three-boundary architecture)
+├── src/                          # Verilog source modules (36 files)
+│   ├── phi_n_neural_processor.v  # Top-level (v12.4, state-dependent phase coupling)
 │   ├── hopf_oscillator.v         # Core oscillator (v6.0, dx/dt = μx - ωy - r²x)
 │   ├── hopf_oscillator_stochastic.v # Stochastic variant with noise input
 │   ├── ca3_phase_memory.v        # Hebbian phase memory (v8.0, theta-gated)
 │   ├── thalamus.v                # Theta + SR + matrix (v11.6, alignment drift)
-│   ├── thalamic_frequency_drift.v # v1.1: Theta seeker rate (3.2× faster)
-│   ├── cortical_column.v         # 6-layer cortical model (v12.2, φⁿ×7.75 Hz)
+│   ├── thalamic_frequency_drift.v # v1.2: Theta seeker + SEED_OFFSET
+│   ├── cortical_column.v         # 6-layer cortical model (v12.4, state-dependent phase coupling)
 │   ├── phi_n_alignment_detector.v # v1.1: √(θ×α) = SR1, widened σ=8
 │   ├── boundary_detector_f2.v    # v1.1: √(β_low×β_high) → SR3 stability anchor
 │   ├── boundary_detector_f3.v    # v1.0: √(β_high×γ) → SR5 consciousness gate
@@ -67,11 +68,12 @@ fpga/
 │   ├── pv_interneuron.v          # PV+ basket cell dynamics (v9.2)
 │   ├── sr_harmonic_bank.v        # 5-harmonic SR bank (v7.7, dynamic SIE from stability)
 │   ├── sr_noise_generator.v      # Per-harmonic stochastic noise (5 LFSRs)
-│   ├── sr_frequency_drift.v      # v3.0: Per-harmonic stability hierarchy
+│   ├── sr_frequency_drift.v      # v3.2: SLOW_DRIFT mode + SEED_OFFSET
+│   ├── sr_q_factor_drift.v       # v1.0: Per-harmonic Q-factor O-U process
 │   ├── sr_ignition_controller.v  # v1.5: Three-boundary permission system
 │   ├── amplitude_envelope_generator.v # v11.4: O-U process with parameterized bounds
-│   ├── cortical_frequency_drift.v # v3.6: Per-layer seeker rates (3-5× faster)
-│   ├── config_controller.v       # Consciousness states (v11.4, state interpolation)
+│   ├── cortical_frequency_drift.v # v3.7: Per-layer SEED_OFFSET transforms
+│   ├── config_controller.v       # Consciousness states (v12.4, k_phase_couple)
 │   ├── clock_enable_generator.v  # FAST_SIM-aware 4kHz clock (v6.0)
 │   ├── pink_noise_generator.v    # 1/f^φ noise (v7.2, √Fibonacci-weighted)
 │   ├── output_mixer.v            # DAC output mixing (v7.20, continuous gain blending)
@@ -85,9 +87,10 @@ fpga/
 │   ├── bicoherence_monitor.v     # v11.3: Three-frequency coupling detection
 │   ├── coupling_mode_controller.v # v1.2b: Synchronized gain interpolation
 │   └── harmonic_spacing_index.v  # v11.3: φⁿ ratio deviation monitoring
-├── tb/                           # Testbenches (38 files)
+├── tb/                           # Testbenches (39 files)
 │   ├── tb_full_system_fast.v     # Full system integration (v6.5, 15 tests)
 │   ├── tb_three_boundary.v       # v12.3: Three-boundary architecture tests (15 tests)
+│   ├── tb_sr_realism_3day.v      # v12.4: 72-hour geophysical SR validation
 │   ├── tb_theta_phase_multiplexing.v # Theta phase tests (19 tests)
 │   ├── tb_scaffold_architecture.v    # Scaffold layer tests (14 tests)
 │   ├── tb_gamma_theta_nesting.v      # Gamma-theta PAC tests (7 tests)
@@ -111,7 +114,7 @@ fpga/
 │   ├── tb_coupling_mode_controller.v # v11.3: Mode switching tests (8 tests)
 │   ├── tb_harmonic_spacing_index.v # v11.3: HSI tests (8 tests)
 │   ├── tb_state_interpolation.v  # v11.4: State transition tests (10 tests)
-│   ├── tb_state_transition_spectrogram.v # v12.1: 100s spectrogram with debug columns
+│   ├── tb_state_transition_spectrogram.v # v12.4: Parameterized duration + SEED
 │   ├── tb_learning_fast.v        # CA3 learning test (v2.1, 8 tests)
 │   ├── tb_hopf_oscillator.v      # Hopf oscillator unit test
 │   ├── tb_state_transitions.v    # State machine test (12 tests)
@@ -122,10 +125,12 @@ fpga/
 │   ├── dac_spectrogram.py        # v10.2: DAC output spectrogram analysis
 │   ├── analyze_eeg_comparison.py # v10.0: Comprehensive EEG analysis
 │   ├── state_transition_spectrogram.py # v11.4: State transition analysis
+│   ├── analyze_sr_realism.py     # v12.4: 3-day SR realism statistics
 │   └── run_vivado_*.tcl          # Vivado TCL scripts
 ├── docs/                         # Specifications
 │   ├── FPGA_SPECIFICATION_V8.md  # Base architecture spec (v8.0)
-│   ├── SPEC_v12.3_UPDATE.md      # Current version (v12.3 Three-Boundary Architecture)
+│   ├── SPEC_v12.4_UPDATE.md      # Current version (v12.4 State-Dependent Phase Coupling)
+│   ├── SPEC_v12.3_UPDATE.md      # Previous (v12.3 Three-Boundary Architecture)
 │   ├── SPEC_v12.2_UPDATE.md      # Previous (v12.2 Dual Alignment Ignition)
 │   ├── SPEC_v12.1_UPDATE.md      # Previous (v12.1 Synchronized State Transitions)
 │   ├── SPEC_v12.0_UPDATE.md      # Previous (v12.0 Unified State Dynamics)
@@ -357,10 +362,30 @@ Four alignment sources gate ignition events and consciousness access:
 | UPDATE_PERIOD_SR4 | 4000 | 1s | SR4 drift period - FASTEST (v12.3) |
 | UPDATE_PERIOD_SR5 | 8000 | 2s | SR5 drift period (v12.3) |
 | ENABLE_THREE_BOUNDARY | 0/1 | — | v12.3: 0=dual, 1=three-boundary |
+| K_PHASE_NORMAL | 820 | 0.05 | Phase coupling gain (NORMAL) - 1:1 vs L4 (v12.4) |
+| K_PHASE_ANESTHESIA | 328 | 0.02 | Phase coupling gain (ANESTHESIA) - 0.4:1 (v12.4) |
+| K_PHASE_PSYCHEDELIC | 328 | 0.02 | Phase coupling gain (PSYCHEDELIC) - 0.4:1 (v12.4) |
+| K_PHASE_FLOW | 820 | 0.05 | Phase coupling gain (FLOW) - 1:1 (v12.4) |
+| K_PHASE_MEDITATION | 2458 | 0.15 | Phase coupling gain (MEDITATION) - 3:1 (v12.4) |
+| Q_CENTER_F0 | 7929 | 0.484 | SR1 Q-factor center (Q=7.5) (v12.4) |
+| Q_CENTER_F1 | 10051 | 0.613 | SR2 Q-factor center (Q=9.5) (v12.4) |
+| Q_CENTER_F2 | 16384 | 1.0 | SR3 Q-factor anchor (Q=15.5) (v12.4) |
+| Q_CENTER_F3 | 8995 | 0.549 | SR4 Q-factor center (Q=8.5) (v12.4) |
+| Q_CENTER_F4 | 7405 | 0.452 | SR5 Q-factor center (Q=7.0) (v12.4) |
+| SLOW_DRIFT | 0/1 | — | v12.4: 0=real-time, 1=120× slower geophysical |
+| DRIFT_SCALE | 1/120 | — | v12.4: Timescale multiplier when SLOW_DRIFT=1 |
 
 ## Current Specification
 
-See [docs/SPEC/UPDATES/SPEC_v12.3_UPDATE.md](docs/SPEC/UPDATES/SPEC_v12.3_UPDATE.md) for the latest v12.3 architecture with:
+See [docs/SPEC/UPDATES/SPEC_v12.4_UPDATE.md](docs/SPEC/UPDATES/SPEC_v12.4_UPDATE.md) for the latest v12.4 architecture with:
+- **State-Dependent Phase Coupling** (v12.4): `k_phase_couple` scales hippocampal→cortical gain per state
+- **Phase Coupling Balance Fix** (v12.4): Fixes 20:1 hippocampal dominance bug (NORMAL=1:1, MEDITATION=3:1)
+- **External SEED Parameter** (v12.4): Top-level seed enables reproducible frequency trajectories
+- **Geophysical Drift Mode** (v3.2): SLOW_DRIFT=1 scales timescales 120× for multi-day validation
+- **Q-Factor Drift Module** (v1.0): Per-harmonic O-U process matches real SR Q observations
+- **Signed Arithmetic Fix** (v3.2): Corrected random initialization in sr_frequency_drift.v
+
+Previous architecture features (v12.3):
 - **Three-Boundary Architecture** (v12.3): Hierarchical f₀/f₂/SR4/f₃ alignment system
 - **Seeker-Reference Dynamics** (v12.3): Internal oscillators 3-5× faster create alignment windows
 - **SR Stability Hierarchy** (v3.0): Per-harmonic update periods (SR3=10s anchor, SR4=1s fast)
@@ -451,6 +476,7 @@ Base specification: [docs/FPGA_SPECIFICATION_V8.md](docs/FPGA_SPECIFICATION_V8.m
 All testbenches should pass. Key tests (380+ total):
 - `tb_full_system_fast`: 15/15 tests - full integration (v6.5)
 - `tb_three_boundary`: 15/15 tests - three-boundary architecture (v12.3)
+- `tb_sr_realism_3day`: Visual - 72-hour geophysical SR validation (v12.4)
 - `tb_theta_phase_multiplexing`: 19/19 tests - theta phase (v8.3)
 - `tb_scaffold_architecture`: 14/14 tests - scaffold layers (v8.0)
 - `tb_gamma_theta_nesting`: 7/7 tests - gamma-theta PAC (v8.4)
@@ -480,7 +506,7 @@ All testbenches should pass. Key tests (380+ total):
 - `tb_coupling_mode_controller`: 8/8 tests - Mode switching (v11.3)
 - `tb_harmonic_spacing_index`: 8/8 tests - φⁿ ratio tracking (v11.3)
 - `tb_state_interpolation`: 10/10 tests - state transition interpolation (v11.4)
-- `tb_state_transition_spectrogram`: Visual - 100s spectrogram validation (v12.3, 32 debug columns)
+- `tb_state_transition_spectrogram`: Visual - parameterized duration + SEED (v12.4)
 - `tb_multi_harmonic_sr`: 17/17 tests - multi-harmonic SR
 - `tb_learning_fast`: 8/8 tests - CA3 Hebbian learning (v2.1)
 - `tb_sr_coupling`: 12/12 tests - SR coupling

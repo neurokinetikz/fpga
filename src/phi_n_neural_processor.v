@@ -209,7 +209,8 @@ module phi_n_neural_processor #(
     parameter ENABLE_ADAPTIVE = 0,  // v11.0: Enable active φⁿ dynamics (self-organizing)
     parameter ENABLE_ALIGNMENT = 0,  // v11.6: Enable alignment-modulated ignition threshold
     parameter ENABLE_THREE_BOUNDARY = 0,  // v12.0: Enable three-boundary architecture
-    parameter RANDOM_INIT = 1        // v11.6: Enable random initialization for stochastic startup
+    parameter RANDOM_INIT = 1,       // v11.6: Enable random initialization for stochastic startup
+    parameter [15:0] SEED = 16'h0000 // v12.3: Seed for frequency drift LFSRs
 )(
     input  wire clk,
     input  wire rst,
@@ -328,7 +329,8 @@ sr_frequency_drift #(
     .FRAC(FRAC),
     .NUM_HARMONICS(NUM_HARMONICS),
     .FAST_SIM(FAST_SIM),
-    .RANDOM_INIT(RANDOM_INIT)  // v11.6: Random initialization
+    .RANDOM_INIT(RANDOM_INIT),  // v11.6: Random initialization
+    .SEED_OFFSET(SEED)          // v12.3: External seed for LFSR variation
 ) sr_drift_gen (
     .clk(clk),
     .rst(rst),
@@ -355,7 +357,8 @@ thalamic_frequency_drift #(
     .WIDTH(WIDTH),
     .FRAC(FRAC),
     .FAST_SIM(FAST_SIM),
-    .RANDOM_INIT(RANDOM_INIT)
+    .RANDOM_INIT(RANDOM_INIT),
+    .SEED_OFFSET(SEED)  // v12.3: External seed for LFSR variation
 ) theta_drift_gen (
     .clk(clk),
     .rst(rst),
@@ -389,7 +392,8 @@ cortical_frequency_drift #(
     .FRAC(FRAC),
     .FAST_SIM(FAST_SIM),
     .ENABLE_ADAPTIVE(ENABLE_ADAPTIVE),  // v11.0: Enable force-based corrections
-    .RANDOM_INIT(RANDOM_INIT)           // v11.6: Random initialization
+    .RANDOM_INIT(RANDOM_INIT),          // v11.6: Random initialization
+    .SEED_OFFSET(SEED)                  // v12.3: External seed for LFSR variation
 ) cortical_drift_gen (
     .clk(clk),
     .rst(rst),
@@ -752,6 +756,7 @@ amplitude_envelope_generator #(.WIDTH(WIDTH), .FRAC(FRAC)) env_mixer_gamma (
 wire signed [WIDTH-1:0] mu_dt_theta;
 wire signed [WIDTH-1:0] mu_dt_l6, mu_dt_l5b, mu_dt_l5a, mu_dt_l4, mu_dt_l23;
 wire signed [WIDTH-1:0] ca_threshold;  // v9.5: state-dependent Ca2+ threshold
+wire signed [WIDTH-1:0] k_phase_couple;  // v12.4: state-dependent phase coupling gain
 
 // v10.0: SIE timing outputs from config controller
 wire [15:0] sie_phase2_dur, sie_phase3_dur, sie_phase4_dur;
@@ -775,6 +780,7 @@ config_controller #(.WIDTH(WIDTH), .FRAC(FRAC)) config_ctrl (
     .mu_dt_l4(mu_dt_l4),
     .mu_dt_l23(mu_dt_l23),
     .ca_threshold(ca_threshold),  // v9.5: state-dependent threshold
+    .k_phase_couple(k_phase_couple),  // v12.4: state-dependent phase coupling gain
     // v10.0: SIE timing outputs
     .sie_phase2_dur(sie_phase2_dur),
     .sie_phase3_dur(sie_phase3_dur),
@@ -1097,6 +1103,7 @@ cortical_column #(.WIDTH(WIDTH), .FRAC(FRAC), .COLUMN_ID(0)) col_sensory (
     .encoding_window(ca3_encoding_window),  // v8.1: gamma-theta nesting
     .attention_input(18'sd0),               // v9.4: no attention (default)
     .ca_threshold(ca_threshold),            // v9.5: state-dependent threshold
+    .k_phase_couple(k_phase_couple),        // v12.4: state-dependent phase coupling gain
     // v10.1: Frequency drift for EEG-realistic spectral spreading
     .omega_drift_l6(omega_offset_l6),      // v10.2: drift + jitter combined
     .omega_drift_l5a(omega_offset_l5a),
@@ -1143,6 +1150,7 @@ cortical_column #(.WIDTH(WIDTH), .FRAC(FRAC), .COLUMN_ID(1)) col_assoc (
     .encoding_window(ca3_encoding_window),  // v8.1: gamma-theta nesting
     .attention_input(18'sd0),               // v9.4: no attention (default)
     .ca_threshold(ca_threshold),            // v9.5: state-dependent threshold
+    .k_phase_couple(k_phase_couple),        // v12.4: state-dependent phase coupling gain
     // v10.1: Frequency drift for EEG-realistic spectral spreading
     .omega_drift_l6(omega_offset_l6),      // v10.2: drift + jitter combined
     .omega_drift_l5a(omega_offset_l5a),
@@ -1189,6 +1197,7 @@ cortical_column #(.WIDTH(WIDTH), .FRAC(FRAC), .COLUMN_ID(2)) col_motor (
     .encoding_window(ca3_encoding_window),  // v8.1: gamma-theta nesting
     .attention_input(18'sd0),               // v9.4: no attention (default)
     .ca_threshold(ca_threshold),            // v9.5: state-dependent threshold
+    .k_phase_couple(k_phase_couple),        // v12.4: state-dependent phase coupling gain
     // v10.1: Frequency drift for EEG-realistic spectral spreading
     .omega_drift_l6(omega_offset_l6),      // v10.2: drift + jitter combined
     .omega_drift_l5a(omega_offset_l5a),

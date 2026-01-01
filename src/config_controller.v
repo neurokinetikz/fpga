@@ -1,5 +1,12 @@
 //=============================================================================
-// Configuration Controller - v9.5 with Dendritic Computation
+// Configuration Controller - v12.4 with State-Dependent Phase Coupling
+//
+// v12.4 CHANGES:
+// - Add state-dependent k_phase_couple output for hippocampal-cortical balance
+// - NORMAL: 0.05× (balanced sensory-memory)
+// - ANESTHESIA/PSYCHEDELIC: 0.02× (suppressed hippocampal)
+// - MEDITATION: 0.15× (memory consolidation)
+// - Fixes 20:1 phase coupling dominance over L4 feedforward
 //
 // v9.5 CHANGES:
 // - Add state-dependent Ca2+ threshold for two-compartment dendritic model
@@ -49,6 +56,10 @@ module config_controller #(
     // v9.5: State-dependent Ca2+ threshold for dendritic compartment
     output reg signed [WIDTH-1:0] ca_threshold,
 
+    // v12.4: State-dependent phase coupling gain
+    // Controls hippocampal-cortical balance (fixes 20:1 dominance bug)
+    output reg signed [WIDTH-1:0] k_phase_couple,
+
     // v8.0: Scaffold architecture indicator outputs
     output wire scaffold_l4,        // L4 is scaffold layer
     output wire scaffold_l5b,       // L5b is scaffold layer
@@ -94,6 +105,15 @@ localparam signed [WIDTH-1:0] CA_THRESH_PSYCHEDELIC = 18'sd4096;  // 0.25 - easi
 localparam signed [WIDTH-1:0] CA_THRESH_FLOW       = 18'sd8192;   // 0.5 - balanced
 localparam signed [WIDTH-1:0] CA_THRESH_MEDITATION = 18'sd6144;   // 0.375 - slightly easier
 
+// v12.4: Phase coupling gain values (Q14)
+// Controls hippocampal→cortical signal strength relative to L4 feedforward (K_L4_L23=0.05)
+// Fixes the 20:1 dominance bug where phase coupling entered at 1.0× unscaled
+localparam signed [WIDTH-1:0] K_PHASE_NORMAL      = 18'sd820;   // 0.05 - balanced (1:1 vs L4)
+localparam signed [WIDTH-1:0] K_PHASE_ANESTHESIA  = 18'sd328;   // 0.02 - suppressed (0.4:1)
+localparam signed [WIDTH-1:0] K_PHASE_PSYCHEDELIC = 18'sd328;   // 0.02 - sensory-dominant (0.4:1)
+localparam signed [WIDTH-1:0] K_PHASE_FLOW        = 18'sd820;   // 0.05 - balanced (1:1)
+localparam signed [WIDTH-1:0] K_PHASE_MEDITATION  = 18'sd2458;  // 0.15 - memory consolidation (3:1)
+
 // v8.0: Scaffold layer type indicators (static classification)
 // These can be used by downstream modules to apply different processing
 assign scaffold_l4  = 1'b1;  // L4 is always scaffold
@@ -114,6 +134,7 @@ reg [15:0] ramp_counter;           // Position in transition
 reg signed [WIDTH-1:0] mu_start_theta, mu_start_l6, mu_start_l5b;
 reg signed [WIDTH-1:0] mu_start_l5a, mu_start_l4, mu_start_l23;
 reg signed [WIDTH-1:0] ca_thresh_start;
+reg signed [WIDTH-1:0] k_phase_start;  // v12.4: Phase coupling gain interpolation
 reg [15:0] sie_start_p2, sie_start_p3, sie_start_p4;
 reg [15:0] sie_start_p5, sie_start_p6, sie_start_refr;
 
@@ -121,6 +142,7 @@ reg [15:0] sie_start_p5, sie_start_p6, sie_start_refr;
 reg signed [WIDTH-1:0] mu_tgt_theta, mu_tgt_l6, mu_tgt_l5b;
 reg signed [WIDTH-1:0] mu_tgt_l5a, mu_tgt_l4, mu_tgt_l23;
 reg signed [WIDTH-1:0] ca_tgt;
+reg signed [WIDTH-1:0] k_phase_tgt;  // v12.4: Phase coupling gain target
 reg [15:0] sie_tgt_p2, sie_tgt_p3, sie_tgt_p4;
 reg [15:0] sie_tgt_p5, sie_tgt_p6, sie_tgt_refr;
 
@@ -131,6 +153,7 @@ always @(*) begin
             mu_tgt_l5b = MU_MODERATE;   mu_tgt_l5a = MU_MODERATE;
             mu_tgt_l4 = MU_MODERATE;    mu_tgt_l23 = MU_MODERATE;
             ca_tgt = CA_THRESH_NORMAL;
+            k_phase_tgt = K_PHASE_NORMAL;  // v12.4: 0.05 - balanced (1:1 vs L4)
             sie_tgt_p2 = 16'd14000; sie_tgt_p3 = 16'd10000;
             sie_tgt_p4 = 16'd10000; sie_tgt_p5 = 16'd36000;
             sie_tgt_p6 = 16'd16000; sie_tgt_refr = 16'd40000;
@@ -140,6 +163,7 @@ always @(*) begin
             mu_tgt_l5b = MU_HALF;       mu_tgt_l5a = MU_HALF;
             mu_tgt_l4 = MU_WEAK;        mu_tgt_l23 = MU_WEAK;
             ca_tgt = CA_THRESH_ANESTHESIA;
+            k_phase_tgt = K_PHASE_ANESTHESIA;  // v12.4: 0.02 - suppressed (0.4:1)
             sie_tgt_p2 = 16'd20000; sie_tgt_p3 = 16'd8000;
             sie_tgt_p4 = 16'd8000;  sie_tgt_p5 = 16'd24000;
             sie_tgt_p6 = 16'd20000; sie_tgt_refr = 16'd60000;
@@ -149,6 +173,7 @@ always @(*) begin
             mu_tgt_l5b = MU_FULL;       mu_tgt_l5a = MU_FULL;
             mu_tgt_l4 = MU_ENHANCED;    mu_tgt_l23 = MU_ENHANCED;
             ca_tgt = CA_THRESH_PSYCHEDELIC;
+            k_phase_tgt = K_PHASE_PSYCHEDELIC;  // v12.4: 0.02 - sensory-dominant (0.4:1)
             sie_tgt_p2 = 16'd16000; sie_tgt_p3 = 16'd12000;
             sie_tgt_p4 = 16'd16000; sie_tgt_p5 = 16'd48000;
             sie_tgt_p6 = 16'd20000; sie_tgt_refr = 16'd24000;
@@ -158,6 +183,7 @@ always @(*) begin
             mu_tgt_l5b = MU_ENHANCED;   mu_tgt_l5a = MU_ENHANCED;
             mu_tgt_l4 = MU_FULL;        mu_tgt_l23 = MU_FULL;
             ca_tgt = CA_THRESH_FLOW;
+            k_phase_tgt = K_PHASE_FLOW;  // v12.4: 0.05 - balanced (1:1)
             sie_tgt_p2 = 16'd12000; sie_tgt_p3 = 16'd8000;
             sie_tgt_p4 = 16'd8000;  sie_tgt_p5 = 16'd32000;
             sie_tgt_p6 = 16'd12000; sie_tgt_refr = 16'd48000;
@@ -167,6 +193,7 @@ always @(*) begin
             mu_tgt_l5b = MU_WEAK;       mu_tgt_l5a = MU_WEAK;
             mu_tgt_l4 = MU_WEAK;        mu_tgt_l23 = MU_HALF;
             ca_tgt = CA_THRESH_MEDITATION;
+            k_phase_tgt = K_PHASE_MEDITATION;  // v12.4: 0.15 - memory consolidation (3:1)
             sie_tgt_p2 = 16'd16000; sie_tgt_p3 = 16'd12000;
             sie_tgt_p4 = 16'd12000; sie_tgt_p5 = 16'd40000;
             sie_tgt_p6 = 16'd20000; sie_tgt_refr = 16'd32000;
@@ -176,6 +203,7 @@ always @(*) begin
             mu_tgt_l5b = MU_FULL;       mu_tgt_l5a = MU_FULL;
             mu_tgt_l4 = MU_FULL;        mu_tgt_l23 = MU_FULL;
             ca_tgt = CA_THRESH_NORMAL;
+            k_phase_tgt = K_PHASE_NORMAL;  // v12.4: default to NORMAL
             sie_tgt_p2 = 16'd14000; sie_tgt_p3 = 16'd10000;
             sie_tgt_p4 = 16'd10000; sie_tgt_p5 = 16'd36000;
             sie_tgt_p6 = 16'd16000; sie_tgt_refr = 16'd40000;
@@ -239,6 +267,7 @@ always @(posedge clk or posedge rst) begin
         mu_dt_l4    <= MU_MODERATE;
         mu_dt_l23   <= MU_MODERATE;
         ca_threshold <= CA_THRESH_NORMAL;
+        k_phase_couple <= K_PHASE_NORMAL;  // v12.4: Phase coupling gain
         sie_phase2_dur <= 16'd14000;
         sie_phase3_dur <= 16'd10000;
         sie_phase4_dur <= 16'd10000;
@@ -262,6 +291,7 @@ always @(posedge clk or posedge rst) begin
         mu_start_l4 <= MU_MODERATE;
         mu_start_l23 <= MU_MODERATE;
         ca_thresh_start <= CA_THRESH_NORMAL;
+        k_phase_start <= K_PHASE_NORMAL;  // v12.4: Phase coupling interpolation start
         sie_start_p2 <= 16'd14000;
         sie_start_p3 <= 16'd10000;
         sie_start_p4 <= 16'd10000;
@@ -279,6 +309,7 @@ always @(posedge clk or posedge rst) begin
             mu_start_l4 <= mu_dt_l4;
             mu_start_l23 <= mu_dt_l23;
             ca_thresh_start <= ca_threshold;
+            k_phase_start <= k_phase_couple;  // v12.4: Capture for interpolation
             sie_start_p2 <= sie_phase2_dur;
             sie_start_p3 <= sie_phase3_dur;
             sie_start_p4 <= sie_phase4_dur;
@@ -303,6 +334,7 @@ always @(posedge clk or posedge rst) begin
                 mu_dt_l4 <= mu_tgt_l4;
                 mu_dt_l23 <= mu_tgt_l23;
                 ca_threshold <= ca_tgt;
+                k_phase_couple <= k_phase_tgt;  // v12.4: Phase coupling gain
                 sie_phase2_dur <= sie_tgt_p2;
                 sie_phase3_dur <= sie_tgt_p3;
                 sie_phase4_dur <= sie_tgt_p4;
@@ -329,6 +361,7 @@ always @(posedge clk or posedge rst) begin
                 mu_dt_l4    <= lerp_signed(mu_start_l4, mu_tgt_l4, ramp_counter, ramp_dur);
                 mu_dt_l23   <= lerp_signed(mu_start_l23, mu_tgt_l23, ramp_counter, ramp_dur);
                 ca_threshold <= lerp_signed(ca_thresh_start, ca_tgt, ramp_counter, ramp_dur);
+                k_phase_couple <= lerp_signed(k_phase_start, k_phase_tgt, ramp_counter, ramp_dur);  // v12.4
 
                 // SIE timing (unsigned lerp)
                 sie_phase2_dur <= lerp_unsigned(sie_start_p2, sie_tgt_p2, ramp_counter, ramp_dur);

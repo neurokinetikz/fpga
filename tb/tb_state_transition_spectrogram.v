@@ -1,18 +1,20 @@
 //=============================================================================
 // Testbench: State Transition Spectrogram
 //
-// Generates 100 seconds of DAC output with NORMAL ↔ MEDITATION state transitions
+// Generates DAC output with NORMAL ↔ MEDITATION state transitions
 // using config_controller's proper state-dependent MU values.
 //
-// Timeline (100 seconds total, 5 phases of 20 seconds each):
-// - Phase 0 (0-20s):    NORMAL baseline
-// - Phase 1 (20-40s):   20-second linear ramp NORMAL → MEDITATION
-// - Phase 2 (40-60s):   MEDITATION steady-state
-// - Phase 3 (60-80s):   20-second linear ramp MEDITATION → NORMAL
-// - Phase 4 (80-100s):  NORMAL steady-state
+// Timeline (DURATION_MS total, 5 phases of DURATION_MS/5 each):
+// - Phase 0: NORMAL baseline
+// - Phase 1: Linear ramp NORMAL → MEDITATION
+// - Phase 2: MEDITATION steady-state
+// - Phase 3: Linear ramp MEDITATION → NORMAL
+// - Phase 4: NORMAL steady-state
 //
-// v12.1: Adjusted to 100 seconds with 20-second phases
-// v12.0: Extended to 600 seconds with 120-second phases for maximum spectral resolution
+// Override DURATION_MS at compile time for custom durations:
+//   iverilog -PDURATION_MS=600000 ...  (600s total, 120s per phase)
+//
+// v12.3: Parameterized duration (default 100s, 20s per phase)
 // v11.4b: Uses transition_duration for linear interpolation
 // - config_controller lerp functions handle gradual MU ramping
 // - Spectrogram should show gradual power changes during transitions
@@ -26,7 +28,7 @@
 // Output files:
 //   state_transition_eeg.csv - Full oscillator data (27 columns)
 //   state_transition_dac.csv - DAC output only (time_ms, phase, mu_l5b, dac_output)
-//   Both have 100,000 samples at 1 kHz
+//   DURATION_MS samples at 1 kHz (100,000 by default)
 //
 // Usage:
 //   iverilog -o tb_state_transition_spectrogram.vvp -s tb_state_transition_spectrogram \
@@ -42,26 +44,29 @@ module tb_state_transition_spectrogram;
 parameter WIDTH = 18;
 parameter FRAC = 14;
 parameter CLK_PERIOD = 8;  // 125 MHz
-parameter DURATION_MS = 100000;  // 100 seconds
+// Master duration parameter - all phase timings derived from this
+parameter DURATION_MS = 100000;  // Total simulation in milliseconds (100s default)
 parameter SAMPLE_DIVISOR = 4;    // Sample every 4th update = 1 kHz output
-parameter PHASE_MS = 20000;      // 20 seconds per phase
+parameter SEED = 0;              // Random seed (changes LFSR initial states)
+// Derived: 5 phases (N, N->M, M, M->N, N)
+localparam PHASE_MS = DURATION_MS / 5;
 
 // Total samples to export
 localparam TOTAL_SAMPLES = DURATION_MS;  // 1 sample per ms at 1 kHz
 
 // Phase definitions
-localparam PHASE_NORMAL1    = 3'd0;  // 0-20s
-localparam PHASE_TRANS_N_M  = 3'd1;  // 20-40s (Normal → Meditation)
-localparam PHASE_MEDITATION = 3'd2;  // 40-60s
-localparam PHASE_TRANS_M_N  = 3'd3;  // 60-80s (Meditation → Normal)
-localparam PHASE_NORMAL2    = 3'd4;  // 80-100s
+localparam PHASE_NORMAL1    = 3'd0;  // 0-120s
+localparam PHASE_TRANS_N_M  = 3'd1;  // 120-240s (Normal → Meditation)
+localparam PHASE_MEDITATION = 3'd2;  // 240-360s
+localparam PHASE_TRANS_M_N  = 3'd3;  // 360-480s (Meditation → Normal)
+localparam PHASE_NORMAL2    = 3'd4;  // 480-600s
 
 // State codes matching config_controller.v
 localparam [2:0] STATE_NORMAL     = 3'd0;
 localparam [2:0] STATE_MEDITATION = 3'd4;
 
-// Phase updates: 20 seconds at 4 kHz = 80,000 updates per phase
-localparam PHASE_UPDATES = 80000;
+// Updates per phase: PHASE_MS milliseconds at 4 kHz update rate
+localparam PHASE_UPDATES = PHASE_MS * 4;  // 4 updates per millisecond
 
 // v12.1: 20-second linear interpolation for state transitions
 // At 4 kHz update rate: 20 seconds = 80,000 cycles
@@ -98,11 +103,13 @@ wire [4:0] sie_per_harmonic;
 wire [4:0] coherence_mask;
 
 // Instantiate DUT with FAST_SIM and THREE_BOUNDARY enabled
+// Note: SEED is compile-time parameter, override via: iverilog -Ptb_state_transition_spectrogram.SEED=12345
 phi_n_neural_processor #(
     .WIDTH(WIDTH),
     .FRAC(FRAC),
     .FAST_SIM(1),
-    .ENABLE_THREE_BOUNDARY(1)  // v12.0: Enable three-boundary architecture
+    .ENABLE_THREE_BOUNDARY(1),  // v12.0: Enable three-boundary architecture
+    .SEED(SEED[15:0])           // v12.3: Different seeds create different frequency trajectories
 ) dut (
     .clk(clk),
     .rst(rst),
@@ -231,7 +238,15 @@ integer dac_file;  // Second file for state_transition_dac.csv
 integer sample_count;
 integer update_count;
 
+// Runtime seed (read from +seed=N command line argument)
+reg [31:0] runtime_seed;
+
 initial begin
+    // Read seed from command line: vvp sim.vvp +seed=123
+    if (!$value$plusargs("seed=%d", runtime_seed)) begin
+        runtime_seed = SEED;  // Use parameter default if not specified
+    end
+
     // Initialize
     clk = 0;
     rst = 1;
@@ -267,26 +282,26 @@ initial begin
     $fwrite(dac_file, "time_ms,phase,state_select,dac_output,gain_envelope,mode_blend,pink_weight,osc_scale,transitioning,harmonic_gain,use_cont,trans_progress,f0_align,f2_align,f2_stab,f3_align,sr4_coupling,overall_align,beta_quiet,f0_ok,f2_ok,f0_ok_reg,f2_ok_reg,db_f0,db_f2,db_bq_is_0,db_bq_is_1,debug_all_cond,debug_ign_exp,db_bq_prev,ignition_ok,conscious_ok\n");
 
     $display("=============================================================================");
-    $display("State Transition Spectrogram Testbench v12.1");
+    $display("State Transition Spectrogram Testbench v12.3");
     $display("Using ~16s linear interpolation via config_controller lerp");
-    $display("Duration: 100 seconds (5 phases x 20 seconds)");
+    $display("Duration: 600 seconds (5 phases x 120 seconds)");
     $display("");
-    $display("Phase 0 (0-20s):    NORMAL baseline (state=0, all MU=3)");
-    $display("Phase 1 (20-40s):   20s ramp NORMAL → MEDITATION");
-    $display("Phase 2 (40-60s):   MEDITATION steady-state (theta/alpha=6, beta/gamma=1)");
-    $display("Phase 3 (60-80s):   20s ramp MEDITATION → NORMAL");
-    $display("Phase 4 (80-100s):  NORMAL baseline (state=0, all MU=3)");
+    $display("Phase 0 (0-120s):    NORMAL baseline (state=0, all MU=3)");
+    $display("Phase 1 (120-240s):  120s ramp NORMAL → MEDITATION");
+    $display("Phase 2 (240-360s):  MEDITATION steady-state (theta/alpha=6, beta/gamma=1)");
+    $display("Phase 3 (360-480s):  120s ramp MEDITATION → NORMAL");
+    $display("Phase 4 (480-600s):  NORMAL baseline (state=0, all MU=3)");
     $display("=============================================================================");
 
     // Release reset
     repeat(100) @(posedge clk);
     rst = 0;
 
-    // Let oscillators stabilize (500 ms equivalent at FAST_SIM)
-    $display("Stabilizing oscillators...");
-    repeat(50000) @(posedge clk);
+    // Let oscillators stabilize (seed adds extra cycles for different random states)
+    $display("Stabilizing oscillators (seed=%0d, extra cycles=%0d)...", runtime_seed, runtime_seed * 10000);
+    repeat(50000 + runtime_seed * 10000) @(posedge clk);
 
-    $display("Recording data (100 seconds at 1 kHz = 100,000 samples)...");
+    $display("Recording data (600 seconds at 1 kHz = 600,000 samples)...");
 
     // Main export loop
     while (sample_count < TOTAL_SAMPLES) begin
@@ -388,8 +403,8 @@ initial begin
 
                 sample_count = sample_count + 1;
 
-                // Progress every 20 seconds (20,000 samples)
-                if (sample_count % 20000 == 0) begin
+                // Progress every 60 seconds (60,000 samples)
+                if (sample_count % 60000 == 0) begin
                     $display("  %0d seconds exported (phase %0d, state=%0d, mu_theta=%0d, mu_l6=%0d, mu_l5a=%0d)...",
                         sample_count/1000, current_phase, state_select,
                         $signed(dut.config_ctrl.mu_dt_theta),
@@ -405,8 +420,8 @@ initial begin
     $display("=============================================================================");
     $display("Export complete:");
     $display("  state_transition_eeg.csv (27 columns, all oscillators)");
-    $display("  state_transition_dac.csv (11 columns, DAC output + gain debug)");
-    $display("Total samples: %0d (100 seconds at 1 kHz)", sample_count);
+    $display("  state_transition_dac.csv (32 columns, DAC output + gain debug)");
+    $display("Total samples: %0d (600 seconds at 1 kHz)", sample_count);
     $display("");
     $display("Generate spectrograms:");
     $display("  python3 scripts/state_transition_spectrogram.py");

@@ -2,7 +2,7 @@
 
 A biologically-realistic neural oscillator system implemented in Verilog for FPGA, featuring golden ratio (φ) frequency architecture, complete interneuron microcircuits, Schumann Resonance coupling, and the Three-Boundary consciousness gating system.
 
-**Current Version:** v12.3 (Three-Boundary Architecture)
+**Current Version:** v12.4 (State-Dependent Phase Coupling & Geophysical Realism)
 **Target Platform:** Digilent Zybo Z7-20 (Xilinx Zynq-7020)
 
 ---
@@ -46,6 +46,20 @@ The v12.3 release introduces hierarchical alignment gating between internal cort
 **Seeker-Reference Dynamics:** Internal oscillators drift 3-5× faster than SR references, creating periodic alignment windows rather than exact frequency lock.
 
 **Consciousness Gating:** The f₃ boundary has an inherent 8% gap (74 OMEGA_DT), making full consciousness access rare and brief—explaining why conscious processing is intermittent.
+
+### State-Dependent Phase Coupling (v12.4)
+
+v12.4 introduces **state-dependent phase coupling gain** (`k_phase_couple`) to balance hippocampal memory signals with sensory input:
+
+| State | k_phase_couple | Ratio vs L4 | Purpose |
+|-------|----------------|-------------|---------|
+| NORMAL | 0.05 | 1:1 | Balanced sensory-memory integration |
+| ANESTHESIA | 0.02 | 0.4:1 | Suppressed hippocampal activity |
+| PSYCHEDELIC | 0.02 | 0.4:1 | Sensory dominance |
+| FLOW | 0.05 | 1:1 | Balanced motor-memory integration |
+| MEDITATION | 0.15 | 3:1 | Memory consolidation, theta coherence |
+
+**Geophysical Realism:** New `SLOW_DRIFT=1` mode scales all drift timescales by 120× for realistic multi-day SR simulations. The new `sr_q_factor_drift.v` module models per-harmonic Q-factor variation matching real geophysical observations.
 
 ---
 

@@ -79,7 +79,8 @@ module cortical_frequency_drift #(
     parameter NUM_LAYERS = 5,
     parameter FAST_SIM = 0,
     parameter ENABLE_ADAPTIVE = 0,  // v3.0: Enable energy-landscape force input
-    parameter RANDOM_INIT = 1       // v3.5: Enable random start position
+    parameter RANDOM_INIT = 1,      // v3.5: Enable random start position
+    parameter [15:0] SEED_OFFSET = 16'h0000  // XOR'd with base seeds for variation
 )(
     input  wire clk,
     input  wire rst,
@@ -255,12 +256,14 @@ end
 
 //-----------------------------------------------------------------------------
 // LFSR Seeds (unique per layer, different from SR seeds)
+// Base seeds XOR'd with SEED_OFFSET (different transforms for independence)
+// When SEED_OFFSET=0, original seeds are preserved (backward compatible)
 //-----------------------------------------------------------------------------
-localparam [15:0] LFSR_SEED_L6  = 16'h7A3D;
-localparam [15:0] LFSR_SEED_L5A = 16'hE5B2;
-localparam [15:0] LFSR_SEED_L5B = 16'h29C8;
-localparam [15:0] LFSR_SEED_L4  = 16'hD4F1;
-localparam [15:0] LFSR_SEED_L23 = 16'h8167;
+localparam [15:0] LFSR_SEED_L6  = 16'h7A3D ^ SEED_OFFSET;
+localparam [15:0] LFSR_SEED_L5A = 16'hE5B2 ^ {SEED_OFFSET[7:0], SEED_OFFSET[15:8]};   // byte swap
+localparam [15:0] LFSR_SEED_L5B = 16'h29C8 ^ {SEED_OFFSET[11:0], SEED_OFFSET[15:12]}; // rotate 4
+localparam [15:0] LFSR_SEED_L4  = 16'hD4F1 ^ {SEED_OFFSET[3:0], SEED_OFFSET[15:4]};   // rotate 12
+localparam [15:0] LFSR_SEED_L23 = 16'h8167 ^ ~SEED_OFFSET;  // invert
 
 //-----------------------------------------------------------------------------
 // v3.5: Random Initialization Offsets
@@ -456,12 +459,13 @@ end
 
 //-----------------------------------------------------------------------------
 // Fast Jitter LFSR Seeds (different from slow drift seeds)
+// Base seeds XOR'd with inverted/rotated SEED_OFFSET for independence from drift
 //-----------------------------------------------------------------------------
-localparam [15:0] JLFSR_SEED_L6  = 16'hB2C4;
-localparam [15:0] JLFSR_SEED_L5A = 16'h4F8E;
-localparam [15:0] JLFSR_SEED_L5B = 16'hD1A7;
-localparam [15:0] JLFSR_SEED_L4  = 16'h6E39;
-localparam [15:0] JLFSR_SEED_L23 = 16'h95CB;
+localparam [15:0] JLFSR_SEED_L6  = 16'hB2C4 ^ {SEED_OFFSET[5:0], SEED_OFFSET[15:6]};  // rotate 6
+localparam [15:0] JLFSR_SEED_L5A = 16'h4F8E ^ {SEED_OFFSET[9:0], SEED_OFFSET[15:10]}; // rotate 10
+localparam [15:0] JLFSR_SEED_L5B = 16'hD1A7 ^ {SEED_OFFSET[13:0], SEED_OFFSET[15:14]}; // rotate 14
+localparam [15:0] JLFSR_SEED_L4  = 16'h6E39 ^ {~SEED_OFFSET[7:0], SEED_OFFSET[15:8]}; // invert low, swap
+localparam [15:0] JLFSR_SEED_L23 = 16'h95CB ^ {SEED_OFFSET[7:0], ~SEED_OFFSET[15:8]}; // swap, invert high
 
 //-----------------------------------------------------------------------------
 // Fast Jitter LFSR State (updates every clk_en cycle)

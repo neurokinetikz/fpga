@@ -62,6 +62,7 @@ help:
 	@echo ""
 	@echo "  Data export:"
 	@echo "  make iverilog-eeg        - Export all oscillators for EEG comparison"
+	@echo "  make iverilog-sr-realism - 3-day SR realism validation (72 hours)"
 	@echo ""
 	@echo "  make iverilog-all        - Run all tests (~168 tests)"
 	@echo ""
@@ -252,6 +253,33 @@ $(SIM_DIR)/tb_eeg_export.vvp: $(SRCS) $(TB_DIR)/tb_eeg_export.v
 	iverilog -o $@ -s tb_eeg_export \
 		$(COMMON_SRCS) \
 		$(TB_DIR)/tb_eeg_export.v
+
+# SR Realism: 3-day (72 hour) validation of SR frequency drift, amplitude, and Q-factor
+.PHONY: iverilog-sr-realism
+iverilog-sr-realism: $(SIM_DIR)/tb_sr_realism_3day.vvp
+	@echo "Running 3-day SR realism validation (72 hours simulated)..."
+	@echo "Expected wall-clock time: ~2 minutes with FAST_SIM"
+	@echo ""
+	cd $(SIM_DIR) && vvp tb_sr_realism_3day.vvp +seed=42
+	@echo ""
+	@echo "Analyzing results..."
+	python3 scripts/analyze_sr_realism.py --input $(SIM_DIR)/sr_realism_3day.csv --output-dir sr_analysis
+	@echo ""
+	@echo "Results saved to sr_analysis/"
+	@echo "  - sr_realism_3day.png: 3-panel visualization"
+	@echo "  - sr_histograms.png: Distribution histograms"
+	@echo "  - sr_statistics.txt: Summary statistics"
+
+$(SIM_DIR)/tb_sr_realism_3day.vvp: $(SRC_DIR)/clock_enable_generator.v $(SRC_DIR)/hopf_oscillator.v \
+                                    $(SRC_DIR)/sr_frequency_drift.v $(SRC_DIR)/sr_q_factor_drift.v \
+                                    $(TB_DIR)/tb_sr_realism_3day.v
+	@mkdir -p $(SIM_DIR)
+	iverilog -o $@ -s tb_sr_realism_3day -DFAST_SIM \
+		$(SRC_DIR)/clock_enable_generator.v \
+		$(SRC_DIR)/hopf_oscillator.v \
+		$(SRC_DIR)/sr_frequency_drift.v \
+		$(SRC_DIR)/sr_q_factor_drift.v \
+		$(TB_DIR)/tb_sr_realism_3day.v
 
 # Run all iverilog tests
 .PHONY: iverilog-all

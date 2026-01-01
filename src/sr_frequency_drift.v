@@ -1,5 +1,10 @@
 //=============================================================================
-// SR Frequency Drift Generator - v3.0
+// SR Frequency Drift Generator - v3.2
+//
+// v3.2 CHANGES (3-Day Realism Validation):
+// - Added SLOW_DRIFT parameter: 0=fast (real-time), 1=slow (120× for geophysics)
+// - Widened counter registers to 26 bits to handle scaled periods
+// - With SLOW_DRIFT=1: drift timescales match real SR (multi-hour patterns)
 //
 // v3.0 CHANGES (Three-Boundary Architecture):
 // - Per-harmonic UPDATE_PERIOD implementing SR STABILITY HIERARCHY
@@ -34,7 +39,9 @@ module sr_frequency_drift #(
     parameter FRAC = 14,
     parameter NUM_HARMONICS = 5,
     parameter FAST_SIM = 0,
-    parameter RANDOM_INIT = 1
+    parameter RANDOM_INIT = 1,
+    parameter [15:0] SEED_OFFSET = 16'h0000,  // XOR'd with base seeds for variation
+    parameter SLOW_DRIFT = 0   // v3.2: 0=fast (real-time), 1=slow (3-day realism, ~120× slower)
 )(
     input  wire clk,
     input  wire rst,
@@ -84,22 +91,29 @@ localparam signed [WIDTH-1:0] DRIFT_MAX_F4 = 18'sd51;   // ±2.0 Hz
 //   SR4 = MOST VARIABLE
 //
 // FAST_SIM values are 1/10th of real-time for simulation speed
+// v3.2: SLOW_DRIFT scales by 120× for geophysical realism (multi-hour drift)
 //-----------------------------------------------------------------------------
+
+// v3.2: Drift scale factor - 120× slower when SLOW_DRIFT=1
+localparam [7:0] DRIFT_SCALE = (SLOW_DRIFT != 0) ? 8'd120 : 8'd1;
+
 `ifdef FAST_SIM
     // FAST_SIM: Scaled for longer alignment windows (~10-20ms instead of ~3ms)
     // Increased 4x from previous values to slow down drift dynamics
-    localparam [21:0] UPDATE_PERIOD_F0 = 22'd3200;   // SR1: 0.8s (moderate)
-    localparam [21:0] UPDATE_PERIOD_F1 = 22'd8000;   // SR2: 2.0s (slow - timing ref)
-    localparam [21:0] UPDATE_PERIOD_F2 = 22'd16000;  // SR3: 4.0s (SLOWEST - anchor)
-    localparam [21:0] UPDATE_PERIOD_F3 = 22'd1600;   // SR4: 0.4s (FASTEST - variable)
-    localparam [21:0] UPDATE_PERIOD_F4 = 22'd3200;   // SR5: 0.8s (moderate)
+    // v3.2: Apply SLOW_DRIFT scale for 3-day realism validation
+    localparam [25:0] UPDATE_PERIOD_F0 = 26'd3200  * DRIFT_SCALE;   // SR1: 0.8s -> 1.6min
+    localparam [25:0] UPDATE_PERIOD_F1 = 26'd8000  * DRIFT_SCALE;   // SR2: 2.0s -> 4min
+    localparam [25:0] UPDATE_PERIOD_F2 = 26'd16000 * DRIFT_SCALE;   // SR3: 4.0s -> 8min (SLOWEST)
+    localparam [25:0] UPDATE_PERIOD_F3 = 26'd1600  * DRIFT_SCALE;   // SR4: 0.4s -> 48s (FASTEST)
+    localparam [25:0] UPDATE_PERIOD_F4 = 26'd3200  * DRIFT_SCALE;   // SR5: 0.8s -> 1.6min
 `else
     // Real-time at 4kHz: values in clock cycles
-    localparam [21:0] UPDATE_PERIOD_F0 = (FAST_SIM != 0) ? 22'd800  : 22'd8000;   // 2s
-    localparam [21:0] UPDATE_PERIOD_F1 = (FAST_SIM != 0) ? 22'd2000 : 22'd20000;  // 5s
-    localparam [21:0] UPDATE_PERIOD_F2 = (FAST_SIM != 0) ? 22'd4000 : 22'd40000;  // 10s (SLOWEST)
-    localparam [21:0] UPDATE_PERIOD_F3 = (FAST_SIM != 0) ? 22'd400  : 22'd4000;   // 1s (FASTEST)
-    localparam [21:0] UPDATE_PERIOD_F4 = (FAST_SIM != 0) ? 22'd800  : 22'd8000;   // 2s
+    // v3.2: Apply SLOW_DRIFT scale for 3-day realism validation
+    localparam [25:0] UPDATE_PERIOD_F0 = ((FAST_SIM != 0) ? 26'd800  : 26'd8000)  * DRIFT_SCALE;
+    localparam [25:0] UPDATE_PERIOD_F1 = ((FAST_SIM != 0) ? 26'd2000 : 26'd20000) * DRIFT_SCALE;
+    localparam [25:0] UPDATE_PERIOD_F2 = ((FAST_SIM != 0) ? 26'd4000 : 26'd40000) * DRIFT_SCALE;
+    localparam [25:0] UPDATE_PERIOD_F3 = ((FAST_SIM != 0) ? 26'd400  : 26'd4000)  * DRIFT_SCALE;
+    localparam [25:0] UPDATE_PERIOD_F4 = ((FAST_SIM != 0) ? 26'd800  : 26'd8000)  * DRIFT_SCALE;
 `endif
 
 //-----------------------------------------------------------------------------
@@ -118,9 +132,10 @@ localparam signed [WIDTH-1:0] STEP_MAX_F4 = 18'sd2;  // SR5: 1-2 (moderate)
 
 //-----------------------------------------------------------------------------
 // v3.0: Per-Harmonic Update Counters
+// v3.2: Increased to 26 bits to handle SLOW_DRIFT scale (max ~1.9M cycles)
 //-----------------------------------------------------------------------------
-reg [21:0] update_counter_0, update_counter_1, update_counter_2;
-reg [21:0] update_counter_3, update_counter_4;
+reg [25:0] update_counter_0, update_counter_1, update_counter_2;
+reg [25:0] update_counter_3, update_counter_4;
 
 wire update_tick_0 = (update_counter_0 >= UPDATE_PERIOD_F0);
 wire update_tick_1 = (update_counter_1 >= UPDATE_PERIOD_F1);
@@ -130,12 +145,14 @@ wire update_tick_4 = (update_counter_4 >= UPDATE_PERIOD_F4);
 
 //-----------------------------------------------------------------------------
 // LFSR Seeds (different for each harmonic)
+// Base seeds XOR'd with SEED_OFFSET (different transforms for independence)
+// When SEED_OFFSET=0, original seeds are preserved (backward compatible)
 //-----------------------------------------------------------------------------
-localparam [15:0] LFSR_SEED_0 = 16'hB5C3;
-localparam [15:0] LFSR_SEED_1 = 16'h4E91;
-localparam [15:0] LFSR_SEED_2 = 16'hA7D2;
-localparam [15:0] LFSR_SEED_3 = 16'h38F6;
-localparam [15:0] LFSR_SEED_4 = 16'hC1E4;
+localparam [15:0] LFSR_SEED_0 = 16'hB5C3 ^ SEED_OFFSET;
+localparam [15:0] LFSR_SEED_1 = 16'h4E91 ^ {SEED_OFFSET[7:0], SEED_OFFSET[15:8]};  // byte swap
+localparam [15:0] LFSR_SEED_2 = 16'hA7D2 ^ {SEED_OFFSET[11:0], SEED_OFFSET[15:12]}; // rotate 4
+localparam [15:0] LFSR_SEED_3 = 16'h38F6 ^ {SEED_OFFSET[3:0], SEED_OFFSET[15:4]};   // rotate 12
+localparam [15:0] LFSR_SEED_4 = 16'hC1E4 ^ ~SEED_OFFSET;  // invert
 
 //-----------------------------------------------------------------------------
 // Per-Harmonic LFSR and Drift State
@@ -182,15 +199,25 @@ wire signed [WIDTH-1:0] step_4 = lfsr_4[2] ? 18'sd2 : 18'sd1;
 
 //-----------------------------------------------------------------------------
 // Random Initialization Offsets
+// v3.1 FIX: Use explicit signed arithmetic to avoid unsigned wrap-around
+// when LFSR_SEED[15:11] < 16. Cast to 6-bit signed to preserve sign during
+// subtraction, then multiply by signed DRIFT_MAX.
 //-----------------------------------------------------------------------------
 wire signed [WIDTH-1:0] init_offset_0, init_offset_1, init_offset_2;
 wire signed [WIDTH-1:0] init_offset_3, init_offset_4;
 
-assign init_offset_0 = RANDOM_INIT ? (((LFSR_SEED_0[15:11] - 5'd16) * DRIFT_MAX_F0) >>> 4) : 18'sd0;
-assign init_offset_1 = RANDOM_INIT ? (((LFSR_SEED_1[15:11] - 5'd16) * DRIFT_MAX_F1) >>> 4) : 18'sd0;
-assign init_offset_2 = RANDOM_INIT ? (((LFSR_SEED_2[15:11] - 5'd16) * DRIFT_MAX_F2) >>> 4) : 18'sd0;
-assign init_offset_3 = RANDOM_INIT ? (((LFSR_SEED_3[15:11] - 5'd16) * DRIFT_MAX_F3) >>> 4) : 18'sd0;
-assign init_offset_4 = RANDOM_INIT ? (((LFSR_SEED_4[15:11] - 5'd16) * DRIFT_MAX_F4) >>> 4) : 18'sd0;
+// Convert 5-bit unsigned (0-31) to 6-bit signed, subtract 16 to center at 0 (-16 to +15)
+wire signed [5:0] seed_centered_0 = $signed({1'b0, LFSR_SEED_0[15:11]}) - 6'sd16;
+wire signed [5:0] seed_centered_1 = $signed({1'b0, LFSR_SEED_1[15:11]}) - 6'sd16;
+wire signed [5:0] seed_centered_2 = $signed({1'b0, LFSR_SEED_2[15:11]}) - 6'sd16;
+wire signed [5:0] seed_centered_3 = $signed({1'b0, LFSR_SEED_3[15:11]}) - 6'sd16;
+wire signed [5:0] seed_centered_4 = $signed({1'b0, LFSR_SEED_4[15:11]}) - 6'sd16;
+
+assign init_offset_0 = RANDOM_INIT ? ((seed_centered_0 * DRIFT_MAX_F0) >>> 4) : 18'sd0;
+assign init_offset_1 = RANDOM_INIT ? ((seed_centered_1 * DRIFT_MAX_F1) >>> 4) : 18'sd0;
+assign init_offset_2 = RANDOM_INIT ? ((seed_centered_2 * DRIFT_MAX_F2) >>> 4) : 18'sd0;
+assign init_offset_3 = RANDOM_INIT ? ((seed_centered_3 * DRIFT_MAX_F3) >>> 4) : 18'sd0;
+assign init_offset_4 = RANDOM_INIT ? ((seed_centered_4 * DRIFT_MAX_F4) >>> 4) : 18'sd0;
 
 //-----------------------------------------------------------------------------
 // v3.0: Harmonic 0 (SR1) - Moderate stability, event detector
@@ -198,12 +225,12 @@ assign init_offset_4 = RANDOM_INIT ? (((LFSR_SEED_4[15:11] - 5'd16) * DRIFT_MAX_
 //-----------------------------------------------------------------------------
 always @(posedge clk or posedge rst) begin
     if (rst) begin
-        update_counter_0 <= 22'd0;
+        update_counter_0 <= 26'd0;
         lfsr_0 <= LFSR_SEED_0;
         drift_0 <= init_offset_0;
     end else if (clk_en) begin
         if (update_tick_0) begin
-            update_counter_0 <= 22'd0;
+            update_counter_0 <= 26'd0;
             lfsr_0 <= {lfsr_0[14:0], fb_0};
             if (dir_0) begin
                 if (drift_0 + step_0 <= DRIFT_MAX_F0)
@@ -228,12 +255,12 @@ end
 //-----------------------------------------------------------------------------
 always @(posedge clk or posedge rst) begin
     if (rst) begin
-        update_counter_1 <= 22'd0;
+        update_counter_1 <= 26'd0;
         lfsr_1 <= LFSR_SEED_1;
         drift_1 <= init_offset_1;
     end else if (clk_en) begin
         if (update_tick_1) begin
-            update_counter_1 <= 22'd0;
+            update_counter_1 <= 26'd0;
             lfsr_1 <= {lfsr_1[14:0], fb_1};
             if (dir_1) begin
                 if (drift_1 + step_1 <= DRIFT_MAX_F1)
@@ -258,12 +285,12 @@ end
 //-----------------------------------------------------------------------------
 always @(posedge clk or posedge rst) begin
     if (rst) begin
-        update_counter_2 <= 22'd0;
+        update_counter_2 <= 26'd0;
         lfsr_2 <= LFSR_SEED_2;
         drift_2 <= init_offset_2;
     end else if (clk_en) begin
         if (update_tick_2) begin
-            update_counter_2 <= 22'd0;
+            update_counter_2 <= 26'd0;
             lfsr_2 <= {lfsr_2[14:0], fb_2};
             if (dir_2) begin
                 if (drift_2 + step_2 <= DRIFT_MAX_F2)
@@ -288,12 +315,12 @@ end
 //-----------------------------------------------------------------------------
 always @(posedge clk or posedge rst) begin
     if (rst) begin
-        update_counter_3 <= 22'd0;
+        update_counter_3 <= 26'd0;
         lfsr_3 <= LFSR_SEED_3;
         drift_3 <= init_offset_3;
     end else if (clk_en) begin
         if (update_tick_3) begin
-            update_counter_3 <= 22'd0;
+            update_counter_3 <= 26'd0;
             lfsr_3 <= {lfsr_3[14:0], fb_3};
             if (dir_3) begin
                 if (drift_3 + step_3 <= DRIFT_MAX_F3)
@@ -318,12 +345,12 @@ end
 //-----------------------------------------------------------------------------
 always @(posedge clk or posedge rst) begin
     if (rst) begin
-        update_counter_4 <= 22'd0;
+        update_counter_4 <= 26'd0;
         lfsr_4 <= LFSR_SEED_4;
         drift_4 <= init_offset_4;
     end else if (clk_en) begin
         if (update_tick_4) begin
-            update_counter_4 <= 22'd0;
+            update_counter_4 <= 26'd0;
             lfsr_4 <= {lfsr_4[14:0], fb_4};
             if (dir_4) begin
                 if (drift_4 + step_4 <= DRIFT_MAX_F4)

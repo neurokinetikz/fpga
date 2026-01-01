@@ -5,19 +5,19 @@ State Transition Spectrogram Generator
 Generates a spectrogram visualization from the state transition DAC output,
 showing smooth NORMAL ↔ MEDITATION transitions with MU interpolation.
 
-Timeline (100 seconds):
-- Phase 0 (0-20s):     NORMAL baseline
-- Phase 1 (20-40s):    Smooth transition NORMAL → MEDITATION
-- Phase 2 (40-60s):    MEDITATION steady-state
-- Phase 3 (60-80s):    Smooth transition MEDITATION → NORMAL
-- Phase 4 (80-100s):   NORMAL steady-state
+Timeline (5 equal phases, duration auto-detected from data):
+- Phase 0: NORMAL baseline
+- Phase 1: Smooth transition NORMAL → MEDITATION
+- Phase 2: MEDITATION steady-state
+- Phase 3: Smooth transition MEDITATION → NORMAL
+- Phase 4: NORMAL steady-state
 
 Expected observations:
 - Theta (5.89 Hz) and alpha (9.53 Hz): BOOSTED in MEDITATION (MU=6)
 - Beta (15.42 Hz, 24.94 Hz) and gamma (40.36 Hz):
-  - Full power in NORMAL phases (0-20s, 80-100s) with MU=3
-  - Reduced amplitude in MEDITATION phase (40-60s) with MU=1
-  - Smooth gradient during transitions (20-40s, 60-80s)
+  - Full power in NORMAL phases with MU=3
+  - Reduced amplitude in MEDITATION phase with MU=1
+  - Smooth gradient during transitions
 - 1/f^φ pink noise background: continuous throughout
 
 Usage:
@@ -51,6 +51,11 @@ def main():
     phases = df['phase'].values
     # v11.4: Changed from mu_l5b to state_select
     state_values = df['state_select'].values if 'state_select' in df.columns else df.get('mu_l5b', np.zeros(len(df))).values
+
+    # Auto-detect duration from data (5 equal phases)
+    total_duration = len(df) / fs  # Total seconds
+    phase_duration = total_duration / 5  # Each phase duration
+    print(f"  Duration: {total_duration:.0f}s total, {phase_duration:.0f}s per phase")
 
     # Convert 12-bit DAC to float [-1, 1]
     dac_float = (dac_values.astype(float) - 2048) / 2048
@@ -100,8 +105,8 @@ def main():
             ax1.axhline(freq, color='white', linestyle='--', alpha=0.5, linewidth=0.8)
             ax1.text(10, freq + 1.5, label, color='white', fontsize=8, alpha=0.8)
 
-    # Phase boundary markers
-    phase_times = [0, 20, 40, 60, 80, 100]
+    # Phase boundary markers (derived from data duration)
+    phase_times = [i * phase_duration for i in range(6)]
     phase_names = ['NORMAL', 'N→M', 'MEDITATION', 'M→N', 'NORMAL']
     phase_colors = ['#00ff00', '#ffff00', '#0080ff', '#ffff00', '#00ff00']
 
@@ -119,9 +124,9 @@ def main():
 
     ax1.set_xlabel('Time (s)', fontsize=12)
     ax1.set_ylabel('Frequency (Hz)', fontsize=12)
-    ax1.set_title('State Transition Spectrogram: NORMAL ↔ MEDITATION\n'
-                  '(MU interpolation over 20-second transitions)', fontsize=14)
-    ax1.set_xlim(0, 100)
+    ax1.set_title(f'State Transition Spectrogram: NORMAL ↔ MEDITATION\n'
+                  f'({total_duration:.0f}s total, {phase_duration:.0f}s per phase)', fontsize=14)
+    ax1.set_xlim(0, total_duration)
     ax1.set_ylim(0, 80)
 
     plt.colorbar(im, ax=ax1, label='Power (dB)', shrink=0.8)
@@ -142,7 +147,7 @@ def main():
     ax2.set_xlabel('Time (s)', fontsize=12)
     ax2.set_ylabel('State', fontsize=12)
     ax2.set_title('State Select (0=NORMAL, 4=MEDITATION)', fontsize=12)
-    ax2.set_xlim(0, 100)
+    ax2.set_xlim(0, total_duration)
     ax2.set_ylim(-0.5, 5)
     ax2.legend(loc='upper right')
     ax2.grid(True, alpha=0.3)
@@ -150,8 +155,8 @@ def main():
     # Add state level annotations
     ax2.axhline(0, color='green', linestyle=':', alpha=0.5, linewidth=1)
     ax2.axhline(4, color='blue', linestyle=':', alpha=0.5, linewidth=1)
-    ax2.text(5, 0.3, 'NORMAL (state=0)', color='green', fontsize=9)
-    ax2.text(45, 4.3, 'MEDITATION (state=4)', color='blue', fontsize=9)
+    ax2.text(phase_duration * 0.25, 0.3, 'NORMAL (state=0)', color='green', fontsize=9)
+    ax2.text(phase_duration * 2.25, 4.3, 'MEDITATION (state=4)', color='blue', fontsize=9)
 
     plt.tight_layout()
 
@@ -188,7 +193,7 @@ def main():
     ax3.set_xlabel('Time (s)', fontsize=12)
     ax3.set_ylabel('Band Power (dB)', fontsize=12)
     ax3.set_title('Band Power Over Time During State Transitions', fontsize=14)
-    ax3.set_xlim(0, 100)
+    ax3.set_xlim(0, total_duration)
     ax3.legend(loc='upper right')
     ax3.grid(True, alpha=0.3)
 

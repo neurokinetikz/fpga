@@ -33,7 +33,8 @@ module thalamic_frequency_drift #(
     parameter WIDTH = 18,
     parameter FRAC = 14,
     parameter FAST_SIM = 0,
-    parameter RANDOM_INIT = 1  // Enable random start position within drift bounds
+    parameter RANDOM_INIT = 1,  // Enable random start position within drift bounds
+    parameter [15:0] SEED_OFFSET = 16'h0000  // XOR'd with base seeds for variation
 )(
     input  wire clk,
     input  wire rst,
@@ -84,8 +85,9 @@ localparam signed [WIDTH-1:0] JITTER_MAX = 18'sd5;  // +/-0.2 Hz
 
 //-----------------------------------------------------------------------------
 // LFSR Seed (unique for theta, different from cortical and SR seeds)
+// Base seed XOR'd with SEED_OFFSET for variation across runs
 //-----------------------------------------------------------------------------
-localparam [15:0] LFSR_SEED = 16'hC3A7;
+localparam [15:0] LFSR_SEED = 16'hC3A7 ^ SEED_OFFSET;
 
 //-----------------------------------------------------------------------------
 // Update Counter
@@ -159,8 +161,9 @@ end
 
 //-----------------------------------------------------------------------------
 // Fast Jitter LFSR (separate from drift LFSR)
+// Base seed XOR'd with rotated SEED_OFFSET for independence from drift
 //-----------------------------------------------------------------------------
-localparam [15:0] JLFSR_SEED = 16'h5E91;
+localparam [15:0] JLFSR_SEED = 16'h5E91 ^ {SEED_OFFSET[7:0], SEED_OFFSET[15:8]};  // byte swap
 
 reg [15:0] jlfsr;
 wire jfb = jlfsr[15] ^ jlfsr[13] ^ jlfsr[12] ^ jlfsr[10];
